@@ -87,28 +87,39 @@ Base.convert(::Type{PVec{T}}, u::Vector{S}) where {T, S} = PVec{T}(
 struct PSubVec{T,I} <: PVec{T} where {I <: Integer}
     _vector::PVec{T}
     _index::AbstractArray{I,1}
-end
-function PSubVec{T,I}(u::PVec{T}, ii::AbstractArray{I,1})::PSubVec{T,I} where {T, I<:Integer}
-    let n = length(u)
-        # we need to check every element to make sure it's ok...
-        for k in ii
-            if k < 1 || k > n
-                throw(BoundsError(u, [k]))
+    function PSubVec{T,I}(u::PVec{T}, ii::AbstractArray{I,1})::PSubVec{T,I} where {T, I<:Integer}
+        let n = length(u)
+            # we need to check every element to make sure it's ok...
+            for k in ii
+                if k < 1 || k > n
+                    throw(BoundsError(u, [k]))
+                end
+            end
+            # okay, they're all fine...
+            return new(u, PVec{I}(ii))
+        end
+    end
+    # For certain instances we can do less work...
+    function PSubVec{T,I}(u::PVec{T}, ii::StepRange{I})::PSubVec{T,I} where {T, I<:Integer}
+        let n = length(u), f = ii[1], l = ii[end]
+            if f < 1 || f > n
+                throw(BoundsError(u, [f]))
+            elseif l < 1 || l > n
+                throw(BoundsError(u, [l]))
+            else
+                return new(u, ii)
             end
         end
-        # okay, they're all fine...
-        return PSubVec{T,I}(u, freeze(ii))
     end
-end
-# For certain instances we can do less work...
-function PSubVec{T,I}(u::PVec{T}, ii::UnitRange{I})::PSubVec{T,I} where {T, I<:Integer}
-    let n = length(u), f = ii[0], l = ii[end]
-        if f < 1 || f > n
-            throw(BoundsError(u, [f]))
-        elseif l < 1 || l > n
-            throw(BoundsError(u, [l]))
-        else
-            return PSubVec{T,I}(u, ii)
+    function PSubVec{T,I}(u::PVec{T}, ii::UnitRange{I})::PSubVec{T,I} where {T, I<:Integer}
+        let n = length(u), f = ii[1], l = ii[end]
+            if f < 1 || f > n
+                throw(BoundsError(u, [f]))
+            elseif l < 1 || l > n
+                throw(BoundsError(u, [l]))
+            else
+                return new(u, ii)
+            end
         end
     end
 end
@@ -151,18 +162,19 @@ macro psmallvectype(name::Symbol, n, lname::Symbol, uname::Symbol)
             $(esc(:pop))(u::$(esc(name)){T}) where {T} = $(esc(lname))(
                 $([:(u.$(esc(vals[k]))) for k in 1:n-1]...))
             $([quote
-               $(esc(:assoc))(u::$(esc(name)){T}, ::$(esc(:(Base.Val))){$k}, $(esc(:v))::S) where {T, S<:T} = $(esc(name)){T}(
-                   $((let q = [:(u.$(esc(vals[kk]))) for kk in 1:n]
+               $(esc(:assoc))($(esc(:u))::$(esc(name)){T}, ::$(esc(:(Base.Type))){$(esc(:(Base.Val))){$k}}, $(esc(:v))::S) where {T, S<:T} = $(esc(name)){T}(
+                   $((let q = [esc(:(u.$(vals[kk]))) for kk in 1:n]
                           q[k] = esc(:v)
                           q
                       end)...))
                end
                for k in 1:n]...)
-            $(esc(:assoc))(u::$(esc(name)){T}, ::$(esc(:(Base.Val))){$n+1}, v::S) where {T, S<:T} = push(u, v)
+            $(esc(:assoc))(u::$(esc(name)){T}, ::$(esc(:(Base.Type))){$(esc(:(Base.Val))){$(n+1)}}, v::S) where {T, S<:T} = push(u, v)
+            $(esc(:assoc))(u::$(esc(name)){T}, k::Integer, v::S) where {T, S<:T} = assoc(u, $(esc(Base.Val)){k}, v)
                                    
             # The getindex operator...
             $([:(_pvec_getindex($(esc(:x))::$(esc(name)), ::$(esc(:(Base.Type))){$(esc(:(Base.Val))){$k}}) = $(esc(:(x.$(vals[k]))))) for k in 1:n]...)
-            $([:($(esc(:(Base.getindex)))(x::$(esc(name)), ii::Integer) = _pvec_getindex(x, $(esc(:(Base.Val))){ii})) for k in 1:n]...)
+            $(esc(:(Base.getindex)))(x::$(esc(name)), ii::Integer) = _pvec_getindex(x, $(esc(:(Base.Val))){ii})
             $(esc(:(Base.length)))(x::$(esc(name))) = $n
         end
     end
