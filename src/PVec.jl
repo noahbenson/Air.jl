@@ -80,8 +80,7 @@ remove(u::PVec{T}, k::Integer) where {T} = let n = length(u)
     end
 end
 # convert can also be defined...
-Base.convert(::Type{PVec{T}}, u::Vector{S}) where {T, S<:T} = PVec{T}(u)
-Base.convert(::Type{PVec{T}}, u::Vector{S}) where {T, S} = PVec{T}(
+Base.convert(::Type{PVec{T}}, u::AbstractArray{S,1}) where {T, S} = PVec{T}(
     [convert(T, k) for k in u])
 # we can build slice-indexing out of what we have also:
 struct PSubVec{T,I} <: PVec{T} where {I <: Integer}
@@ -221,7 +220,7 @@ const _psmallvec_bysize = PVec32{Type}(
     PVec19, PVec20, PVec21, PVec22, PVec23, PVec24,
     PVec25, PVec26, PVec27, PVec28, PVec29, PVec30,
     PVec31, PVec32)
-PSmallVec{T}(n::Integer, u::AbstractArray{T,1}) where {T} = let nu = length(u)
+PSmallVec{T}(n::Integer, u::AbstractArray{S,1}) where {T,S<:T} = let nu = length(u)
     if     n <= 0  return PVec0{T}()
     elseif n > 32  error("PSmallVec given vector of size > 32")
     elseif n > nu  error("PSmallVec given incorrect size")
@@ -229,7 +228,7 @@ PSmallVec{T}(n::Integer, u::AbstractArray{T,1}) where {T} = let nu = length(u)
     else           return _psmallvec_bysize[n]{T}(u[1:n]...)
     end
 end
-PSmallVec{T}(u::AbstractArray{T,1}) where {T} = PSmallVec{T}(length(u), u)
+PSmallVec{T}(u::AbstractArray{S,1}) where {T,S<:T} = PSmallVec{T}(length(u), u)
 
 # next we need vectors that can be composed of smaller vectors...
 struct PBigVec{T} <: PVec{T}
@@ -271,7 +270,7 @@ assoc(u::PBigVec{T}, k::Integer, v::S) where {T, S<:T} = begin
     end
 end
 
-PVec{T}(u::AbstractArray{T,1}) where {T} = let n = length(u)
+PVec{T}(u::AbstractArray{S,1}) where {T,S<:T} = let n = length(u)
     if typeof(u) <: PVec  return u
     elseif n <= 0  return PVec0{T}()
     elseif n <= 32 return _psmallvec_bysize[n]{T}(u[1:n]...)
