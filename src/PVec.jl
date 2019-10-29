@@ -156,9 +156,9 @@ macro psmallvectype(name::Symbol, n, lname::Symbol, uname::Symbol)
             $(esc(:push))(u::$(esc(name)){T}, v::S) where {T, S<:T} =
                 $(uname === :PBigVec
                   ? :($(esc(uname)){T}(33, PVec2{PSmallVec{T}}(u, PVec1{T}(v))))
-                  : :($(esc(uname)){T}($([:(u.$(esc(vals[k]))) for k in 1:n]...), v)))
-            $(esc(:pop))(u::$(esc(name)){T}) where {T} = $(esc(lname))(
-                $([:(u.$(esc(vals[k]))) for k in 1:n-1]...))
+                  : :($(esc(uname)){T}($([esc(:(u.$(vals[k]))) for k in 1:n]...), v)))
+            $(esc(:pop))($(esc(:u))::$(esc(name)){T}) where {T} = $(esc(lname))(
+                $([esc(:(u.$(vals[k]))) for k in 1:n-1]...))
             $([quote
                $(esc(:assoc))($(esc(:u))::$(esc(name)){T}, ::$(esc(:(Base.Type))){$(esc(:(Base.Val))){$k}}, $(esc(:v))::S) where {T, S<:T} = $(esc(name)){T}(
                    $((let q = [esc(:(u.$(vals[kk]))) for kk in 1:n]
