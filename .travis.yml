@@ -26,4 +26,4 @@ jobs:
           include("docs/make.jl");'
       after_success: skip
 script:
-  - travis_wait julia -e 'using Air; test Air;'
+  - travis_wait julia -e 'using Air; using Pkg; Pkg.test("Air");'
