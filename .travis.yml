@@ -25,3 +25,7 @@ jobs:
           Pkg.instantiate();
           include("docs/make.jl");'
       after_success: skip
+install:
+  - julia -e 'using Pkg; Pkg.add("https://github.com/noahbenson/Air.jl");'
+script:
+  - travis_wait julia -e 'using Air; test Air;'
