@@ -1,0 +1,13 @@
+name = "Air"
+uuid = "0c3b9dc7-9fea-4423-80ce-ed7c11218d4a"
+authors = ["Noah C. Benson"]
+version = "0.1.0"
+
+[compat]
+julia = "1.2"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
