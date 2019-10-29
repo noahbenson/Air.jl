@@ -52,7 +52,6 @@ Base.size(u::PVec) = (length(u),)
 #TODO: axes(::PVec) (and how to handle arrays?)
 # The various persistent operations:
 assoc(u::PVec, k, v) = throw(ArgumentError("invalid index: $k of type $(typeof(k))"))
-assoc(u::PVec, k::Integer, v) = throw(BoundsError(u, [k]))
 dissoc(u::PVec, k) = u
 remove(u::PVec, k) = throw(ArgumentError("invalid index: $k of type $(typeof(k))"))
 # dissoc and remove can be defined generically for PVec:
@@ -153,9 +152,9 @@ macro psmallvectype(name::Symbol, n, lname::Symbol, uname::Symbol)
             struct $(esc(name)){$(esc(:T))} <: PSmallVec{$(esc(:T))}
                 $([:($(val)::$(esc(:T))) for val in vals]...)
             end
-            $(esc(:push))(u::$(esc(name)){T}, v::S) where {T, S<:T} =
+            $(esc(:push))($(esc(:u))::$(esc(name)){T}, v::S) where {T, S<:T} =
                 $(uname === :PBigVec
-                  ? :($(esc(uname)){T}(33, PVec2{PSmallVec{T}}(u, PVec1{T}(v))))
+                  ? :($(esc(uname)){T}(33, PVec2{PSmallVec{T}}($(esc(:u)), PVec1{T}(v))))
                   : :($(esc(uname)){T}($([esc(:(u.$(vals[k]))) for k in 1:n]...), v)))
             $(esc(:pop))($(esc(:u))::$(esc(name)){T}) where {T} = $(esc(lname))(
                 $([esc(:(u.$(vals[k]))) for k in 1:n-1]...))
@@ -245,8 +244,8 @@ Base.getindex(u::PBigVec{T}, k::Integer) where {T, P<:PVec} = begin
     end
 end
 push(u::PBigVec{T}, v::S) where {T, S<:T} = begin
-    let n0 = length(u._elements), (k1,k2) = _pbigvec_iisplit(n+1)
-        return PBigVec{T}(u._n+1,
+    let n0 = length(u), n = n0+1, (k1,k2) = _pbigvec_iisplit(n)
+        return PBigVec{T}(n,
                           k1 > n0
                           ? push(u._elements, PVec1{T}(v))
                           : assoc(u._elements, k1, push(u._elements[k1], v)))
