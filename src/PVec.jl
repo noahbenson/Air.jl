@@ -55,7 +55,6 @@ assoc(u::PVec, k, v) = throw(ArgumentError("invalid index: $k of type $(typeof(k
 assoc(u::PVec, k::Integer, v) = throw(BoundsError(u, [k]))
 dissoc(u::PVec, k) = u
 remove(u::PVec, k) = throw(ArgumentError("invalid index: $k of type $(typeof(k))"))
-remove(u::PVec, k::Integer) = throw(BoundsError(u, [k]))
 # dissoc and remove can be defined generically for PVec:
 dissoc(u::PVec{T}, k::Integer) where {T} = let n = length(u)
     if k == n
