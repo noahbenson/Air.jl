@@ -3,6 +3,8 @@ language: julia
 os:
   - linux
   - osx
+env:
+  - CODECOV_TOKEN="c504ef52-91e5-4511-bf76-c812017ee36f"
 julia:
   - 1.2
   - nightly
