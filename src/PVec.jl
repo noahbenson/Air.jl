@@ -187,7 +187,7 @@ macro psmallvectype(name::Symbol, n, lname::Symbol, uname::Symbol)
                               U = typejoin($([:(typeof($val)) for val in vals]...))
                               return $name{U}($(vals...))
                           end
-                      end
+                     end
                      function Base.broadcast(f::Function, u::$name{T}) where {T}
                           let $([:($val=f(u.$val)) for val in vals]...)
                               U = typejoin($([:(typeof($val)) for val in vals]...))
@@ -202,52 +202,15 @@ macro psmallvectype(name::Symbol, n, lname::Symbol, uname::Symbol)
                       end
                       Base.:+(a::$name{T}) where {T} = a
                       Base.:-(a::$name{T}) where {T} = begin
-                          return $name{T}($([:(a.$val + b.$val) for val in vals]...))
+                          return $name{T}($([:(-a.$val) for val in vals]...))
                       end
                       function Base.:+(a::$name{T}, b::$name{S}) where {T,S}
                           U = typejoin(T, S)
                           return $name{U}($([:(a.$val + b.$val) for val in vals]...))
                       end
-                      function Base.broadcast(::typeof(Base.:+), a::$name{T}, b::S) where {T,S}
-                          U = typejoin(T, S)
-                          return $name{U}($([:(a.$val + b) for val in vals]...))
-                      end
-                      Base.broadcast(::typeof(Base.:+), b::S, a::$name{T}) where {S,T} = broadcast(+, a, b)
                       function Base.:-(a::$name{T}, b::$name{S}) where {T,S}
                           U = typejoin(T, S)
                           return $name{U}($([:(a.$val - b.$val) for val in vals]...))
-                      end
-                      function Base.broadcast(::typeof(Base.:-), a::$name{T}, b::S) where {T,S}
-                          U = typejoin(T, S)
-                          return $name{U}($([:(a.$val - b) for val in vals]...))
-                      end
-                      function Base.broadcast(::typeof(Base.:-), a::S, b::$name{T}) where {T,S}
-                          U = typejoin(T, S)
-                          return $name{U}($([:(a - b.$val) for val in vals]...))
-                      end
-                      function Base.broadcast(::typeof(Base.:*), a::$name{T}, b::$name{S}) where {T,S}
-                          U = typejoin(T, S)
-                          return $name{U}($([:(a.$val * b.$val) for val in vals]...))
-                      end
-                      function Base.broadcast(::typeof(Base.:*), a::$name{T}, b::S) where {T,S}
-                          U = typejoin(T, S)
-                          return $name{U}($([:(a.$val * b) for val in vals]...))
-                      end
-                      function Base.broadcast(::typeof(Base.:*), a::S, b::$name{T}) where {T,S}
-                          U = typejoin(T, S)
-                          return $name{U}($([:(a * b.$val) for val in vals]...))
-                      end
-                      function Base.broadcast(::typeof(Base.:/), a::$name{T}, b::$name{S}) where {T,S}
-                          U = typejoin(T, S)
-                          return $name{U}($([:(a.$val / b.$val) for val in vals]...))
-                      end
-                      function Base.broadcast(::typeof(Base.:/), a::$name{T}, b::S) where {T,S}
-                          U = typejoin(T, S)
-                          return $name{U}($([:(a.$val / b) for val in vals]...))
-                      end
-                      function Base.broadcast(::typeof(Base.:/), a::S, b::$name{T}) where {T,S}
-                          U = typejoin(T, S)
-                          return $name{U}($([:(a / b.$val) for val in vals]...))
                       end
                   end))
         end
@@ -356,4 +319,65 @@ PVec{T}(u::AbstractArray{S,1}) where {T,S<:T} = let n = length(u)
     end
 end
 PVec(u::AbstractArray{T, 1}) where {T} = PVec{T}(u)
+
+# The important thing in the operations below is to operate in chunks whenever
+# possible.
+function Base.map(f::Function, u::PBigVec{T}) where {T}
+    let v   = [map(f, x) for x in u._elements],
+        tts = [typeof(x).parameters[1] for x in v],
+        U   = typejoin(tts...),
+        v   = [(tt.parameters[1] === U ? x : convert(PVec{U}, x))
+               for (x,tt) in zip(v,tts)]
+        return PBigVec{U}(u._n, PVec{PSmallVec{U}}(v))
+    end
+end
+function Base.map(f::Function, uu::Vararg{PBigVec{T}}) where {T}
+    let v   = [map(f, args...) for args in zip(uu...)],
+        tts = [typeof(x).parameters[1] for x in v],
+        U   = typejoin(tts...),
+        v   = [(tt.parameters[1] === U ? x : convert(PVec{U}, x))
+               for (x,tt) in zip(v,tts)]
+        return PBigVec{U}(u._n, PVec{PSmallVec{U}}(v))
+    end
+end
+function Base.broadcast(f::Function, u::PBigVec{T}) where {T}
+    let v   = [map(f, x) for x in u._elements],
+        tts = [typeof(x).parameters[1] for x in v],
+        U   = typejoin(tts...),
+        v   = [(tt.parameters[1] === U ? x : convert(PVec{U}, x))
+               for (x,tt) in zip(v,tts)]
+        return PBigVec{U}(u._n, PVec{PSmallVec{U}}(v))
+    end
+end
+function Base.broadcast(f::Function, uu::Vararg{PBigVec{T}}) where {T}
+    let v   = [map(f, args...) for args in zip([u._elements for u in uu]...)],
+        tts = [typeof(x).parameters[1] for x in v],
+        U   = typejoin(tts...),
+        v   = [(tt.parameters[1] === U ? x : convert(PVec{U}, x))
+               for (x,tt) in zip(v,tts)]
+        return PBigVec{U}(u._n, PVec{PSmallVec{U}}(v))
+    end
+end
+Base.:+(a::PBigVec{T}) where {T} = a
+Base.:-(a::PBigVec{T}) where {T} = begin
+    return PBigVec{T}(a._n, PVec{PSmallVec{T}}([-x for x in a._elements]))
+end
+function Base.:+(a::PBigVec{T}, b::PBigVec{S}) where {T,S}
+    let ss  = [aa + bb for (aa,bb) in zip(a._elements, b._elements)],
+        tts = [typeof(s).parameters[1] for s in ss],
+        U   = typejoin(tts...),
+        ss  = [(tt === U ? s : convert(PVec{U}, s))
+               for (s,tt) in zip(ss, tts)]
+        return PBigVec{U}(a._n, PVec{PSmallVec{U}}(ss))
+    end
+end
+function Base.:-(a::PBigVec{T}, b::PBigVec{S}) where {T,S}
+    let ss  = [aa - bb for (aa,bb) in zip(a._elements, b._elements)],
+        tts = [typeof(s).parameters[1] for s in ss],
+        U   = typejoin(tts...),
+        ss  = [(tt === U ? s : convert(PVec{U}, s))
+               for (s,tt) in zip(ss, tts)]
+        return PBigVec{U}(a._n, PVec{PSmallVec{U}}(ss))
+    end
+end
 
