@@ -190,14 +190,14 @@ deepfreeze(@nospecialize(x)) = begin
     field_defined = Vector{Bool}()
     field_changed = Vector{Bool}()
     new_field_val = Vector{Any}()
-    for 1 in 1:n
+    for i in 1:n
         if isdefined(x, i)
             old_obj = getfield(x, i)
             new_obj = deepfreeze(old_obj)
             push!(new_field_val, new_obj)
             push!(field_changed, old_obj !== new_obj)
             push!(field_defined, true)
-            old_obj === new_obj || changed = true
+            old_obj === new_obj || (changed = true)
         else
             push!(new_field_val, nothing)
             push!(field_changed, false)
@@ -207,7 +207,7 @@ deepfreeze(@nospecialize(x)) = begin
     # We now have the updated fields stored as these three arrays; if the
     # field was not defined in the old object then it should not be set in any
     # new object.
-    if !changed:
+    if !changed
         # In this case, none of the children have changed and the object is
         # known to be immutable; we do not even have to call freeze on it!
         return x
@@ -254,7 +254,7 @@ if x is already mutable yields x unchanged. To get a mutable copy of an object
 regardless of whether it is immutable, use thawcopy(). If x cannot be converted
 to an immutable object, an error is raised.
 """
-thaw(x::T) = _thaw(mutability(T), x)
+thaw(x::T) where {T} = _thaw(mutability(T), x)
 
 """
     deepthaw(x)
@@ -295,14 +295,14 @@ deepthaw(@nospecialize(x)) = begin
     field_defined = Vector{Bool}()
     field_changed = Vector{Bool}()
     new_field_val = Vector{Any}()
-    for 1 in 1:n
+    for i in 1:n
         if isdefined(x, i)
             old_obj = getfield(x, i)
             new_obj = deepthaw(old_obj)
             push!(new_field_val, new_obj)
             push!(field_changed, old_obj !== new_obj)
             push!(field_defined, true)
-            old_obj === new_obj || changed = true
+            old_obj === new_obj || (changed = true)
         else
             push!(new_field_val, nothing)
             push!(field_changed, false)
@@ -312,7 +312,7 @@ deepthaw(@nospecialize(x)) = begin
     # We now have the updated fields stored as these three arrays; if the
     # field was not defined in the old object then it should not be set in any
     # new object.
-    if !changed:
+    if !changed
         # In this case, none of the children have changed and the object is
         # known to be mutable already
         return x
