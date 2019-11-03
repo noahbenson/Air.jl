@@ -21,7 +21,7 @@ using Test
     end
     @testset "PMap" begin
         m0 = Air.PMap{Symbol}()
-        pairs = Dict{UInt64,Symbol}(100 => :a, 5 => :b, 25 => :c
+        pairs = Dict{UInt64,Symbol}(100 => :a, 5 => :b, 25 => :c,
                                     1 => :d, 0b100001 => :e,
                                     0b1000001 => :f)
         (m, n) = (m0, 0)
