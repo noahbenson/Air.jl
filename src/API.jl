@@ -359,3 +359,46 @@ thawcopy(x::T) where {T} = _thawcopy(mutability(T), x)
 Yields deepthaw(deepcopy(x)).
 """
 deepthawcopy(x) = deepthaw(deepcopy(x))
+
+_isequiv(::Type, ::Type, t, s) = (t === s)
+_isequiv(::Immutable, ::Immutable, t, s) = isequal(t, s)
+_isequiv(::Immutable, ::Immutable, t::T, s::T) where {T} = begin
+    t === s && return true
+    isbitstype(T) && return isequal(t, s)
+    # call isequiv on each of the fields
+    let n = nfields(t)
+        n == 0 && return isequal(t, s)
+        for k in 1:n
+            if !isdefined(t, k)
+                if isdefined(s, k)
+                    return false
+                end
+            elseif !isdefined(s, k)
+                return false
+            elseif !isequiv(getfield(t,k), getfield(s,k))
+                return false
+            end
+        end
+        # All fields are equivalent, so return false
+        return true
+    end
+end
+"""
+    isequiv(x, y)
+Yields true if x and y are equivalent and false otherwise.
+Equivalents is similar to equality, but it distinguishes
+between mutable itens that are equal (on the grounds that
+they may not be equal in the future). The rules for 
+deciding equivalence are:
+
+1. If both x and y are immutable, then isequiv(x,y) yields
+   isequal(x, y)
+2. Otherwise, yields (x === y)
+
+Note that immutable types should overload isequiv() in order
+to ensure that they are considered equivalent only when
+their subparts (like keys and values) are considered
+equivalent rather than equal. By default, for a structure
+type, all 
+"""
+isequiv(t::T, s::S) where {T, S} = _isequiv(mutability(T), mutability(S), t, s)

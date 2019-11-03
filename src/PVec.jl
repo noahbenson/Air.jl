@@ -7,7 +7,7 @@
 
 import Base.getindex, Base.setindex!, Base.length, Base.size, Base.iterate,
        Base.show, Base.axes, Base.similar, Base.similar, Base.convert
-import Printf.@sprintf
+import Printf, Printf.@sprintf
 
 # PVec types are based on this abstract type:
 abstract type PVec{T} <: AbstractArray{T,1} end
@@ -17,21 +17,21 @@ _print_pvec(io::IO, u::PVec{T}, head::String) where {T} = begin
     n = length(u)
     if n < 50
         for ii in 1:n
-            if ii > 1 print(io, ", $(u[ii])") else print(io, "$(u[ii])") end
+            if ii > 1 print(io, ", $(repr(u[ii]))") else print(io, "$(repr(u[ii]))") end
         end
     else
         for ii in 1:20
-            if ii > 1 print(io, ", $(u[ii])") else print(io, "$(u[ii])") end
+            if ii > 1 print(io, ", $(repr(u[ii]))") else print(io, "$(repr(u[ii]))") end
         end
         print(io, " ... ")
         for ii in n-20:n
-            if ii < n print(io, "$(u[ii]), ") else print(io, "$(u[ii])") end
+            if ii < n print(io, "$(repr(u[ii])), ") else print(io, "$(repr(u[ii]))") end
         end
     end
     print(io, "]")
 end
 Base.show(io::IO, ::MIME"text/plain", pv::PVec{T}) where {T} =
-    _print_pvec(io, pv, "PVector")
+    _print_pvec(io, pv, "PVec")
 Base.setindex!(u::PVec{T}, v::U, args...) where {T,U<:T} = error(
     "setindex! immutable type PVec cannot be changed")
 Base.getindex(u::PVec, k1::Integer, k2::Integer, args::Vararg{<:Integer}) =
@@ -51,19 +51,23 @@ Base.size(u::PVec) = (length(u),)
 #TODO: similar(::PVec)
 #TODO: axes(::PVec) (and how to handle arrays?)
 # The various persistent operations:
-assoc(u::PVec, k, v) = throw(ArgumentError("invalid index: $k of type $(typeof(k))"))
 dissoc(u::PVec, k) = u
 remove(u::PVec, k) = throw(ArgumentError("invalid index: $k of type $(typeof(k))"))
+struct DissocError <: Exception
+    object::Any
+    key::Any
+end
+Base.showerror(io::IO, e::DissocError) = let k=repr(e.key), t=repr(typeof(e.object))
+    print(io, "cannot dissociate key $k from association of type $t")
+end
 # dissoc and remove can be defined generically for PVec:
 dissoc(u::PVec{T}, k::Integer) where {T} = let n = length(u)
     if k == n
         return pop(u)
     elseif k > n || k < 1
         return u
-    elseif Missing <: T
-        return assoc(u, k, missing)
     else
-        return assoc(convert(PVec{Union{Missing,T}}, u), k, missing)
+        throw(DissocError(u, k))
     end
 end
 remove(u::PVec{T}, k::Integer) where {T} = let n = length(u)
@@ -141,7 +145,7 @@ Base.length(::PVec0) = 0
 Base.size(::PVec0) = _PVEC0_SIZE
 push(::PVec0{T}, x::S) where {T, S<:T} = PVec1{T}(x)
 pop(e::PVec0) = e
-assoc(::PVec0{T}, ::Val{1}, v::S) where {T, S<:T} = PVec1{T}(v)
+assoc(::PVec0{T}, ::Type{Val{1}}, v::S) where {T, S<:T} = PVec1{T}(v)
 
 # we create other pvec types with this macro:
 abstract type PSmallVec{T} <: PVec{T} end
@@ -158,60 +162,61 @@ macro psmallvectype(name::Symbol, n, lname::Symbol, uname::Symbol)
                   : :($(esc(uname)){T}($([esc(:(u.$(vals[k]))) for k in 1:n]...), v)))
             $(esc(:pop))($(esc(:u))::$(esc(name)){T}) where {T} = $(esc(lname))(
                 $([esc(:(u.$(vals[k]))) for k in 1:n-1]...))
-            $([quote
-               $(esc(:assoc))($(esc(:u))::$(esc(name)){T}, ::$(esc(:(Base.Type))){$(esc(:(Base.Val))){$k}}, $(esc(:v))::S) where {T, S<:T} = $(esc(name)){T}(
-                   $((let q = [esc(:(u.$(vals[kk]))) for kk in 1:n]
-                          q[k] = esc(:v)
-                          q
-                      end)...))
-               end
+            $([esc(:(
+                _pvec_assoc(x::$name{T}, ::Base.Type{Base.Val{Int($k)}}, v::S) where {T, S<:T} = begin
+                    if x.$(vals[k]) === v
+                        return x
+                    else
+                        return $name{T}($([(kk != k ? :(x.$(vals[kk])) : :v) for kk in 1:n]...))
+                    end
+                end))
                for k in 1:n]...)
-            $(esc(:assoc))(u::$(esc(name)){T}, ::$(esc(:(Base.Type))){$(esc(:(Base.Val))){$(n+1)}}, v::S) where {T, S<:T} = push(u, v)
-            $(esc(:assoc))(u::$(esc(name)){T}, k::Integer, v::S) where {T, S<:T} = assoc(u, $(esc(Base.Val)){k}, v)
+            $(esc(:(_pvec_assoc(x::$name{T}, ::Base.Type{Base.Val{Int($(n+1))}}, v::S) where {T, S<:T} = push(x, v))))
+            $(esc(:(assoc(u::$name{T}, ii::Integer, v::S) where {T, S<:T} = _pvec_assoc(u, Base.Val{Int(ii)}, v))))
                                    
             # The getindex operator...
-            $([:(_pvec_getindex($(esc(:x))::$(esc(name)), ::$(esc(:(Base.Type))){$(esc(:(Base.Val))){$k}}) = $(esc(:(x.$(vals[k]))))) for k in 1:n]...)
-            $(esc(:(Base.getindex)))(x::$(esc(name)), ii::Integer) = _pvec_getindex(x, $(esc(:(Base.Val))){ii})
+            $([:(_pvec_getindex($(esc(:x))::$(esc(name)), ::$(esc(:(Base.Type))){$(esc(:(Base.Val))){Int($k)}}) = $(esc(:(x.$(vals[k]))))) for k in 1:n]...)
+            $(esc(:(Base.getindex)))(x::$(esc(name)), ii::Integer) = _pvec_getindex(x, $(esc(:(Base.Val))){Int(ii)})
             $(esc(:(Base.length)))(x::$(esc(name))) = $n
 
             # Arithmetic operatrs
             $(esc(quote
                      function Base.map(f::Function, u::$name{T}) where {T}
-                          let $([:($val=f(u.$val)) for val in vals]...)
-                              U = typejoin($([:(typeof($val)) for val in vals]...))
-                              return $name{U}($(vals...))
-                          end
+                         let $([:($val=f(u.$val)) for val in vals]...)
+                             U = typejoin($([:(typeof($val)) for val in vals]...))
+                             return $name{U}($(vals...))
+                         end
                      end
                      function Base.map(f::Function, uu::Vararg{$name{T}}) where {T}
-                          let $([:($val=f([u.$val for u in uu]...)) for val in vals]...)
-                              U = typejoin($([:(typeof($val)) for val in vals]...))
-                              return $name{U}($(vals...))
-                          end
+                         let $([:($val=f([u.$val for u in uu]...)) for val in vals]...)
+                             U = typejoin($([:(typeof($val)) for val in vals]...))
+                             return $name{U}($(vals...))
+                         end
                      end
                      function Base.broadcast(f::Function, u::$name{T}) where {T}
-                          let $([:($val=f(u.$val)) for val in vals]...)
-                              U = typejoin($([:(typeof($val)) for val in vals]...))
-                              return $name{U}($(vals...))
-                          end
+                         let $([:($val=f(u.$val)) for val in vals]...)
+                             U = typejoin($([:(typeof($val)) for val in vals]...))
+                             return $name{U}($(vals...))
+                         end
                      end
                      function Base.broadcast(f::Function, uu::Vararg{$name{T}}) where {T}
-                          let $([:($val=f([u.$val for u in uu]...)) for val in vals]...)
-                              U = typejoin($([:(typeof($val)) for val in vals]...))
-                              return $name{U}($(vals...))
-                          end
-                      end
-                      Base.:+(a::$name{T}) where {T} = a
-                      Base.:-(a::$name{T}) where {T} = begin
-                          return $name{T}($([:(-a.$val) for val in vals]...))
-                      end
-                      function Base.:+(a::$name{T}, b::$name{S}) where {T,S}
-                          U = typejoin(T, S)
-                          return $name{U}($([:(a.$val + b.$val) for val in vals]...))
-                      end
-                      function Base.:-(a::$name{T}, b::$name{S}) where {T,S}
-                          U = typejoin(T, S)
-                          return $name{U}($([:(a.$val - b.$val) for val in vals]...))
-                      end
+                         let $([:($val=f([u.$val for u in uu]...)) for val in vals]...)
+                             U = typejoin($([:(typeof($val)) for val in vals]...))
+                             return $name{U}($(vals...))
+                         end
+                     end
+                     Base.:+(a::$name{T}) where {T} = a
+                     Base.:-(a::$name{T}) where {T} = begin
+                         return $name{T}($([:(-a.$val) for val in vals]...))
+                     end
+                     function Base.:+(a::$name{T}, b::$name{S}) where {T,S}
+                         U = typejoin(T, S)
+                         return $name{U}($([:(a.$val + b.$val) for val in vals]...))
+                     end
+                     function Base.:-(a::$name{T}, b::$name{S}) where {T,S}
+                         U = typejoin(T, S)
+                         return $name{U}($([:(a.$val - b.$val) for val in vals]...))
+                     end
                   end))
         end
     end
