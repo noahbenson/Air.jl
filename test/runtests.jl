@@ -28,7 +28,7 @@ using Test
         for kv in pairs
             @test length(m) == n
             n += 1
-            m = assoc(m, kv[1], kv[2])
+            m = Air.assoc(m, kv[1], kv[2])
         end
         for kv in pairs
             @test haskey(m, kv[1])
@@ -41,7 +41,7 @@ using Test
         mm = m
         for k in UInt64[0b1000001, 0b100001, 1]
             @test length(mm) == n
-            mm = dissoc(mm, k)
+            mm = Air.dissoc(mm, k)
             n -= 1
             @test !haskey(mm, k)
         end
