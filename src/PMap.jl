@@ -7,6 +7,26 @@ const PMAP_KEY_T = typejoin(typeof(hash(nothing)), typeof(objectid(nothing)))
 _keysplit(k::PMAP_KEY_T) = (Int(k & 0b11111) + 1, k >> 5)
 abstract type PMap{T} <: AbstractDict{PMAP_KEY_T, T} end
 
+# make sure pmaps have a hash and equality operator that is appropriate
+_iseq(t::PMap{T}, s::AbstractDict{K,S}, eqfn::Function) where {T,K<:Integer,S} = begin
+    (length(t) == length(s)) || return false
+    for kv in s
+        v = get(t, kv, t)
+        (v === t) && return false
+        eqfn(v, kv[2]) || return false
+    end
+    return true
+end
+isequiv(t::PMap{T}, s::AbstractDict{K,S}) where {T,K<:Integer,S} = _iseq(t, s, isequiv)
+isequiv(s::AbstractDict{K,S}, t::PMap{T}) where {T,K<:Integer,S} = _iseq(t, s, isequiv)
+Base.isequal(t::PMap{T}, s::AbstractDict{K,S}) where {T,K<:Integer,S} = _iseq(t, s, isequal)
+Base.isequal(s::AbstractDict{K,S}, t::PMap{T}) where {T,K<:Integer,S} = _iseq(t, s, isequal)
+equivhash(t::PMap{T}) where {T} = let h = ~hash(T)
+    for (k,v) in t
+        h += hasheq(v) * k
+    end
+    return h
+end
 # We need a type for PMap entries--they can be empty entries (not yet assigned),
 # singleton entries (a key and a value), or an antire sub-map:
 abstract type PMapNode{T} end
@@ -73,6 +93,12 @@ Base.get(m::PMap32{T}, k::PMAP_KEY_T, df) where {T} = begin
         else
             return u._val
         end
+    end
+end
+Base.in(m::PMap32{T}, kv::Pair{PMAP_KEY_T,T}) where {T} = begin
+    let k = kv[1], v = kv[2], u = get(m, k, m)
+        (u === m) && return false
+        return u == v
     end
 end
 Base.iterate(m::PMap32{T}) where {T} = begin
