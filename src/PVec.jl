@@ -36,6 +36,18 @@ Base.setindex!(u::PVec{T}, v::U, args...) where {T,U<:T} = error(
     "setindex! immutable type PVec cannot be changed")
 Base.getindex(u::PVec, k1::Integer, k2::Integer, args::Vararg{<:Integer}) =
     getindex(getindex(u, k1), k2, args...)
+_iseq(t::PVec{T}, s::AbstractArray{S,1}, eqfn::Function) where {T, S} = begin
+    (length(t) == length(s)) || return false
+    for (it,is) in zip(t, s)
+        eqfn(it, is) || return false
+    end
+    return true
+end
+isequiv(t::PVec{T}, s::AbstractArray{S,1}) where {T, S} = _iseq(t, s, iequiv)
+isequiv(s::AbstractArray{S,1}, t::PVec{T}) where {T, S} = _iseq(t, s, iequiv)
+Base.isequal(t::PVec{T}, s::AbstractArray{S,1}) where {T, S} = _iseq(t, s, isequal)
+Base.isequal(s::AbstractArray{S,1}, t::PVec{T}) where {T, S} = _iseq(t, s, isequal)
+
 #Base.getindex(u::PVec, k::Integer) = throw(BoundsError(u, [k]))
 function Base.iterate(u::PVec{T}, k::Integer)::Union{Nothing,Tuple{T,Integer}} where {T}
     if 1 <= k <= length(u)
@@ -48,7 +60,6 @@ function Base.iterate(u::PVec{T})::Union{Nothing,Tuple{T,Integer}} where {T}
     return iterate(u, 1)
 end
 Base.size(u::PVec) = (length(u),)
-#TODO: similar(::PVec)
 #TODO: axes(::PVec) (and how to handle arrays?)
 # The various persistent operations:
 dissoc(u::PVec, k) = u
@@ -101,9 +112,11 @@ struct PSubVec{T,I} <: PVec{T} where {I <: Integer}
         end
     end
     # For certain instances we can do less work...
-    function PSubVec{T,I}(u::PVec{T}, ii::StepRange{I})::PSubVec{T,I} where {T, I<:Integer}
-        let n = length(u), f = ii[1], l = ii[end]
-            if f < 1 || f > n
+    function PSubVec{T,I}(u::PVec{T}, ii::StepRange{I,J})::PSubVec{T,I} where {T, I<:Integer, J<:Integer}
+        let n = length(u), f = ii.start, l = ii.stop, s = ii.step
+            if (f > l && s > 0) || (f < l && s < 0)
+                return new(PVec0{T}(), PVec0{I}())
+            elseif f < 1 || f > n
                 throw(BoundsError(u, [f]))
             elseif l < 1 || l > n
                 throw(BoundsError(u, [l]))
@@ -113,8 +126,10 @@ struct PSubVec{T,I} <: PVec{T} where {I <: Integer}
         end
     end
     function PSubVec{T,I}(u::PVec{T}, ii::UnitRange{I})::PSubVec{T,I} where {T, I<:Integer}
-        let n = length(u), f = ii[1], l = ii[end]
-            if f < 1 || f > n
+        let n = length(u), f = ii.start, l = ii.stop
+            if f > l
+                return new(PVec0{T}(), PVec0{I}())
+            elseif f < 1 || f > n
                 throw(BoundsError(u, [f]))
             elseif l < 1 || l > n
                 throw(BoundsError(u, [l]))
@@ -128,6 +143,10 @@ Base.length(u::PSubVec) = length(u._index)
 Base.getindex(u::PSubVec{T,I}, k::Integer) where {T,I<:Integer} = u._vector[u._index[k]]
 # getindex for any pvec and slice/subarray:
 Base.getindex(u::PVec{T}, ii::AbstractArray{I,1}) where {T, I<:Integer} = PSubVec{T,I}(u, ii)
+push(u::PSubVec{T,I}, x::S) where {T, S<:T, I<:Integer} = push(PVec{T}(u), x)
+pop(u::PSubVec{T,I}) where {T, I<:Integer} = pop(PVec{T}(u))
+assoc(u::PSubVec{T,I}, x::S) where {T, S<:T, I<:Integer} = assoc(PVec{T}(u), x)
+dissoc(u::PSubVec{T,I}, k::J) where {T, I<:Integer, J<:Integer} = dissoc(PVec{T}(u), x)
 
 ################################################################################
 # #PSmallVec
@@ -143,6 +162,7 @@ PVec0{T}(u::Vector{T}) where {T} = PVec0{T}()
 # basic functions for the empty PVec:
 Base.length(::PVec0) = 0
 Base.size(::PVec0) = _PVEC0_SIZE
+Base.in(::PVec0, x) = false
 push(::PVec0{T}, x::S) where {T, S<:T} = PVec1{T}(x)
 pop(e::PVec0) = e
 assoc(::PVec0{T}, ::Type{Val{1}}, v::S) where {T, S<:T} = PVec1{T}(v)
@@ -178,7 +198,24 @@ macro psmallvectype(name::Symbol, n, lname::Symbol, uname::Symbol)
             $([:(_pvec_getindex($(esc(:x))::$(esc(name)), ::$(esc(:(Base.Type))){$(esc(:(Base.Val))){Int($k)}}) = $(esc(:(x.$(vals[k]))))) for k in 1:n]...)
             $(esc(:(Base.getindex)))(x::$(esc(name)), ii::Integer) = _pvec_getindex(x, $(esc(:(Base.Val))){Int(ii)})
             $(esc(:(Base.length)))(x::$(esc(name))) = $n
-
+            # The in operator...
+            $(esc(:(
+                Base.in(u::$name{T}, x::S) where {T, S<:T} = begin
+                    $([:(if x == u.$val return true end) for val in vals]...)
+                    return false
+                end)))
+            # equality and equivalence
+            #$(esc(:(
+            _iseq(t::$name{T}, s::$name{S}, eqfn::Function) where {S,T} = begin
+                $([:(eqfn(t.$val, s.$val) || return false) for val in vals]...)
+                return true
+            end
+            _iseq(t::$name{T}, s::AbstractArray{S,1}, eqfn::Function) where {S,T} = begin
+                $([:(eqfn(t.$val, s[$ii]) || return false) for (ii,val) in enumerate(vals)]...)
+            end
+            equivhash(t::$name{T}) where {T} = let h = hash(T)
+                $([:(h += hasheq(t.$val) * $k) for (k,val) in enumerate(vals)]...)
+            end
             # Arithmetic operatrs
             $(esc(quote
                      function Base.map(f::Function, u::$name{T}) where {T}
@@ -287,6 +324,12 @@ Base.getindex(u::PBigVec{T}, k::Integer) where {T, P<:PVec} = begin
     let (k1,k2) = _pbigvec_iisplit(k)
         return u._elements[k1][k2]
     end
+end
+Base.in(u::PBigVec{T}, x::S) where {T, S<:T} = begin
+    for y in u._elements
+        if x in u return true end
+    end
+    return false
 end
 push(u::PBigVec{T}, v::S) where {T, S<:T} = begin
     let n0 = length(u), n = n0+1, (k1,k2) = _pbigvec_iisplit(n)
