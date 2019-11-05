@@ -402,3 +402,59 @@ equivalent rather than equal. By default, for a structure
 type, all 
 """
 isequiv(t::T, s::S) where {T, S} = _isequiv(mutability(T), mutability(S), t, s)
+
+_hasheq(::Type, x) = objectid(x)
+_hasheq(::Immutable, x::T) where {T} = let h = hash(x)
+    isbitstype(T) && return h
+    # call isequiv on each of the fields
+    let n = nfields(x)
+        n == 0 && return h
+        for k in 1:n
+            isdefined(x, k) || continue
+            h += equivhash((~k) * getfield(x, k))
+        end
+        return h
+    end
+end
+"""
+    equivhash(x)
+Yields a hash value appropriate for the isequiv() equality
+function. Generally, the hasheq of an immutable object is
+its hash; the equivhash of any other object is its objectid.
+"""
+equivhash(x::T) where {T} = _hasheq(mutability(T), x)
+
+"""
+    equalfn(x)
+If x is an object (such as a PSet or Dict) that has an opinion about equality,
+equalfn(x) returns the function that it uses.
+"""
+equalfn(x::Type{Dict}) = isequal
+equalfn(x::Type{Set}) = isequal
+equalfn(x::Type{IdDict}) = (===)
+equalfn(x::Type{Base.IdSet}) = (===)
+equalfn(x::Dict) = isequal
+equalfn(x::Set) = isequal
+equalfn(x::IdDict) = (===)
+equalfn(x::Base.IdSet) = (===)
+"""
+    hashfn(x)
+If x is an object (such as a PSet or Dict) that has an opinion about how it
+hashes objects, hashfn(x) returns the function that it uses.
+"""
+hashfn(x::Type{Dict}) = hashcode
+hashfn(x::Type{IdDict}) = objectid
+hashfn(x::Type{Set}) = hashcode
+hashfn(x::Type{Base.IdSet}) = objectid
+hashfn(x::Dict) = hashcode
+hashfn(x::IdDict) = objectid
+hashfn(x::Set) = hashcode
+hashfn(x::Base.IdSet) = objectid
+
+# equalfn and hashfn can also be used on their respective functions
+equalfn(::typeof(objectid))  = (===)
+equalfn(::typeof(equivhash)) = isequiv
+equalfn(::typeof(hash))      = isequal
+hashfn(::typeof(===))     = objectid
+hashfn(::typeof(isequiv)) = equivhash
+hashfn(::typeof(isequal)) = hashcode
