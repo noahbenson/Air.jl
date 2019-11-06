@@ -111,11 +111,21 @@ Base.in(x::S, u::PVECSETS{T}, eqfn::Function) where {T, S<:T} = begin
     return false
 end
 Base.in(x::S, u::PVECSETS{T}) where {T, S<:T} = in(u, x, equalfn(u))
-push(u::PVECSETS{T}, x::S) where {T,S<:T} = let U = typeof(u)
+"""
+    conj(set, x)
+Yields the set that is formed of the given set conjoined with
+the object x.
+"""
+conj(u::PVECSETS{T}, x::S) where {T,S<:T} = let U = typeof(u)
     (x in u) && return u
     return U(push(convert(PVec{T}, u), x))
 end
-dissoc(u::PVECSETS{T}, x::S) where {T, S<:T} = begin
+"""
+    disj(set, x)
+Yields the set that is formed of the given set disjoined from
+the object x.
+"""
+disj(u::PVECSETS{T}, x::S) where {T, S<:T} = begin
     let k, eq = equalfn(u), v = convert(PVec{T}, u), U = typeof(u)
         for (k,y) in enumerate(v)
             eq(y, x) && return U(PVec{T}(vcat(v[1:k-1], v[k+1:end])))
@@ -126,14 +136,14 @@ end
 _pset_init(u0::PSet{T}, arr::AbstractArray{S, 1}) where {T,S<:T} = let u = u0
     for a in arr
         (a in u0) && continue
-        u = push(u, a)
+        u = conj(u, a)
     end
     return u
 end
 _pset_init(u0::PSet{T}, s::AbstractSet{S}) where {T,S<:T} = let u = u0
     for a in s
         (a in u0) && continue
-        u = push(u, a)
+        u = conj(u, a)
     end
     return u
 end
@@ -210,8 +220,8 @@ Base.in(x::S, u::PHASHSETS{T}, eqfn::Function) where {T, S<:T} = begin
         return in(x, ys, eqfn)
     end
 end
-Base.in(x::S, u::PHASHSETS{T}) where {T, S<:T} = in(u, x, equalfn(u))
-push(u::PHASHSETS{T}, x::S) where {T, S<:T} = begin
+Base.in(x::S, u::PHASHSETS{T}) where {T, S<:T} = in(x, u, equalfn(u))
+conj(u::PHASHSETS{T}, x::S) where {T, S<:T} = begin
     let U = typeof(u), t = convert(PMap{PSet{T}}, u), eq = equalfn(u),
         h = UInt(hashfn(u)(x)), v = get(t, h, t)
         if v === t
@@ -223,7 +233,7 @@ push(u::PHASHSETS{T}, x::S) where {T, S<:T} = begin
         end
     end
 end
-dissoc(u::PHASHSETS{T}, x::S) where {T, S<:T} = begin
+disj(u::PHASHSETS{T}, x::S) where {T, S<:T} = begin
     let U = typeof(u), t = convert(PMap{PSet{T}}, u), eq = equalfn(u),
         h = UInt(hashfn(u)(x)), v = get(t, h, t)
         if v === t
@@ -272,4 +282,36 @@ PIdSet{T}(s::AbstractArray{S,1}) where {T, S<:T} = PIdHashSet{T}(s)
 PEqualSet{T}() where {T} = PEqualHashSet{T}()
 PEqualSet{T}(s::AbstractSet{S}) where {T, S<:T} = PEqualHashSet{T}(s)
 PEqualSet{T}(s::AbstractArray{S,1}) where {T, S<:T} = PEqualHashSet{T}(s)
+
+_pset_construct(PS::Type, s::AbstractArray{T,1}) where {T} = begin
+    let U = typejoin(map(typeof, s)...)
+        return PS{U}(U[s...])
+    end
+end
+_pset_construct(PS::Type, s::AbstractSet{T}) where {T} = begin
+    let U = typejoin([typeof(u) for u in s]...)
+        return PS{U}(U[s...])
+    end
+end
+PVectorSet(s::AbstractArray{T,1})      where {T} = _pset_construct(PVectorSet, s)
+PIdVectorSet(s::AbstractArray{T,1})    where {T} = _pset_construct(PIdVectorSet, s)
+PEqualVectorSet(s::AbstractArray{T,1}) where {T} = _pset_construct(PEqualVectorSet, s)
+PHashSet(s::AbstractArray{T,1})      where {T} = _pset_construct(PHashSet, s)
+PIdHashSet(s::AbstractArray{T,1})    where {T} = _pset_construct(PIdHashSet, s)
+PEqualHashSet(s::AbstractArray{T,1}) where {T} = _pset_construct(PEqualHashSet, s)
+PSet(s::AbstractArray{T,1})      where {T} = _pset_construct(PHashSet, s)
+PIdSet(s::AbstractArray{T,1})    where {T} = _pset_construct(PIdHashSet, s)
+PEqualSet(s::AbstractArray{T,1}) where {T} = _pset_construct(PEqualHashSet, s)
+
+PVectorSet(s::AbstractSet{T})      where {T} = _pset_construct(PVectorSet, s)
+PIdVectorSet(s::AbstractSet{T})    where {T} = _pset_construct(PIdVectorSet, s)
+PEqualVectorSet(s::AbstractSet{T}) where {T} = _pset_construct(PEqualVectorSet, s)
+PHashSet(s::AbstractSet{T})      where {T} = _pset_construct(PHashSet, s)
+PIdHashSet(s::AbstractSet{T})    where {T} = _pset_construct(PIdHashSet, s)
+PEqualHashSet(s::AbstractSet{T}) where {T} = _pset_construct(PEqualHashSet, s)
+PSet(s::AbstractSet{T})      where {T} = _pset_construct(PHashSet, s)
+PIdSet(s::AbstractSet{T})    where {T} = _pset_construct(PIdHashSet, s)
+PEqualSet(s::AbstractSet{T}) where {T} = _pset_construct(PEqualHashSet, s)
+
+
 
