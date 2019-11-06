@@ -334,7 +334,7 @@ end
 push(u::PBigVec{T}, v::S) where {T, S<:T} = begin
     let n0 = length(u), n = n0+1, (k1,k2) = _pbigvec_iisplit(n)
         return PBigVec{T}(n,
-                          k1 > n0
+                          k1 > length(u._elements)
                           ? push(u._elements, PVec1{T}(v))
                           : assoc(u._elements, k1, push(u._elements[k1], v)))
     end
