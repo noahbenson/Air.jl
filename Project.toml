@@ -1,7 +1,11 @@
 name = "Air"
 uuid = "0c3b9dc7-9fea-4423-80ce-ed7c11218d4a"
 authors = ["Noah C. Benson"]
-version = "0.1.0"
+version = "0.1.1"
+
+[deps]
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
 [compat]
 julia = "1.2"
@@ -11,6 +15,3 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
 test = ["Test"]
-
-[deps]
-Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"

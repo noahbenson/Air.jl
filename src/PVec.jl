@@ -170,93 +170,87 @@ assoc(::PVec0{T}, ::Type{Val{1}}, v::S) where {T, S<:T} = PVec1{T}(v)
 # we create other pvec types with this macro:
 abstract type PSmallVec{T} <: PVec{T} end
 macro psmallvectype(name::Symbol, n, lname::Symbol, uname::Symbol)
-    let vals = [Symbol("_element_" * @sprintf("%03d", k)) for k in 1:n]
-        return quote
+    return esc(
+        quote
             # Declare the struct:
-            struct $(esc(name)){$(esc(:T))} <: PSmallVec{$(esc(:T))}
-                $([:($(val)::$(esc(:T))) for val in vals]...)
+            struct $name{T} <: PSmallVec{T}
+                _elements::NTuple{$n, T}
             end
-            $(esc(:push))($(esc(:u))::$(esc(name)){T}, v::S) where {T, S<:T} =
+            function $name{T}(u::AbstractArray{S,1}) where {T,S<:T}
+                (length(u) >= $n) || error("wrong size given to small pvec type")
+                return $name{T}(NTuple{$n, T}(u))
+            end
+            function push(u::$name{T}, v::S) where {T, S<:T}
                 $(uname === :PBigVec
-                  ? :($(esc(uname)){T}(33, PVec2{PSmallVec{T}}($(esc(:u)), PVec1{T}(v))))
-                  : :($(esc(uname)){T}($([esc(:(u.$(vals[k]))) for k in 1:n]...), v)))
-            $(esc(:pop))($(esc(:u))::$(esc(name)){T}) where {T} = $(esc(lname))(
-                $([esc(:(u.$(vals[k]))) for k in 1:n-1]...))
-            $([esc(:(
-                _pvec_assoc(x::$name{T}, ::Base.Type{Base.Val{Int($k)}}, v::S) where {T, S<:T} = begin
-                    if x.$(vals[k]) === v
-                        return x
-                    else
-                        return $name{T}($([(kk != k ? :(x.$(vals[kk])) : :v) for kk in 1:n]...))
-                    end
-                end))
-               for k in 1:n]...)
-            $(esc(:(_pvec_assoc(x::$name{T}, ::Base.Type{Base.Val{Int($(n+1))}}, v::S) where {T, S<:T} = push(x, v))))
-            $(esc(:(assoc(u::$name{T}, ii::Integer, v::S) where {T, S<:T} = _pvec_assoc(u, Base.Val{Int(ii)}, v))))
-                                   
+                  ? :($uname{T}(33, PVec2{PSmallVec{T}}((u, PVec1{T}((v,))))))
+                  : :($uname{T}(NTuple{$(n+1),T}([u._elements..., v]))))
+            end
+            function pop(u::$name{T}) where {T}
+                return $lname{T}(u._elements[1:end-1])
+            end
+            function assoc(u::$name{T}, k::Integer, v::S) where {T, S<:T}
+                if k == $(n+1)
+                    return push(u, v)
+                elseif k > $(n+1) || k < 1
+                    throw(BoundsError(u, [k]))
+                else
+                    a = T[u._elements...]
+                    a[k] = v
+                    return $name{T}(a)
+                end
+            end
             # The getindex operator...
-            $([:(_pvec_getindex($(esc(:x))::$(esc(name)), ::$(esc(:(Base.Type))){$(esc(:(Base.Val))){Int($k)}}) = $(esc(:(x.$(vals[k]))))) for k in 1:n]...)
-            $(esc(:(Base.getindex)))(x::$(esc(name)), ii::Integer) = _pvec_getindex(x, $(esc(:(Base.Val))){Int(ii)})
-            $(esc(:(Base.length)))(x::$(esc(name))) = $n
+            function Base.getindex(u::$name{T}, k::Integer) where {T}
+                if k < 1 || k > $n
+                    throw(BoundsError(u, [k]))
+                else
+                    return u._elements[k]
+                end
+            end
+            function Base.length(u::$name{T}) where {T}
+                return $n
+            end
+            function Base.in(x::S, u::$name{T}, eqfn::Function) where {T, S<:T}
+                return in(x, u._elements, eqfn)
+            end
+            function Base.in(x::S, u::$name{T}) where {T, S<:T}
+                return in(x, u._elements)
+            end
             # The in operator...
-            $(esc(:(
-                Base.in(u::$name{T}, x::S) where {T, S<:T} = begin
-                    $([:(if x == u.$val return true end) for val in vals]...)
-                    return false
-                end)))
             # equality and equivalence
             #$(esc(:(
-            _iseq(t::$name{T}, s::$name{S}, eqfn::Function) where {S,T} = begin
-                $([:(eqfn(t.$val, s.$val) || return false) for val in vals]...)
+            function _iseq(t::$name{T}, s::$name{S}, eqfn::Function) where {S,T}
+                for (a,b) in zip(t._elements, s._elements)
+                    eqfn(a, b) || return false
+                end
                 return true
             end
-            _iseq(t::$name{T}, s::AbstractArray{S,1}, eqfn::Function) where {S,T} = begin
-                $([:(eqfn(t.$val, s[$ii]) || return false) for (ii,val) in enumerate(vals)]...)
+            function _iseq(t::$name{T}, s::AbstractArray{S,1}, eqfn::Function) where {S,T}
+                (length(s) == $n) || return false
+                for (a,b) in zip(t._elements, s)
+                    eqfn(a, b) || return false
+                end
+                return true
             end
-            equivhash(t::$name{T}) where {T} = let h = hash(T)
-                $([:(h += hasheq(t.$val) * $k) for (k,val) in enumerate(vals)]...)
+            function equivhash(t::$name{T}) where {T}
+                let h = objectid(T)
+                    for (k,x) in enumerate(t)
+                        h += equivhash(x) * k
+                    end
+                    return h
+                end
             end
             # Arithmetic operatrs
-            $(esc(quote
-                     function Base.map(f::Function, u::$name{T}) where {T}
-                         let $([:($val=f(u.$val)) for val in vals]...)
-                             U = typejoin($([:(typeof($val)) for val in vals]...))
-                             return $name{U}($(vals...))
-                         end
-                     end
-                     function Base.map(f::Function, uu::Vararg{$name{T}}) where {T}
-                         let $([:($val=f([u.$val for u in uu]...)) for val in vals]...)
-                             U = typejoin($([:(typeof($val)) for val in vals]...))
-                             return $name{U}($(vals...))
-                         end
-                     end
-                     function Base.broadcast(f::Function, u::$name{T}) where {T}
-                         let $([:($val=f(u.$val)) for val in vals]...)
-                             U = typejoin($([:(typeof($val)) for val in vals]...))
-                             return $name{U}($(vals...))
-                         end
-                     end
-                     function Base.broadcast(f::Function, uu::Vararg{$name{T}}) where {T}
-                         let $([:($val=f([u.$val for u in uu]...)) for val in vals]...)
-                             U = typejoin($([:(typeof($val)) for val in vals]...))
-                             return $name{U}($(vals...))
-                         end
-                     end
-                     Base.:+(a::$name{T}) where {T} = a
-                     Base.:-(a::$name{T}) where {T} = begin
-                         return $name{T}($([:(-a.$val) for val in vals]...))
-                     end
-                     function Base.:+(a::$name{T}, b::$name{S}) where {T,S}
-                         U = typejoin(T, S)
-                         return $name{U}($([:(a.$val + b.$val) for val in vals]...))
-                     end
-                     function Base.:-(a::$name{T}, b::$name{S}) where {T,S}
-                         U = typejoin(T, S)
-                         return $name{U}($([:(a.$val - b.$val) for val in vals]...))
-                     end
-                  end))
-        end
-    end
+            function Base.map(f::Function, u::$name{T}) where {T}
+                return $name(map(f, u._elements))
+            end
+            function Base.:+(a::$name{T}) where {T}
+                return a
+            end
+            function Base.:-(a::$name{T}) where {T}
+                return $name{T}([-x for x in a._elements])
+            end
+        end)
 end
 
 # Okay, make pvec types for 1-32:
@@ -294,18 +288,18 @@ end
 @psmallvectype PVec32 32 PVec31 PBigVec
 
 const _psmallvec_bysize = PVec32{Type}(
-    PVec1,  PVec2,  PVec3,  PVec4,  PVec5,  PVec6,
-    PVec7,  PVec8,  PVec9,  PVec10, PVec11, PVec12,
-    PVec13, PVec14, PVec15, PVec16, PVec17, PVec18,
-    PVec19, PVec20, PVec21, PVec22, PVec23, PVec24,
-    PVec25, PVec26, PVec27, PVec28, PVec29, PVec30,
-    PVec31, PVec32)
+    [PVec1,  PVec2,  PVec3,  PVec4,  PVec5,  PVec6,
+     PVec7,  PVec8,  PVec9,  PVec10, PVec11, PVec12,
+     PVec13, PVec14, PVec15, PVec16, PVec17, PVec18,
+     PVec19, PVec20, PVec21, PVec22, PVec23, PVec24,
+     PVec25, PVec26, PVec27, PVec28, PVec29, PVec30,
+     PVec31, PVec32])
 PSmallVec{T}(n::Integer, u::AbstractArray{S,1}) where {T,S<:T} = let nu = length(u)
     if     n <= 0  return PVec0{T}()
     elseif n > 32  error("PSmallVec given vector of size > 32")
     elseif n > nu  error("PSmallVec given incorrect size")
-    elseif n == nu return _psmallvec_bysize[n]{T}(u...)
-    else           return _psmallvec_bysize[n]{T}(u[1:n]...)
+    elseif n == nu return _psmallvec_bysize[n]{T}(u)
+    else           return _psmallvec_bysize[n]{T}(u[1:n])
     end
 end
 PSmallVec{T}(u::AbstractArray{S,1}) where {T,S<:T} = PSmallVec{T}(length(u), u)
@@ -359,7 +353,7 @@ end
 PVec{T}(u::AbstractArray{S,1}) where {T,S<:T} = let n = length(u)
     if typeof(u) <: PVec  return u
     elseif n <= 0  return PVec0{T}()
-    elseif n <= 32 return _psmallvec_bysize[n]{T}(u[1:n]...)
+    elseif n <= 32 return _psmallvec_bysize[n]{T}(NTuple{n,T}(u))
     else
         let parts = [PSmallVec{T}(u[ii:min(ii+32-1, n)]) for ii in 1:32:n]
             return PBigVec{T}(n, PVec{PSmallVec{T}}(parts))

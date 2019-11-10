@@ -1,7 +1,10 @@
 using Air
 using Test
+using Random.Random
 
 @testset "Air.jl" begin
+
+    # #PVec and #PMap, simple tests ############################################
     @testset "PVec" begin
         # Some simple tests of the basic functions for PVec's:
         u = Air.PVec(1:100)
@@ -44,6 +47,41 @@ using Test
             mm = Air.dissoc(mm, k)
             n -= 1
             @test !haskey(mm, k)
+        end
+    end
+
+    # #PSet ####################################################################
+    function compare_test(p::Air.PSet{T}, s::AbstractSet{T}, ks::AbstractArray{T,1},
+                          n::Integer) where {T}
+        let k, q, pd = [:push, :delete], ks = collect(ks)
+            for i in 1:n
+                k = rand(ks)
+                q = rand(pd)
+                if q == :push
+                    p = Air.push(p, k)
+                    push!(s, k)
+                else
+                    p = Air.delete(p, k)
+                    delete!(s, k)
+                end
+                @test length(p) == length(s)
+                @test (k in p) == (k in s)
+                @test isequal(p, s)
+            end
+        end
+    end
+    let syms = [:a, :b, :c, :d, :e, :f, :g, :h, :i, :j], n = 100
+        @testset "PIdSet" begin
+            compare_test(Air.PIdSet{Symbol}(), Base.IdSet{Symbol}(), syms, n)
+            compare_test(Air.PIdSet{Symbol}([:b, :d, :e]), Base.IdSet{Symbol}([:b, :d, :e]), syms, n)
+        end
+        @testset "PSet" begin
+            compare_test(Air.PSet{Symbol}(), Air.EquivSet{Symbol}(), syms, n)
+            compare_test(Air.PSet{Symbol}([:b, :d, :e]), Air.EquivSet{Symbol}([:b, :d, :e]), syms, n)
+        end
+        @testset "PEqualSet" begin
+            compare_test(Air.PEqualSet{Symbol}(), Set{Symbol}(), syms, n)
+            compare_test(Air.PEqualSet{Symbol}([:b, :d, :e]), Set{Symbol}([:b, :d, :e]), syms, n)
         end
     end
 end

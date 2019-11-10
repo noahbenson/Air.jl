@@ -21,9 +21,9 @@ isequiv(t::PMap{T}, s::AbstractDict{K,S}) where {T,K<:Integer,S} = _iseq(t, s, i
 isequiv(s::AbstractDict{K,S}, t::PMap{T}) where {T,K<:Integer,S} = _iseq(t, s, isequiv)
 Base.isequal(t::PMap{T}, s::AbstractDict{K,S}) where {T,K<:Integer,S} = _iseq(t, s, isequal)
 Base.isequal(s::AbstractDict{K,S}, t::PMap{T}) where {T,K<:Integer,S} = _iseq(t, s, isequal)
-equivhash(t::PMap{T}) where {T} = let h = ~hash(T)
+equivhash(t::PMap{T}) where {T} = let h = objectid(T)
     for (k,v) in t
-        h += hasheq(v) * k
+        h += equivhash(v) * (k + 31)
     end
     return h
 end
@@ -73,7 +73,7 @@ dissoc(m::PMap0, k::PMAP_KEY_T) = m
 assoc(m::PMap0{T}, k::PMAP_KEY_T, v::S) where {T, S<:T} = begin
     let ee = PMapEmptyNode{T}(), ar = PMapNode{T}[ee for x in 1:32], (k1,k2) = _keysplit(k)
         ar[k1] = PMapSingleNode{T}(k, v)
-        return PMap32{T}(1, PVec32{PMapNode{T}}(ar...))
+        return PMap32{T}(1, PVec32{PMapNode{T}}(ar))
     end
 end
 
@@ -95,7 +95,7 @@ Base.get(m::PMap32{T}, k::PMAP_KEY_T, df) where {T} = begin
         end
     end
 end
-Base.in(m::PMap32{T}, kv::Pair{PMAP_KEY_T,T}) where {T} = begin
+Base.in(kv::Pair{PMAP_KEY_T,T}, m::PMap32{T}) where {T} = begin
     let k = kv[1], v = kv[2], u = get(m, k, m)
         (u === m) && return false
         return u == v
@@ -192,20 +192,157 @@ dissoc(m::PMap32{T}, k::PMAP_KEY_T) where {T} = begin
     end
 end
 
-# Constructors
-PMap(kvs::Vararg{Union{Tuple{PMAP_KEY_T,S},Pair{PMAP_KEY_T,S}}}) where {S} = begin
-    let m0 = PMap0{S}(), m = m0
-        for kv in kvs
-            m = assoc(m, kv[1], kv[2])
+
+################################################################################
+# Transients
+
+mutable struct TMap{T} <: AbstractDict{PMAP_KEY_T, T}
+    _n::Int
+    _data::Array{PMapNode{T}, 1}
+end
+struct TMapSubmapNode{T} <: PMapNode{T}
+    _map::TMap{T}
+end
+TMap{T}() where {T} = let q = PMapEmptyNode{T}()
+    return TMap{T}(0, PMapNode{T}[q for i in 1:32])
+end
+TMap{T}(::PMap0{T}) where {T} = let q = PMapEmptyNode{T}()
+    return TMap{T}(0, PMapNode{T}[q for i in 1:32])
+end
+TMap{T}(m::PMap32{T}) where {T} = TMap{T}(m._n, PMapNode{T}[u for u in m._data])
+Base.length(t::TMap) = t._n
+Base.get(m::TMap{T}, k::PMAP_KEY_T, df) where {T} = begin
+    let (k1,k2) = _keysplit(k), u = m._data[k1]
+        if isa(u, PMapEmptyNode{T})
+            return df
+        elseif isa(u, PMapSubmapNode{T})
+            return get(u._map, k2, df)
+        elseif isa(u, TMapSubmapNode{T})
+            return get(u._map, k2, df)
+        elseif k != u._key
+            return df
+        else
+            return u._val
         end
+    end
+end
+Base.in(m::TMap{T}, kv::Pair{PMAP_KEY_T,T}) where {T} = begin
+    let k = kv[1], v = kv[2], u = get(m, k, m)
+        (u === m) && return false
+        return u == v
+    end
+end
+Base.iterate(m::TMap{T}) where {T} = begin
+    for (k,v) in enumerate(m._data)
+        if isa(v, PMapEmptyNode{T})
+            continue
+        elseif isa(v, Union{PMapSubmapNode{T}, TMapSubmapNode{T}})
+            let (x,st) = iterate(v._map), kk = (x[1] << 5) | (k - 1)
+                return (Pair{PMAP_KEY_T,T}(kk, x[2]), (k, st...))
+            end
+        else
+            return (Pair{PMAP_KEY_T,T}(v._key, v._val), (k+1,))
+        end
+    end
+end
+Base.iterate(m::TMap{T}, st::Tuple) where {T} = begin
+    if length(st) == 0
+        return iterate(m)
+    else
+        let k1 = st[1]
+            for k in k1:32
+                let u = m._data[k]
+                    if isa(u, PMapEmptyNode{T})
+                        continue
+                    elseif isa(u, Union{PMapSubmapNode{T}, TMapSubmapNode{T}})
+                        let it = (k == k1 ? iterate(u._map, st[2:end]) : iterate(u._map))
+                            if it === nothing
+                                continue
+                            else
+                                let kv = it[1], kk = (kv[1] << 5) | (k - 1)
+                                    return (Pair{PMAP_KEY_T,T}(kk, kv[2]), (k, it[2]...))
+                                end
+                            end
+                        end
+                    else
+                        return (Pair{PMAP_KEY_T,T}(u._key, u._val), (k+1,))
+                    end
+                end
+            end
+        end
+    end
+    return nothing
+end
+Base.setindex!(m::TMap{T}, v::S, k::PMAP_KEY_T) where {T, S<:T} = begin
+    let (k1,k2) = _keysplit(k), u = m._data[k1], n0
+        if isa(u, PMapEmptyNode{T})
+            m._data[k1] = PMapSingleNode{T}(k, v)
+            m._n += 1
+            return v
+        elseif isa(u, PMapSingleNode{T})
+            if k != u._key
+                let tm = TMap{T}()
+                    tm[u._key >> 5] = u._val
+                    m._data[k1] = u = TMapSubmapNode{T}(tm)
+                end
+            elseif v == u._val
+                return u._val
+            else
+                m._data[k1] = PMapSingleNode{T}(k, v)
+                return v
+            end
+        elseif isa(u, PMapSubmapNode{T})
+            m._data[k1] = u = TMapSubmapNode{T}(TMap{T}(u._map))
+        end
+        # if we reach this point, u is the (possibly) new submap and v needs adding
+        n0 = u._map._n
+        u._map[k2] = v
+        m._n += (u._map._n - n0)
+        return v
+    end
+end
+Base.delete!(m::TMap{T}, k::PMAP_KEY_T) where {T} = begin
+    let (k1,k2) = _keysplit(k), u = m._data[k1], n0
+        if isa(u, PMapEmptyNode{T})
+            return m
+        elseif isa(u, PMapSingleNode{T})
+            if u._key == k
+                m._data[k1] = PMapEmptyNode{T}()
+                m._n -= 1
+            end 
+            return m
+        elseif isa(u, PMapSubmapNode{T})
+            m._data[k1] = u = TMapSubmapNode{T}(TMap{T}(u._map))
+        end
+        n0 = u._map._n
+        delete!(u._map, k2)
+        m._n -= (n0 - u._map._n)
         return m
+    end
+end
+
+thaw(m::PMap{T}) where {T} = TMap{T}(m)
+freeze(m::TMap{T}) where {T} = let ar = PMapNode{T}[freeze(u) for u in m._data]
+    PMap32{T}(m._n, PVec32{PMapNode{T}}(ar))
+end
+freeze(m::TMapSubmapNode{T}) where {T} = PMapSubmapNode{T}(freeze(m._map))
+
+# Constructors
+PMap{T}(m::TMap{T}) where {T} = freeze(m)
+PMap(kvs::Vararg{Union{Tuple{PMAP_KEY_T,S},Pair{PMAP_KEY_T,S}}}) where {S} = begin
+    let m0 = TMap{S}(), m = m0
+        for kv in kvs
+            m[kv[1]] = kv[2]
+        end
+        return PMap{T}(m)
     end
 end
 PMap{T}(kvs::Vararg{Union{Tuple{PMAP_KEY_T,S},Pair{PMAP_KEY_T,S}}}) where {T,S<:T} = begin
-    let m0 = PMap0{T}(), m = m0
+    let m = TMap{T}()
         for kv in kvs
-            m = assoc(m, kv[1], kv[2])
+            m[kv[1]] = kv[2]
         end
-        return m
+        return PMap{T}(m)
     end
 end
+

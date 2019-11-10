@@ -160,7 +160,7 @@ Yields x if x is immutable or a shallow immutable copy of x if x is not
 immutable. If x is of a non-immutable type that has not overloaded the freeze()
 method, then an error is raised.
 """
-freeze(x) = _freeze(mutability(x), x)
+freeze(x::T) where {T} = _freeze(mutability(T), x)
 
 """
     deepfreeze(x)
@@ -360,8 +360,10 @@ Yields deepthaw(deepcopy(x)).
 """
 deepthawcopy(x) = deepthaw(deepcopy(x))
 
+# isequiv should always default to ===
 _isequiv(::Type, ::Type, t, s) = (t === s)
-_isequiv(::Immutable, ::Immutable, t, s) = isequal(t, s)
+# but for two objects of the same type, we can also check if all the
+# equivalent fields are equivalent.
 _isequiv(::Immutable, ::Immutable, t::T, s::T) where {T} = begin
     t === s && return true
     isbitstype(T) && return isequal(t, s)
@@ -369,17 +371,10 @@ _isequiv(::Immutable, ::Immutable, t::T, s::T) where {T} = begin
     let n = nfields(t)
         n == 0 && return isequal(t, s)
         for k in 1:n
-            if !isdefined(t, k)
-                if isdefined(s, k)
-                    return false
-                end
-            elseif !isdefined(s, k)
-                return false
-            elseif !isequiv(getfield(t,k), getfield(s,k))
-                return false
-            end
+            (isdefined(t,k) != isdefined(s,k)) && return false
+            !isequiv(getfield(t,k), getfield(s,k)) && return false
         end
-        # All fields are equivalent, so return false
+        # All fields are equivalent, so return true
         return true
     end
 end
@@ -404,14 +399,14 @@ type, all
 isequiv(t::T, s::S) where {T, S} = _isequiv(mutability(T), mutability(S), t, s)
 
 _hasheq(::Type, x) = objectid(x)
-_hasheq(::Immutable, x::T) where {T} = let h = hash(x)
-    isbitstype(T) && return h
+_hasheq(::Immutable, x::T) where {T} = begin
+    isbitstype(T) && return objectid(x)
     # call isequiv on each of the fields
-    let n = nfields(x)
-        n == 0 && return h
+    let n = nfields(x), h = objectid(T) + 41
+        n == 0 && return objectid(x)
         for k in 1:n
             isdefined(x, k) || continue
-            h += equivhash((~k) * getfield(x, k))
+            h += (~k) * equivhash(getfield(x, k))
         end
         return h
     end
@@ -433,6 +428,10 @@ equalfn(x::Type{Dict}) = isequal
 equalfn(x::Type{Set}) = isequal
 equalfn(x::Type{IdDict}) = (===)
 equalfn(x::Type{Base.IdSet}) = (===)
+equalfn(x::Type{Dict{K,V}}) where {K,V} = isequal
+equalfn(x::Type{Set{T}}) where {T} = isequal
+equalfn(x::Type{IdDict{K,V}}) where {K,V} = (===)
+equalfn(x::Type{Base.IdSet{T}}) where {T} = (===)
 equalfn(x::Dict) = isequal
 equalfn(x::Set) = isequal
 equalfn(x::IdDict) = (===)
@@ -446,6 +445,10 @@ hashfn(x::Type{Dict}) = hashcode
 hashfn(x::Type{IdDict}) = objectid
 hashfn(x::Type{Set}) = hashcode
 hashfn(x::Type{Base.IdSet}) = objectid
+hashfn(x::Type{Dict{K,V}}) where {K,V} = hashcode
+hashfn(x::Type{Set{T}}) where {T} = hashcode
+hashfn(x::Type{IdDict{K,V}}) where {K,V} = objectid
+hashfn(x::Type{Base.IdSet{T}}) where {T} = objectid
 hashfn(x::Dict) = hashcode
 hashfn(x::IdDict) = objectid
 hashfn(x::Set) = hashcode
