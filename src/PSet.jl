@@ -57,8 +57,28 @@ Base.iterate(s::EquivSet{T}, it) where {T} = let u = iterate(s.set, it)
     (u === nothing) && return nothing
     return (u[1].object, u[2])
 end
-Base.push!(s::EquivSet{T}, x::S) where {T, S<:T} = push!(s.set, EquivRef{T}(x))
-Base.delete!(s::EquivSet{T}, x::S) where {T, S<:T} = delete!(s.set, EquivRef{T}(x))
+Base.push!(s::EquivSet{T}, x::S) where {T, S<:T} = begin
+    push!(s.set, EquivRef{T}(x))
+    return s
+end
+Base.delete!(s::EquivSet{T}, x::S) where {T, S<:T} = begin
+    delete!(s.set, EquivRef{T}(x))
+    return s
+end
+Base.show(io::IO, m::MIME"text/plain", s::EquivSet{T}) where {T} = begin
+    print(io, "EquivSet(")
+    (T === Any) || print(io, repr(m, T))
+    let ii = 1, st = iterate(s)
+        while st !== nothing && ii < 20
+            (ii > 1) && print(io, ", ")
+            print(io, repr(m, st[1].object))
+            st = iterate(s, st[2])
+            ii += 1
+        end
+    end
+    (st === nothing) || print(io, " ...")
+    print(io, "])")
+end
 equalfn(::Type{EquivSet}) = isequiv
 equalfn(::Type{EquivSet{T}}) where {T} = isequiv
 hashfn(::Type{EquivSet}) = equivhash
@@ -66,7 +86,6 @@ hashfn(::Type{EquivSet{T}}) where {T} = equivhash
         
 
 # Okay, now declare the persistent types:
-
 abstract type PSet{T} <: AbstractSet{T} end
 """
     PIdSet{T}
@@ -190,7 +209,6 @@ struct PVectorSet{T} <: PEquivSet{T}
         end
     end
     PVectorSet{T}(u::AbstractArray{S,1}) where {T,S<:T} = new{T}(PVec{T}(T[EquivSet{T}(u)...]))
-    PVectorSet{T}(u::PVec{T}) where {T} = new{T}(u)
 end
 const PVECSETS = (Union{PIdVectorSet{T}, PEqualVectorSet{T}, PVectorSet{T}} where {T})
 Base.convert(::Type{PVec{T}}, u::PVectorSet{T}) where {T} = u._items
@@ -276,12 +294,6 @@ _phashset_type(::Type{PEqualVectorSet}) = PEqualHashSet
 _phashset_type(::Type{PVectorSet{T}}) where {T} = PHashSet{T}
 _phashset_type(::Type{PIdVectorSet{T}}) where {T} = PIdHashSet{T}
 _phashset_type(::Type{PEqualVectorSet{T}}) where {T} = PEqualHashSet{T}
-_phashset_type(::Type{PVectorSet}) = PHashSet
-_phashset_type(::Type{PIdVectorSet}) = PIdHashSet
-_phashset_type(::Type{PEqualVectorSet}) = PEqualHashSet
-_phashset_type(::Type{PVectorSet{T}}) where {T} = PHashSet{T}
-_phashset_type(::Type{PIdVectorSet{T}}) where {T} = PIdHashSet{T}
-_phashset_type(::Type{PEqualVectorSet{T}}) where {T} = PEqualHashSet{T}
 _phashset_type(::Type{PHashSet}) = PHashSet
 _phashset_type(::Type{PIdHashSet}) = PIdHashSet
 _phashset_type(::Type{PEqualHashSet}) = PEqualHashSet
@@ -312,7 +324,11 @@ _pset_init(P::DataType, arr::AbstractArray{S,1}) where {S} = begin
         return P(length(u), freeze(u))
     end
 end
-_pset_init(P::DataType, s::AbstractSet{S}) where {T,S<:T} = _pset_init(P, Array(s))
+_pset_init(P::DataType, s::AbstractSet{S}) where {S} = begin
+    let P = (isa(P, UnionAll) ? P{S} : P), T = P.parameters[1]
+        return _pset_init(P, T[s...])
+    end
+end
 # PHash type methods:
 const PHASHSETS = (Union{PHashSet{T}, PIdHashSet{T}, PEqualHashSet{T}} where {T})
 Base.convert(::Type{PMap{PSet{T}}}, u::PHashSet{T}) where {T} = u._table
