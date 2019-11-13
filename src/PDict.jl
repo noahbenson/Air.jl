@@ -405,7 +405,7 @@ end
 Base.in(x::Pair{KK,VV}, u::PHASHDICTS{K,V}, eqfn::Function) where {K,V,KK<:K,VV<:V} = begin
     let h = UInt(hashfn(u)(x[1])), t = convert(PMap{PSet{Pair{K,V}}}, u), ys = get(t, h, nothing)
         (ys === nothing) && return false
-        return in(x, ys, eqfn)
+        return in(Pair{K,V}(x[1],x[2]), ys, eqfn)
     end
 end
 Base.in(x::Pair{KK,VV}, u::PHASHDICTS{K,V}) where {K,V,KK<:K,VV<:V} = in(x, u, equalfn(u))
