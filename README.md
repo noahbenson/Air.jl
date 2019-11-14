@@ -22,8 +22,14 @@ Scala.
 
 * Persistent data structures:
   * `PArray`, a persistent array type that mimics Julia's native `Array`
+    * (This isn't finished, but see the `PVec` type for simple immutable
+      1D vectors with O(log n) insert/delete/append.)
   * `PDict`, a persistent dictionary type that mimics Julia's native `Dict`
-  * `PSeq`, a persistent sequence/list that supports lazy iteration
+    * (**This is implemented! I'm still working on performance for insert and
+       delete operations, but The `PDict` type supports lookup with comparable
+       speed to Julia's native `Dict` type.**)
+  * `PSet`, a persistent set type.
+    * (**This is also working! See the `PSet` type.**)
   * `LDict`, a persistent lazy dictionary type
 * Multi-threading utilities, inspired by Clojure
   * Thread-safe `Delay` and `Promise` types
