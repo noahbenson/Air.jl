@@ -194,9 +194,9 @@ macro psmallvectype(name::Symbol, n, lname::Symbol, uname::Symbol)
                 elseif k > $(n+1) || k < 1
                     throw(BoundsError(u, [k]))
                 else
-                    a = T[u._elements...]
+                    a = collect(T, u._elements)
                     a[k] = v
-                    return $name{T}(a)
+                    return $name{T}(NTuple{$n, T}(a))
                 end
             end
             # The getindex operator...
@@ -306,7 +306,7 @@ PSmallVec{T}(u::AbstractArray{S,1}) where {T,S<:T} = PSmallVec{T}(length(u), u)
 
 # next we need vectors that can be composed of smaller vectors...
 struct PBigVec{T} <: PVec{T}
-    _n::Integer
+    _n::Int
     _elements::PVec{PSmallVec{T}}
 end
 _pbigvec_iisplit(ii::Integer) = let kk=ii-1
