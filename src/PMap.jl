@@ -5,7 +5,28 @@
 
 const PMAP_KEY_T = typejoin(typeof(hash(nothing)), typeof(objectid(nothing)))
 _keysplit(k::PMAP_KEY_T) = (Int(k & 0b11111) + 1, k >> 5)
-abstract type PMap{T} <: AbstractDict{PMAP_KEY_T, T} end
+
+# We need a type for PMap entries--they can be empty entries (not yet assigned),
+# singleton entries (a key and a value), or an antire sub-map:
+abstract type PMapNode{T} end
+struct PMap{T} <: AbstractDict{PMAP_KEY_T, T}
+    _n::Int
+    _data::PVec32{PMapNode{T}}
+end
+struct PMapEmptyNode{T} <: PMapNode{T} end
+struct PMapSubmapNode{T} <: PMapNode{T}
+    _map::PMap{T}
+end
+struct PMapSingleNode{T} <: PMapNode{T}
+    _key::PMAP_KEY_T
+    _val::T
+end
+PMapSingleNode{T}(p::Pair{PMAP_KEY_T,S}) where {T,S<:T} = PMapSingleNode{T}(p[1], p[2])
+# A few handy methods for the above:
+Base.length(::PMapEmptyNode{T}) where {T} = 0
+Base.length(::PMapSingleNode{T}) where {T} = 1
+Base.length(n::PMapSubmapNode{T}) where {T} = length(n._map)
+
 
 # make sure pmaps have a hash and equality operator that is appropriate
 _iseq(t::PMap{T}, s::AbstractDict{K,S}, eqfn::Function) where {T,K<:Integer,S} = begin
@@ -27,18 +48,6 @@ equivhash(t::PMap{T}) where {T} = let h = objectid(T)
     end
     return h
 end
-# We need a type for PMap entries--they can be empty entries (not yet assigned),
-# singleton entries (a key and a value), or an antire sub-map:
-abstract type PMapNode{T} end
-struct PMapEmptyNode{T} <: PMapNode{T} end
-struct PMapSubmapNode{T} <: PMapNode{T}
-    _map::PMap{T}
-end
-struct PMapSingleNode{T} <: PMapNode{T}
-    _key::PMAP_KEY_T
-    _val::T
-end
-PMapSingleNode{T}(p::Pair{PMAP_KEY_T,S}) where {T,S<:T} = PMapSingleNode{T}(p[1], p[2])
 
 # How we print pmaps:
 _print_pmap(io::IO, u::PMap{T}, head::String) where {T} = begin
@@ -64,25 +73,8 @@ end
 Base.show(io::IO, ::MIME"text/plain", pv::PMap{T}) where {T} =
     _print_pmap(io, pv, "PMap")
 
-struct PMap0{T} <: PMap{T} end
-Base.length(::PMap0) = 0
-Base.get(::PMap0, k::PMAP_KEY_T, df) = df
-Base.iterate(::PMap0) = nothing
-Base.iterate(::PMap0, x) = nothing
-dissoc(m::PMap0, k::PMAP_KEY_T) = m
-assoc(m::PMap0{T}, k::PMAP_KEY_T, v::S) where {T, S<:T} = begin
-    let ee = PMapEmptyNode{T}(), ar = PMapNode{T}[ee for x in 1:32], (k1,k2) = _keysplit(k)
-        ar[k1] = PMapSingleNode{T}(k, v)
-        return PMap32{T}(1, PVec32{PMapNode{T}}(ar))
-    end
-end
-
-struct PMap32{T} <: PMap{T}
-    _n::Integer
-    _data::PVec32{PMapNode{T}}
-end
-Base.length(m::PMap32) = m._n
-Base.get(m::PMap32{T}, k::PMAP_KEY_T, df) where {T} = begin
+Base.length(m::PMap) = m._n
+Base.get(m::PMap{T}, k::PMAP_KEY_T, df) where {T} = begin
     let (k1,k2) = _keysplit(k), u = m._data[k1]
         if isa(u, PMapEmptyNode{T})
             return df
@@ -95,13 +87,13 @@ Base.get(m::PMap32{T}, k::PMAP_KEY_T, df) where {T} = begin
         end
     end
 end
-Base.in(kv::Pair{PMAP_KEY_T,T}, m::PMap32{T}) where {T} = begin
+Base.in(kv::Pair{PMAP_KEY_T,T}, m::PMap{T}) where {T} = begin
     let k = kv[1], v = kv[2], u = get(m, k, m)
         (u === m) && return false
         return u == v
     end
 end
-Base.iterate(m::PMap32{T}) where {T} = begin
+Base.iterate(m::PMap{T}) where {T} = begin
     for (k,v) in enumerate(m._data)
         if isa(v, PMapEmptyNode{T})
             continue
@@ -114,7 +106,7 @@ Base.iterate(m::PMap32{T}) where {T} = begin
         end
     end
 end
-Base.iterate(m::PMap32{T}, st::Tuple) where {T} = begin
+Base.iterate(m::PMap{T}, st::Tuple) where {T} = begin
     if length(st) == 0
         return iterate(m)
     else
@@ -142,53 +134,53 @@ Base.iterate(m::PMap32{T}, st::Tuple) where {T} = begin
     end
     return nothing
 end
-assoc(m::PMap32{T}, k::PMAP_KEY_T, v::S) where {T, S<:T} = begin
-    let (k1,k2) = _keysplit(k), u = m._data[k1], node, n = m._n
-        if isa(u, PMapEmptyNode{T})
-            n += 1
-            node = PMapSingleNode{T}(k, v)
-        elseif isa(u, PMapSubmapNode{T})
-            let nu = length(u._map), uu = assoc(u._map, k2, v)
-                (uu === u._map) && return m
-                n += length(uu) - nu
-                node = PMapSubmapNode{T}(uu)
-            end
-        elseif u._key != k
-            n += 1
-            node = assoc(assoc(PMap0{T}(), u._key >> 5, u._val), k2, v)
-            node = PMapSubmapNode{T}(node)
-        elseif u._val === v
-            return m
-        else
-            node = PMapSingleNode{T}(k, v)
-        end
-        return PMap32{T}(n, assoc(m._data, k1, node))
+assoc(u::PMapEmptyNode{T}, k::PMAP_KEY_T, v::S) where {T, S<:T} = PMapSingleNode{T}(k, v)
+assoc(u::PMapSingleNode{T}, k::PMAP_KEY_T, v::S) where {T, S<:T} = begin
+    if u._key != k
+        u = assoc(assoc(PMap{T}(), 1 + (u._key >> 5), u._val), k >> 5, v)
+        return PMapSubmapNode{T}(u)
+    elseif u._val === v
+        return u
+    else
+        return PMapSingleNode{T}(k, v)
     end
 end
-dissoc(m::PMap32{T}, k::PMAP_KEY_T) where {T} = begin
-    let (k1,k2) = _keysplit(k), u = m._data[k1], node
-        if isa(u, PMapEmptyNode{T})
+assoc(u::PMapSubmapNode{T}, k::PMAP_KEY_T, v::S) where {T, S<:T} = begin
+    let nu = length(u._map), uu = assoc(u._map, k >> 5, v)
+        return (uu === u._map ? u : PMapSubmapNode{T}(uu))
+    end
+end
+assoc(m::PMap{T}, k::PMAP_KEY_T, v::S) where {T, S<:T} = begin
+    let k1 = 1 + (k & 0x1f), u = m._data[k1], nu = length(u), uu = assoc(u, k, v)
+        if uu === u
             return m
-        elseif isa(u, PMapSubmapNode{T})
-            let uu = dissoc(u._map, k2)
-                if uu === u._map
-                    return m
-                elseif length(uu) == 0
-                    node = PMapEmptyNode{T}()
-                elseif length(uu) == 1
-                    let kv = first(uu), kk = (kv[1] << 5) | (k1 - 1)
-                        node = PMapSingleNode{T}(kk, kv[2])
-                    end
-                else
-                    node = PMapSubmapNode{T}(uu)
-                end
-            end
-        elseif u._key == k
-            node = PMapEmptyNode{T}()
         else
-            return m
+            return PMap{T}(m._n - nu + length(uu), assoc(m._data, k1, uu))
         end
-        return PMap32{T}(m._n - 1, assoc(m._data, k1, node))
+    end
+end
+dissoc(u::PMapEmptyNode{T}, k::PMAP_KEY_T) where {T} = u
+dissoc(u::PMapSingleNode{T}, k::PMAP_KEY_T) where {T} = (u._key == k ? PMapEmptyNode{T}() : u)
+dissoc(u::PMapSubmapNode{T}, k::PMAP_KEY_T) where {T} = let uu = dissoc(u._map, k >> 5)
+    if uu === u._map
+        return u
+    elseif length(uu) == 0
+        return PMapEmptyNode{T}()
+    elseif length(uu) == 1
+        let kv = first(uu), kk = (kv[1] << 5) | (k & 0x1f)
+            return PMapSingleNode{T}(kk, kv[2])
+        end
+    else
+        return PMapSubmapNode{T}(uu)
+    end
+end
+dissoc(m::PMap{T}, k::PMAP_KEY_T) where {T} = begin
+    let k1 = 1 + (k & 0x1f), u = m._data[k1], nu = length(u), uu = dissoc(u, k)
+        if uu === u
+            return m
+        else
+            return PMap{T}(m._n - nu + length(uu), assoc(m._data, k1, uu))
+        end
     end
 end
 
@@ -206,10 +198,7 @@ end
 TMap{T}() where {T} = let q = PMapEmptyNode{T}()
     return TMap{T}(0, PMapNode{T}[q for i in 1:32])
 end
-TMap{T}(::PMap0{T}) where {T} = let q = PMapEmptyNode{T}()
-    return TMap{T}(0, PMapNode{T}[q for i in 1:32])
-end
-TMap{T}(m::PMap32{T}) where {T} = TMap{T}(m._n, PMapNode{T}[u for u in m._data])
+TMap{T}(m::PMap{T}) where {T} = TMap{T}(m._n, PMapNode{T}[u for u in m._data])
 Base.length(t::TMap) = t._n
 Base.get(m::TMap{T}, k::PMAP_KEY_T, df) where {T} = begin
     let (k1,k2) = _keysplit(k), u = m._data[k1]
@@ -323,7 +312,7 @@ end
 
 thaw(m::PMap{T}) where {T} = TMap{T}(m)
 freeze(m::TMap{T}) where {T} = let ar = PMapNode{T}[freeze(u) for u in m._data]
-    PMap32{T}(m._n, PVec32{PMapNode{T}}(ar))
+    PMap{T}(m._n, PVec32{PMapNode{T}}(ar))
 end
 freeze(m::TMapSubmapNode{T}) where {T} = PMapSubmapNode{T}(freeze(m._map))
 
@@ -344,5 +333,8 @@ PMap{T}(kvs::Vararg{Union{Tuple{PMAP_KEY_T,S},Pair{PMAP_KEY_T,S}}}) where {T,S<:
         end
         return PMap{T}(m)
     end
+end
+PMap{T}() where {T} = let e = PMapEmptyNode{T}()
+    return PMap{T}(0, PVec32{PMapNode{T}}(NTuple{32, PMapNode{T}}(PMapNode{T}[e for ii in 1:32])))
 end
 
