@@ -607,15 +607,18 @@ Base.pop!(u::TArray{T,1}) = begin
         u._size = u._size .- 1
         return x
     else
+        u.
         uu = u._root[end]
         x = pop!(uu)
-        #here
-        if vv._size[1] == 0
-            return PArray{T,1}(u._size .- 1, u._phase, u._height, vv._root[1:end-1])
-        else
-            root = copy(u._root)
-            root[end] = vv
-            return PArray{T,1}(u._size .- 1, u._phase, u._height, root)
+        # we might have to pop this sub-array off (if it's now empty)
+        if uu._size[1] == 0
+            pop!(u._root)
+            # we might even have to simplify u
+            if length(u._root) == 1
+                u._height -= 1
+                u._root = u._root[1]._root
+            end
         end
+        return x
     end
 end
