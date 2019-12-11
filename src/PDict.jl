@@ -261,15 +261,15 @@ end
 # are PVectordict type sets.
 struct PHashDict{K,V} <: PEquivDict{K,V}
     _n::Integer
-    _table::PMap{PSet{Pair{K,V}}}
+    _table::PMap{PVectorSet{Pair{K,V}}}
 end
 struct PIdHashDict{K,V} <: PIdDict{K,V}
     _n::Integer
-    _table::PMap{PSet{Pair{K,V}}}
+    _table::PMap{PVectorSet{Pair{K,V}}}
 end
 struct PEqualHashDict{K,V} <: PEqualDict{K,V}
     _n::Integer
-    _table::PMap{PSet{Pair{K,V}}}
+    _table::PMap{PVectorSet{Pair{K,V}}}
 end
 _pvecset_type(::Type{PHashDict}) = PVectorSet
 _pvecset_type(::Type{PIdHashDict}) = PIdVectorSet
@@ -356,14 +356,14 @@ end
 _pdict_init(P::DataType, s::AbstractDict{KK,VV}) where {KK,VV} = _pdict_init(P, Array(s))
 # PHash type methods:
 const PHASHDICTS = (Union{PHashDict{K,V}, PIdHashDict{K,V}, PEqualHashDict{K,V}} where {K,V})
-Base.convert(::Type{PMap{PSet{Pair{K,V}}}}, u::PHashDict{K,V}) where {K,V} = u._table
-Base.convert(::Type{PMap{PSet{Pair{K,V}}}}, u::PIdHashDict{K,V}) where {K,V} = u._table
-Base.convert(::Type{PMap{PSet{Pair{K,V}}}}, u::PEqualHashDict{K,V}) where {K,V} = u._table
+Base.convert(::Type{PMap{PVectorSet{Pair{K,V}}}}, u::PHashDict{K,V}) where {K,V} = u._table
+Base.convert(::Type{PMap{PVectorSet{Pair{K,V}}}}, u::PIdHashDict{K,V}) where {K,V} = u._table
+Base.convert(::Type{PMap{PVectorSet{Pair{K,V}}}}, u::PEqualHashDict{K,V}) where {K,V} = u._table
 Base.length(u::PHashDict)       = u._n
 Base.length(u::PIdHashDict)     = u._n
 Base.length(u::PEqualHashDict)  = u._n
 Base.iterate(u::PHASHDICTS{K,V}) where {K,V} = begin
-    let t = convert(PMap{PSet{Pair{K,V}}}, u), x = iterate(t)
+    let t = convert(PMap{PVectorSet{Pair{K,V}}}, u), x = iterate(t)
         (x === nothing) && return nothing
         let ((kk,subd),addr1) = x, (kv,addr2) = iterate(subd)
             return (kv, (t, subd, addr1, addr2))
@@ -403,14 +403,14 @@ Base.get(u::PHASHDICTS{K,V}, k::KK, df) where {K,V,KK<:K} = begin
     end
 end
 Base.in(x::Pair{KK,VV}, u::PHASHDICTS{K,V}, eqfn::Function) where {K,V,KK<:K,VV<:V} = begin
-    let h = UInt(hashfn(u)(x[1])), t = convert(PMap{PSet{Pair{K,V}}}, u), ys = get(t, h, nothing)
+    let h = UInt(hashfn(u)(x[1])), t = convert(PMap{PVectorSet{Pair{K,V}}}, u), ys = get(t, h, nothing)
         (ys === nothing) && return false
         return in(Pair{K,V}(x[1],x[2]), ys, eqfn)
     end
 end
 Base.in(x::Pair{KK,VV}, u::PHASHDICTS{K,V}) where {K,V,KK<:K,VV<:V} = in(x, u, equalfn(u))
 push(u::PHASHDICTS{K,V}, p::Pair{KK,VV}) where {K,V,KK<:K,VV<:V} = begin
-    let U = typeof(u), t = convert(PMap{PSet{Pair{K,V}}}, u), eqfn = equalfn(u),
+    let U = typeof(u), t = convert(PMap{PVectorSet{Pair{K,V}}}, u), eqfn = equalfn(u),
         (k,v) = p, h = UInt(hashfn(u)(k)), vv = get(t, h, nothing)
         (vv === nothing) && return U(u._n + 1, assoc(t, h, _pvecset_type(U)(Pair{K,V}[p])))
         if haskey(vv, k)
@@ -426,7 +426,7 @@ push(u::PHASHDICTS{K,V}, p::Pair{KK,VV}) where {K,V,KK<:K,VV<:V} = begin
 end
 insert(u::PHASHDICTS{K,V}, k::KK, v::VV) where {K,V,KK<:K,VV<:V} = push(u, k => v)
 delete(u::PHASHDICTS{K,V}, k::KK) where {K,V,KK<:K} = begin
-    let U = typeof(u), t = convert(PMap{PSet{Pair{K,V}}}, u), eqfn = equalfn(u),
+    let U = typeof(u), t = convert(PMap{PVectorSet{Pair{K,V}}}, u), eqfn = equalfn(u),
         h = UInt(hashfn(u)(k)), v = get(t, h, nothing)
         (v === nothing) && return u
         for pair in v
@@ -439,7 +439,7 @@ delete(u::PHASHDICTS{K,V}, k::KK) where {K,V,KK<:K} = begin
     end
 end
 # Constructors:
-PHashDict{K,V}() where {K,V} = PHashDict{K,V}(0, PMap{Pair{K,PSet{V}}}())
+PHashDict{K,V}() where {K,V} = PHashDict{K,V}(0, PMap{PVectorSet{Pair{K,V}}}())
 PHashDict{K,V}(s::PHashDict{K,V}) where {K,V} = s
 PHashDict{K,V}(s::AbstractDict{KK,VV}) where {K,V,KK<:K,VV<:V} = _pdict_init(PHashDict{K,V}, s)
 PHashDict{K,V}(arr::AbstractArray{Pair{KK,VV}, 1}) where {K,V,KK<:K,VV<:V} = _pdict_init(PHashDict{K,V}, arr)
