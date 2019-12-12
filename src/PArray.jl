@@ -180,6 +180,9 @@ struct PArray{T, N} <: AbstractArray{T, N}
     # The array nodes hold all the data. 
     _root::Union{Array{T, N}, Array{PArray{T,N}, N}}
 end
+# PArray is immutable, even though it employs a mutable field (Array)
+mutability(::Type{PArray}) = Immutable
+mutability(::Type{PArray{T,N}}) where {T,N} = Immutable
 #
 # #TArray ======================================================================
 """
@@ -201,6 +204,12 @@ mutable struct TArray{T,N} <: AbstractArray{T,N}
     # The array nodes hold all the data. 
     _root::Union{Array{T, N}, Array{Union{PArray{T,N}, TArray{T,N}}, N}}
 end
+#
+# PArrray and TArray aliases
+const PVector = PArray{T,1} where {T}
+const TVector = TArray{T,1} where {T}
+const PMatrix = PArray{T,2} where {T}
+const TMatrix = TArray{T,2} where {T}
 #
 # PArray and TArray are very similar, so I have a macro for when to duplicate
 # behavior across functions for both:
@@ -381,8 +390,11 @@ _subindices(ph::NTuple{N,Int}, h::Int, ii::CartesianIndex{N}) where {T,N} = begi
     jj = (jj .& mm) .+ 1
     return (CartesianIndex(ii), CartesianIndex(jj))
 end
+_locdelta(ph::NTuple{N,Int}, sz::NTuple{N,Int}, arr::Array{T,N}) where {T,N} = begin
+    return size(arr) .- (sz .- ph)
+end
 _locindices(ph::NTuple{N,Int}, sz::NTuple{N,Int}, arr::Array{T,N}, ii::CartesianIndex{N}) where {T,N} = begin
-    return CartesianIndex(Tuple(ii) .+ size(arr) .- (sz .- ph))
+    return CartesianIndex(Tuple(ii) .+ _locdelta(ph, sz, arr))
 end
 #
 # #getindex ====================================================================
@@ -584,30 +596,33 @@ Base.push!(u::TArray{T,1}, el::S) where {T,S} = begin
 end
 #
 # #pop =========================================================================
-pop(u::PArray{T,1}) = begin
+pop(u::PVector{T}) where {T} = begin
     if u._root isa Array{T,1}
-        return PArray{T,1}(u._size .- 1, u._phase, 0, u._root[1:end-1])
+        return PVector{T}(u._size .- 1, u._phase, 0, u._root[1:end-1])
     else
         uu = u._root[end]
         vv = pop(uu)
         if vv._size[1] == 0
-            return PArray{T,1}(u._size .- 1, u._phase, u._height, vv._root[1:end-1])
+            if length(u._root) == 2
+                return u._root[1]
+            else
+                return PVector{T}(u._size .- 1, u._phase, u._height, u._root[1:end-1])
+            end
         else
             root = copy(u._root)
             root[end] = vv
-            return PArray{T,1}(u._size .- 1, u._phase, u._height, root)
+            return PVector{T}(u._size .- 1, u._phase, u._height, root)
         end
     end
 end
 #
 # #pop! ========================================================================
-Base.pop!(u::TArray{T,1}) = begin
-    if u._root isa Array{T,1}
+Base.pop!(u::TVector{T}) where {T} = begin
+    if u._root isa Vector{T}
         x = pop!(u._root)
         u._size = u._size .- 1
         return x
     else
-        u.
         uu = u._root[end]
         x = pop!(uu)
         # we might have to pop this sub-array off (if it's now empty)
@@ -621,4 +636,74 @@ Base.pop!(u::TArray{T,1}) = begin
         end
         return x
     end
+end
+#
+# #popfirst ====================================================================
+popfirst(u::PVector{T}) where {T} = begin
+    if u._root isa Vector{T}
+        (u._size[1] == 0) && throw(ArgumentError("array must be non-empty"))
+        return PVector{T}(u._size .- 1, u._phase .+ 1, 0, u._root)
+    else
+        uu = u._root[1]
+        vv = popfirst(uu)
+        if vv._size[1] == 0
+            if length(u._root) == 2
+                return u._root[2]
+            else
+                return PVector{T}(u._size .- 1, (0,), u._height, vv._root[2:end])
+            end
+        else
+            root = copy(u._root)
+            root[1] = vv
+            return PVector{T}(u._size .- 1, u._phase .+ 1, u._height, root)
+        end
+    end
+end
+#
+# #popfirst! ===================================================================
+Base.popfirst!(u::TVector{T}) where {T} = begin
+    if u._root isa Vector{T}
+        x = popfirst!(u._root)
+        u._size = u._size .- 1
+        return x
+    else
+        uu = u._root[1]
+        x = popfirst!(uu)
+        if uu._size[1] == 0
+            if length(u._root) == 2
+                vv = u._root[2]
+                u._root = vv._root
+                u._height = vv._height
+                u._phase = (0,)
+                u._size = vv._size
+            else
+                popfirst!(u._root)
+                u._phase = (0,)
+                u._size = u._size .- 1
+            end
+        else
+            u._phase = u._phase .+ 1
+        end
+        return x
+    end
+end
+#
+# #isequiv =====================================================================
+@_ptmethod IArray function isequiv(u::IArray{T,N}, v::IArray{S,N}) where {T,S,N}
+    (u._size == v._size) || return false
+    (u === v) && return true
+    for (a,b) in zip(u, v)
+        isequiv(a, b) || return false
+    end
+    return true
+end
+#
+# #equivhash ===================================================================
+@_ptmethod IArray function equivhash(u::IArray{T,N}) where {T,N}
+    h = hash(u._size)
+    (IArray === TArray) && (h += 1)
+    for x in u
+        h += 31 * equivhash(x)
+    end
+    return h
 end
