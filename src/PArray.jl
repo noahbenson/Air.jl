@@ -624,7 +624,12 @@ Base.pop!(u::TVector{T}) where {T} = begin
         return x
     else
         uu = u._root[end]
+        if uu isa PVector{T}
+            uu = TVector{T}(uu)
+            u._root[end] = uu
+        end
         x = pop!(uu)
+        u._size = u._size .- 1
         # we might have to pop this sub-array off (if it's now empty)
         if uu._size[1] == 0
             pop!(u._root)
@@ -668,6 +673,10 @@ Base.popfirst!(u::TVector{T}) where {T} = begin
         return x
     else
         uu = u._root[1]
+        if uu isa PVector{T}
+            uu = TVector{T}(uu)
+            u._root[1] = uu
+        end
         x = popfirst!(uu)
         if uu._size[1] == 0
             if length(u._root) == 2
@@ -683,6 +692,7 @@ Base.popfirst!(u::TVector{T}) where {T} = begin
             end
         else
             u._phase = u._phase .+ 1
+            u._size = u._size .- 1
         end
         return x
     end
