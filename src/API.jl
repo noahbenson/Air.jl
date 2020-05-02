@@ -461,3 +461,202 @@ equalfn(::typeof(hash))      = isequal
 hashfn(::typeof(===))     = objectid
 hashfn(::typeof(isequiv)) = equivhash
 hashfn(::typeof(isequal)) = hashcode
+
+#
+# #setindex ====================================================================
+"""
+    setindex(tup, val, index) 
+Yields a copy of the given n-tuple with the value at the given indiex changed to
+val.
+"""
+setindex(u::NTuple{N,T}, el::S, I...) where {T,N,S} = begin
+    # make a temporary array...
+    ar = T[u...]
+    ar[I...] = el
+    return NTuple{N,T}(ar)
+end
+"""
+    setindex(arr, val, index) 
+Yields a copy of the given array with the value at the given indiex changed to
+val.
+
+Note that setindex() *always* returns a copy of the array arr, so unless arr is
+a persistent array (PArray), then this operation is not very efficient.
+"""
+setindex(u::Array{T,N}, x::S, I...) where {T,N,S} = setindex!(copy(u), x, I...)
+"""
+    setindex(d, val, key)
+Yields a copy of the given dictionary d with the given key associated with the
+given value val.
+"""
+setindex(d::Dict{K,V}, v::U, k::J) where {K,V,U,J} = setindex!(copy(d), v, k)
+setindex(d::IdDict{K,V}, v::U, k::J) where {K,V,U,J} = setindex!(copy(d), v, k)
+# non-typed or redirected calls:
+setindex(u::SubArray, args...) = setindex!(copy(u), args...)
+setindex(u::Base.ReshapedArray, args...) = setindex!(copy(u), args...)
+setindex(u::Base.ReinterpretArray, args...) = setinndex!(copy(u), args...)
+setindex(u::BitArray, args...) = setindex!(copy(u), args...)
+#
+# #push ========================================================================
+"""
+    push(tup, val)
+Yields a copy of the given n-tuple with the given val appended.
+"""
+push(u::NTuple{N,T}, val::S) where {T,N,S} = begin
+    return NTuple{N+1,T}(T[u..., val])
+end
+"""
+    push(arr, val)
+Yields a copy of the given (1D) array with the given val appended.
+
+Note that push() *always* returns a copy of the array arr, so unless arr is a
+persistent array (PArray), then this operation is not very efficient.
+"""
+push(u::Vector{T}, val::S) where {T,N,S} = T[u..., val]
+"""
+    push(d, k => v)
+Yields a copy of the given dictionary d with the given key/value pair added.
+This is equivalent to setindex(d, v, k).
+"""
+push(d::AbstractDict{K,V}, kv::Pair{J,U}) where {K,V,J,U} = begin
+    return setindex(d, kv[2], kv[1])
+end
+"""
+    push(s, u)
+Yields a copy of the given set or bit-set object s with the given object u
+appended to the set.
+"""
+push(s::Set{T}, u::S) where {T,S} = push!(copy(s), u)
+push(s::Base.IdSet{T}, u::S) where {T,S} = push!(copy(s), u)
+# non-typed
+push(A, a) = push!(copy(A), a)
+push(A, a, b) = push(push(A, a), b)
+push(A, a, b, c...) = push(push(A, a), b...)
+#
+# #pop =========================================================================
+"""
+    pop(tup)
+Yields a tuple (last, most) where last is the last element of the given tuple
+tup and most is a duplicate tuple of all but the last element of tup.
+"""
+pop(u::NTuple{N,T}) where {N,T} = begin
+    (N > 0) || throw(ArgumentError("n-tuple must be non-empty"))
+    return (u[end], u[1:end-1])
+end
+"""
+    pop(arr)
+Yields a tuple (last, most) where last is the final element of the given (1D)
+array arr and most is a copy of the given array without its last element.
+
+Note that this function *always* makes a copy of the array arr, so unless arr is
+a persistent array (PArray) this operation is not very efficient.
+"""
+pop(u::AbstractArray{T,1}) where {T} = (u[end], copy(u[1:end-1]))
+"""
+    pop(d)
+Yields a tuple (k=>v, rem) where k=>v is an element that has been removed from
+the copy of dictionary d, rem (i.e., remainder of d).
+"""
+pop(d::Dict{K,V}) where {K,V} = begin
+    rem = copy(d)
+    kv = pop!(rem)
+    return (kv, rem)
+end
+pop(d::IdDict{K,V}) where {K,V} = begin
+    rem = copy(d)
+    kv = pop!(rem)
+    return (kv, rem)
+end
+"""
+    pop(d, k)
+Yields a tuple (v, rem) where v is the value, mapped to k in d that has been
+removed from the copy of dictionary d, rem (i.e., remainder of d).
+"""
+pop(d::Dict{K,V}, k::J) where {K,V,J} = begin
+    rem = copy(d)
+    v = pop!(rem, k)
+    return (v, rem)
+end
+pop(d::IdDict{K,V}, k::J) where {K,V,J} = begin
+    rem = copy(d)
+    v = pop!(rem, k)
+    return (v, rem)
+end
+"""
+    pop(d, k, dv)
+Yields a tuple (v, rem) where v is the value, mapped to k in d that has been
+removed from the copy of dictionary d, rem (i.e., remainder of d). If the key
+k is not found in d, then rem will be a copy of d and v will be equal to dv.
+"""
+pop(d::Dict{K,V}, k::J, dv) where {K,V,J} = begin
+    rem = copy(d)
+    v = pop!(rem, k, dv)
+    return (v, rem)
+end
+pop(d::IdDict{K,V}, k::J, dv) where {K,V,J} = begin
+    rem = copy(d)
+    v = pop!(rem, k, dv)
+    return (v, rem)
+end
+"""
+    pop(s)
+Yields a tuple (u, rem) where u is an element from the set s and 
+"""
+pop(s::Set{T}) where {T} = begin
+    rem = copy(s)
+    u = pop!(rem)
+    return (u, rem)
+end
+pop(s::Base.IdSet{T}) where {T} = begin
+    rem = copy(s)
+    u = pop!(rem)
+    return (u, rem)
+end
+pop(s::BitSet) where {T} = begin
+    rem = copy(s)
+    u = pop!(rem)
+    return (u, rem)
+end
+"""
+    pop(s, u)
+Yields a tuple (u, rem) where u is an element in s and rem is a copy of s
+with element u removed.
+"""
+pop(s::Set{T}, u::S) where {T,S} = begin
+    rem = copy(s)
+    u = pop!(rem, u)
+    return (u, rem)
+end
+pop(s::Base.IdSet{T}, u::S) where {T,S} = begin
+    rem = copy(s)
+    u = pop!(rem, u)
+    return (u, rem)
+end
+pop(s::BitSet, u) = begin
+    rem = copy(s)
+    u = pop!(rem, u)
+    return (u, rem)
+end
+#
+# #insert ======================================================================
+"""
+    insert(arr, idx, val)
+Yields a copy of the given vector arr with the given value inserted at the given
+index. Equivalent to insert!(copy(arr), idx, va).
+"""
+insert(a::Vector{T}, idx::Int, val::S) where {T,S} = insert!(copy(a), idx, val)
+insert(a::BitArray{T}, idx::Integer, val::S) where {T,S} = insert!(copy(a), idx, val)
+#
+# #delete ======================================================================
+"""
+    delete(d, k)
+Yields a copy of the dictionary d with the given key k deleted.
+"""
+delete(d::Dict{K,V}, k::J) where {K,V,J} = delete!(copy(d), k)
+#
+# #assoc =======================================================================
+"""
+    assoc(d, k, v)
+    assoc(d, k1, k2..., v)
+Yields a copy of the (optionally nested) dictionary or array object d
+"""
