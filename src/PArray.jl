@@ -9,71 +9,15 @@
 # Copyright (c) 2019 Noah C. Benson
 
 
-################################################################################
+# ==============================================================================
 # Private
 #
 # This section contains private constants and function definitions intendef for
 # use only in this library or occasionally within the library, but not outside
 # of the current module.
 #
-# # Constants ==================================================================
-#   We use a constant shift of 4 throughout; we pick this across all array
-#   dimensionalities and for all dimensions because it simplifies slicing not to
-#   have to worry about arrays having mismatched shifts.
-const _SHIFT    = 4
-const _COUNT    = (1 << _SHIFT)
-const _COUNT_L2 = (1 << (2 * _SHIFT))
-const _COUNT_L3 = (1 << (3 * _SHIFT))
-const _COUNT_L4 = (1 << (4 * _SHIFT))
-const _COUNT_L5 = (1 << (5 * _SHIFT))
-const _COUNT_L6 = (1 << (6 * _SHIFT))
-const _INTSZ    = sizeof(Int) * 8 # integer size in bits
-const _LMAX     = Int(ceil(_INTSZ / _SHIFT))
-#
 # # Functions
-#   Convert a length plus phase into the effective length of the resulting array-
-#   tree hierarchy.
-_to_effective_length(n::Int, ph::Int) = Int(n + ph)
-#   Function for converting length/phase into array-tree height.
-"""
-    _to_height(len)
-Yields the height of persistent (or transient) array nodes needed to represent
-a maximum length of len. The height of 0 is -1, 1 to _COUNT is 0, the height from 
-_COUNT+1 to _COUNT^2 is 1, _COUNT^2+1 to _COUNT^3 is 2, etc.
-"""
-function _to_height(len::Int, phase::Int)
-    l = _to_effective_length(len, phase)
-    # For the sake of what I am guessing is semi-optimal speed in most cases,
-    # we start by checking 2 left-shifts and switching around that.
-    if l > _COUNT_L3
-        if l <= COUNT_L4
-            return 3
-        elseif l <= COUNT_L5
-            return 4
-        elseif l <= COUNT_L6
-            return 5
-        else
-            for d in 7:_LMAX
-                (l <= (1 << (d * _SHIFT))) && return d - 1
-            end
-            return _LMAX
-        end
-    elseif l > _COUNT_L2
-        return 2
-    elseif l > _COUNT
-        return 1
-    elseif l > 0
-        return 0
-    else
-        return -1
-    end
-end
-_to_height(len::Int) = _to_height(len, 0)
-_to_height(size::NTuple{N,Int}, ph::NTuple{N,Int}) where {N} = begin
-    ii = argmax([_to_effective_length(s,p) for (s,p) in zip(size, ph)])
-    return _to_height(size[ii], ph[ii])
-end
-_to_height(size::NTuple{N,Int}) where {N} = _to_height(max(size...))
+#
 #   Function to dice up arrays.
 """
     _array_dice(a)
@@ -88,11 +32,11 @@ the eltype of a.
 """
 _array_dice(a::AbstractArray{T,N}) where {T,N} = begin
     sz = size(a)
-    osz = Tuple([Int(ceil(n / _COUNT)) for n in sz])
+    osz = Tuple([Int(ceil(n / _PTREE_COUNT)) for n in sz])
     out = Array{Array{T,N}}(undef, osz...)
     idx = CartesianIndices(osz)
     for ii in idx
-        jj = ((1 + _COUNT*(k - 1)):min(mx,k*_COUNT)
+        jj = ((1 + _PTREE_COUNT*(k - 1)):min(mx,k*_PTREE_COUNT)
               for (k,mx) in zip(Tuple(ii), sz))
         out[ii] = getindex(a, jj...)
     end
@@ -100,53 +44,19 @@ _array_dice(a::AbstractArray{T,N}) where {T,N} = begin
 end
 _array_dice(a::AbstractArray{T,N}, S::Type) where {T,N} = begin
     sz = size(a)
-    osz = Tuple([Int(ceil(n / _COUNT)) for n in sz])
+    osz = Tuple([Int(ceil(n / _PTREE_COUNT)) for n in sz])
     out = Array{Array{S,N}}(undef, osz...)
     idx = CartesianIndices(osz)
     for ii in idx
-        jj = ((1 + _COUNT*(k - 1)):min(mx,k*_COUNT)
+        jj = ((1 + _PTREE_COUNT*(k - 1)):min(mx,k*_PTREE_COUNT)
               for (k,mx) in zip(Tuple(ii), sz))
         out[ii] = getindex(a, jj...)
     end
     return out
 end
-"""
-    _height_to_stride(d)
-Yields the max number of elements in the sub-arrays at the given height.
-"""
-function _height_to_stride(d::Int)
-    return 1 << (h * _SHIFT)
-end
-"""
-    _index_at_height(h, ii)
-Yields a tuple of cartesian indices for the index ii at the given height h; the
-first index in the tuple is the index for the root element of the node with the
-given height while the second index is the cartesian index for the element at
-the first index.
-
-If ii is an array of cartesian indices, then a tuple of arrays is returned.
-"""
-function _index_at_height(h::Int, ii::CartesianIndex{N}) where {N}
-    ii = Tuple(ii) .- 1
-    sh = h * _SHIFT
-    mm = (1 << sh) - 1
-    return (CartesianIndex((ii .>> sh) .+ 1), CartesianIndex((ii .& mm) .+ 1))
-end
-function _index_at_height(h::Int, iis::AbstractArray{CartesianIndex{N},1}) where {N}
-    sh = h * _SHIFT
-    mm = (1 << sh) - 1
-    ii0 = CartesianIndex{N}[]
-    ii1 = CartesianIndex{N}[]
-    for ii in iis
-        ii = Tuple(ii)
-        push!(ii0, CartesianIndex((ii .>> sh) .+ 1))
-        push!(ii1, CartesianIndex((ii .&  mm) .+ 1))
-    end
-    return (ii0, ii1)
-end
 
 
-################################################################################
+# ==============================================================================
 # Structures / Types
 #
 # Definitions of structures and types that should come before the various
@@ -171,7 +81,7 @@ reference, changing one object's data may change the data for many objects.
 struct PArray{T, N} <: AbstractArray{T, N}
     # The size tuple stores the size of the array: the length of each dim.
     _size::NTuple{N, Int}
-    # The phase indicates if the first node(s) contain(s) fewer than _COUNT
+    # The phase indicates if the first node(s) contain(s) fewer than _PTREE_COUNT
     # elements; this allows for efficient shifting and unshifting.
     _phase::NTuple{N, Int}
     # The height of the array; determined by how many elements are in the
@@ -195,7 +105,7 @@ can be easily converted into them.
 mutable struct TArray{T,N} <: AbstractArray{T,N}
     # The size tuple stores the size of the array: the length of each dim.
     _size::NTuple{N, Int}
-    # The phase indicates if the first node(s) contain(s) fewer than _COUNT
+    # The phase indicates if the first node(s) contain(s) fewer than _PTREE_COUNT
     # elements; this allows for efficient shifting and unshifting.
     _phase::NTuple{N, Int}
     # The height of the array; determined by how many elements are in the
@@ -256,7 +166,7 @@ end
         h0 += 1
         tsz = size(tt)
         maxsz = max(tsz...)
-        (maxsz <= _COUNT) && return IArray{T,N}(_built_size(tt), ph, h0, tt)
+        (maxsz <= _PTREE_COUNT) && return IArray{T,N}(_built_size(tt), ph, h0, tt)
         div = _array_dice(tt)
         tt = IArray{T,N}[IArray{T,N}(_built_size(u), ph, h0, u) for u in div]
     end
@@ -267,7 +177,7 @@ end
     ph = Tuple(0 for n in sz)
     maxsz = max(sz...)
     # if the array is small enough, we can store it as one array right here
-    (maxsz <= _COUNT) && return IArray{T,N}(sz, ph, 0, Array{T,N}(a))
+    (maxsz <= _PTREE_COUNT) && return IArray{T,N}(sz, ph, 0, Array{T,N}(a))
     # start by dividing up this array along each dimension
     div = _array_dice(a)
     # make that into an array of P/TArrays...
@@ -286,7 +196,7 @@ end
     ph = Tuple(0 for n in sz)
     maxsz = max(sz...)
     # if the array is small enough, we can store it as one array right here
-    (maxsz <= _COUNT) && return IArray{S,N}(sz, ph, 0, Array{S,N}(a))
+    (maxsz <= _PTREE_COUNT) && return IArray{S,N}(sz, ph, 0, Array{S,N}(a))
     # start by dividing up this array along each dimension
     div = _array_dice(a)
     # make that into an array of P/TArrays...
@@ -305,6 +215,12 @@ end
 # Make empty PArrays
 PArray() = PArray{Any,1}(NTuple{0,Int}(), NTuple{0,Int}(), 0, Any[])
 PArray{T}() where {T} = PArray{T,1}(NTuple{0,Int}(), NTuple{0,Int}(), 0, T[])
+PArray{T,N}() where {T,N} = begin
+    sz = NTuple{N,Int}([0, [1 for x in 2:N]...])
+    ph = NTuple{N,Int}([0 for x in 1:N])
+    return PArray{T,N}(sz, ph, 0, Array{T,N}(undef, sz...))
+end
+                
 #
 # Make PArrays from other PArrays (just return them!)
 PArray{T,N}(a::PArray{T,N}) where {T,N} = a
@@ -383,7 +299,7 @@ persistent(u::PArray{T,N}) where {T,N} = u
 _subindices(ph::NTuple{N,Int}, h::Int, ii::CartesianIndex{N}) where {T,N} = begin
     ii = Tuple(ii)
     jj = ii .+ ph .- 1
-    sh = h * _SHIFT
+    sh = h * _PTREE_SHIFT
     mm = (1 << sh) - 1
     ii = (jj .>> sh) .+ 1
     jj = jj .- (ph .* (ii .== 1))
@@ -391,7 +307,7 @@ _subindices(ph::NTuple{N,Int}, h::Int, ii::CartesianIndex{N}) where {T,N} = begi
     return (CartesianIndex(ii), CartesianIndex(jj))
 end
 _locdelta(ph::NTuple{N,Int}, sz::NTuple{N,Int}, arr::Array{T,N}) where {T,N} = begin
-    return size(arr) .- (sz .- ph)
+    return ph #size(arr) .- (sz .- ph)
 end
 _locindices(ph::NTuple{N,Int}, sz::NTuple{N,Int}, arr::Array{T,N}, ii::CartesianIndex{N}) where {T,N} = begin
     return CartesianIndex(Tuple(ii) .+ _locdelta(ph, sz, arr))
@@ -521,7 +437,7 @@ push(u::PArray{T,1}, el::S) where {T,S} = begin
         n0 = u._size[1]
         ph = u._phase[1]
         n = n0 + ph
-        if n == _COUNT
+        if n == _PTREE_COUNT
             return _build_iarray([u, PArray{T,1}((1,), (0,), 0, T[el])])
         else
             root = Array{T,1}(undef, n0+1)
@@ -535,7 +451,7 @@ push(u::PArray{T,1}, el::S) where {T,S} = begin
         # if we went off the end...
         if vv._height == u._height
             # we might be able to append...
-            if length(u._root) < _COUNT
+            if length(u._root) < _PTREE_COUNT
                 root = copy(u._root)
                 push!(root, vv._root[2])
                 return PArray{T,1}(u._size .+ 1, u._phase, u._height, root)
@@ -558,7 +474,7 @@ Base.push!(u::TArray{T,1}, el::S) where {T,S} = begin
         n0 = u._size[1]
         ph = u._phase[1]
         n = n0 + ph
-        if n == _COUNT
+        if n == _PTREE_COUNT
             uu = TArray{T,1}(u._size, u._phase, 0, u._root)
             vv = TArray{T,1}((1,),    (0,),     0, T[el])
             u._size = u._size .+ 1
@@ -581,7 +497,7 @@ Base.push!(u::TArray{T,1}, el::S) where {T,S} = begin
             u._root[end] = uu._root[1]
             vv = uu._root[2]
             # we might be able to append...
-            if length(u._root) < _COUNT
+            if length(u._root) < _PTREE_COUNT
                 push!(u._root, vv)
             else
                 vv = TArray{T,1}((1,), (0,), u._height, TArray{T,1}[vv])
@@ -643,6 +559,85 @@ Base.pop!(u::TVector{T}) where {T} = begin
     end
 end
 #
+# #pushfirst ===================================================================
+pushfirst(u::PVector{T}, el::S) where {T,S} = begin
+    if u._root isa Vector{T}
+        n0 = u._size[1]
+        ph = u._phase[1]
+        if ph > 0
+            root = copy(u._root)
+            pushfirst!(root, el)
+            return PArray{T,1}((n0 + 1,), (ph - 1,), 0, root)
+        elseif n0 == _PTREE_COUNT
+            u0 = PArray{T,1}((1,), (0,), 0, T[el])
+            root = PArray{T,1}[u0, u]
+            return PArray{T,1}((n0 + 1,), (_PTREE_COUNT - 1,), 1, root)
+        else
+            root = copy(u._root)
+            pushfirst!(root, el)
+            return PArray{T,1}((n0 + 1,), (0,), 0, root)
+        end
+    else
+        if u._phase[1] > 0
+            root = copy(u._root)
+            root[1] = pushfirst(root[1], el)
+            return PArray{T,1}(u._size .+ 1, u._phase .- 1, u._height, root)
+        elseif length(u._root) < _PTREE_COUNT
+            st = _height_to_stride(u._height)
+            root = copy(u._root)
+            pushfirst!(root, PArray{T,1}((1,), (0,), 1, [el]))
+            return PArray{T,1}(u._size .+ 1, (st - 1,), u._height, root)
+        else
+            st = _height_to_stride(u._height + 1)
+            v = PArray{T,1}((1,), (0,), 0, T[el])
+            return PArray{T,1}(u._size .+ 1, (st - 1,), u._height + 1, PArray{T,1}[v, u])
+        end
+    end
+end
+#
+# #pushfirst! ==================================================================
+Base.pushfirst!(u::TArray{T,1}, el::S) where {T,S} = begin
+    if u._root isa Array{T,1}
+        n0 = u._size[1]
+        ph = u._phase[1]
+        n = n0 + ph
+        if n == _PTREE_COUNT
+            uu = TArray{T,1}(u._size, u._phase, 0, u._root)
+            vv = TArray{T,1}((1,),    (0,),     0, T[el])
+            u._size = u._size .+ 1
+            u._height = 1
+            u._root = PArray{T,1}[uu, vv]
+        else
+            push!(u._root, el)
+        end
+    else
+        u._size = u._size .+ 1
+        uu = u._root[end]
+        if uu isa PArray{T,1}
+            uu = TArray{T,1}(uu)
+            u._root[end] = uu
+        end
+        push!(uu, el)
+        u._size = u._size .+ 1
+        # if we went off the end...
+        if uu._height == u._height
+            u._root[end] = uu._root[1]
+            vv = uu._root[2]
+            # we might be able to append...
+            if length(u._root) < _PTREE_COUNT
+                push!(u._root, vv)
+            else
+                vv = TArray{T,1}((1,), (0,), u._height, TArray{T,1}[vv])
+                uu._root = u._root
+                uu._size = u._size .- 1
+                u._root = TArray{T,1}[uu, vv]
+                u._height = u._height + 1
+            end
+        end
+    end
+    return u
+end
+#
 # #popfirst ====================================================================
 popfirst(u::PVector{T}) where {T} = begin
     if u._root isa Vector{T}
@@ -655,7 +650,7 @@ popfirst(u::PVector{T}) where {T} = begin
             if length(u._root) == 2
                 return u._root[2]
             else
-                return PVector{T}(u._size .- 1, (0,), u._height, vv._root[2:end])
+                return PVector{T}(u._size .- 1, (0,), u._height, u._root[2:end])
             end
         else
             root = copy(u._root)
