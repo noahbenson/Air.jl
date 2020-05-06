@@ -143,7 +143,7 @@ return an arbitrary large number.
 """
 _node_parent(nodeid0::_PTREE_KEY_T) = begin
     d = _node_depth(nodeid0) - 1
-    node = nodeid & ~((-_PTREE_KEY_T(1)) >> (d*_PTREE_SHIFT))
+    node = nodeid0 & ~((-_PTREE_KEY_T(1)) >> (d*_PTREE_SHIFT))
     return node | d
 end
 """
@@ -156,13 +156,13 @@ _node_index(nodeid::_PTREE_KEY_T, leafid::_PTREE_KEY_T) = begin
     mn = _node_min(nodeid)
     (leafid < mn) && return 0
     h = _PTREE_LEAF_DEPTH - d
-    mask = (_PTREE_KEY_T(1) << (_PTREE_SHIFT * h)) - 0x1
+    one = _PTREE_KEY_T(0x1)
+    mask = (one << (_PTREE_SHIFT * h)) - 0x1
     mx = nodeid | mask
     (leafid > mx) && return 0
-    one = _PTREE_KEY_T(0x1)
     mask = (one << _PTREE_SHIFT) - 1
-    shift = _PTREE_SHIFT * d
-    return 1 + Int((nodeid & (mask << shift)) >> shift)
+    shift = _PTREE_SHIFT * (_PTREE_TWIG_DEPTH - d)
+    return 1 + Int((leafid & (mask << shift)) >> shift)
 end
 
 # ==============================================================================
@@ -242,7 +242,7 @@ _ttree_empty_cells(::Type{T}) where {T} = _TTREE_CELL_T{T}[]
 _ptree_cell_assoc(u::_PTREE_CELLS_T{T}, k::Int, x::_PTREE_CELL_T{S}) where {T,S<:T} = begin
     if length(u) < k
         n = length(u)
-        u = _PTREE_CELL_T{T}[u..., [_nought for _ in 1:(n - k - 1)]..., x]
+        u = _PTREE_CELL_T{T}[u..., [_nought for _ in 1:(k - n - 1)]..., x]
         return u
     elseif u[k] === x
         return u
@@ -286,9 +286,9 @@ end
 # doing that is in this macro, which should work with either PTrees or TTrees.
 macro _forcells(tree, var::Symbol, expr::Expr)
     quote
-        let q = _PTREE_KEY_T(0x1), bits = $(esc(tree))._bits
+        let q = _PTREE_BITS_T(0x1), bits = $(esc(tree))._bits
             for $(esc(var)) in 1:_PTREE_COUNT
-                ((bits & (q << ($(esc(var)) - 0x01))) > 0) && $(esc(expr))
+                ((bits & q) > 0) && $(esc(expr))
                 q <<= 1
             end
         end
@@ -296,9 +296,12 @@ macro _forcells(tree, var::Symbol, expr::Expr)
 end
 macro _forcells_from(tree, var::Symbol, from, expr::Expr)
     quote
-        let q = _PTREE_KEY_T(0x1), bits = $(esc(tree))._bits
-            for $(esc(var)) in $(esc(from)):_PTREE_COUNT
-                ((bits & (q << ($(esc(var)) - 0x01))) > 0) && $(esc(expr))
+        let ff = $(esc(from)),
+            q = _PTREE_BITS_T(0x1) << (ff - 1),
+            bits = $(esc(tree))._bits
+            for $(esc(var)) in ff:_PTREE_COUNT
+                ((bits & q) > 0) && $(esc(expr))
+                q <<= 1
             end
         end
     end
@@ -471,19 +474,19 @@ Base.get(u::PTree{T}, k::_PTREE_KEY_T, df) where {T} = begin
     # Is it in this Tree?
     idx = _node_index(u._id, k)
     (idx == 0) && return df
-    (u._bits & (_PTREE_BITS_T(0x1) << (idx-1))) || return df
+    ((u._bits & (_PTREE_BITS_T(0x1) << (idx-1))) > 0) || return df
     # See what we have at that position.
-    u = u._data[k]
-    (u === _nought) && return df
+    uu = u._data[idx]
+    (uu === _nought) && return df
     # If we're a twig-node, this must be the item to return.
-    (_node_depth(u._id) == _PTREE_TWIG_DEPTH) && return u
+    (_node_depth(u._id) == _PTREE_TWIG_DEPTH) && return uu
     # Otherwise, this must be a tree.
-    @assert isa(u, PTree{T}) "Invalid PTree child at depth $(d)"
-    return get(u, k, df)
+    @assert isa(uu, PTree{T}) "Invalid PTree child at depth $(d)"
+    return get(uu, k, df)
 end
 Base.in(kv::Pair{_PTREE_KEY_T,T}, m::PTree{T}) where {T} = begin
     v = get(m, kv[1], _nought)
-    return v === kv[2]
+    return v !== _nought && v === kv[2]
 end
 Base.iterate(t::PTree{T}) where {T} = begin
     if _node_depth(t._id) == _PTREE_TWIG_DEPTH
@@ -500,7 +503,7 @@ Base.iterate(t::PTree{T}) where {T} = begin
     return nothing
 end
 Base.iterate(t::PTree{T}, ks) where {T} = begin
-    if _PTREE_KEY_T(t._id) == _PTREE_TWIG_DEPTH
+    if _node_depth(t._id) == _PTREE_TWIG_DEPTH
         mnk = _node_min(t._id)
         start = ks + 1
         @_forcells_from t k start begin
@@ -528,6 +531,7 @@ _maketwig(k::_PTREE_KEY_T, v::T) where {T} = begin
 end
 setindex(t::PTree{T}, u::S, k::_PTREE_KEY_T) where {T,S} = begin
     idx = _node_index(t._id, k)
+    idxbit = _PTREE_BITS_T(1) << (idx - 1)
     if idx == 0
         # The node lies outside of this node, so we need to make a new tree.
         # We need to make the node that would hold both this node (t) and
@@ -543,26 +547,40 @@ setindex(t::PTree{T}, u::S, k::_PTREE_KEY_T) where {T,S} = begin
         twig = _maketwig(k, u::T)
         one = _PTREE_BITS_T(0x1)
         tidx = _node_index(nid, _node_min(t._id))
-        bits = (one << idx) | (one << tidx)
+        bits = (one << (idx - 1)) | (one << (tidx - 1))
         ch = _ptree_empty_cells(T)
-        ch = _ptree_assoc(ch, idx, twig)
-        ch = _ptree_assoc(ch, tidx, t)
+        ch = _ptree_cell_assoc(ch, idx, twig)
+        ch = _ptree_cell_assoc(ch, tidx, t)
         # We return this parent node, which now contains us plus the new twig.
         return PTree{T}(t._n + 1, nid, bits, ch)
-    elseif t._bits & (_PTREE_BITS_T(0x1) << (idx - 1)) > 0
-        # The node lies below us in an existing node, so we can just pass along
-        # the responsibility of inserting it.
-        ch0 = t._data[k]
-        ch = setindex(ch0, u, k)
-        (ch === ch0) && return t
-        return PTree{T}(t._n+1, t._id, t._bits, _ptree_cell_assoc(t._data, k, ch))
+    elseif t._bits & idxbit > 0
+        # We might be a twig node.
+        if _node_depth(t._id) == _PTREE_TWIG_DEPTH
+            ch = _ptree_cell_assoc(t._data, idx, u)
+            return PTree{T}(t._n, t._id, t._bits, ch)
+        else
+            # The node lies below us in an existing node, so we can just pass along
+            # the responsibility of inserting it.
+            ch0 = t._data[idx]
+            ch = setindex(ch0, u, k)
+            (ch === ch0) && return t
+            (t._n == 0) && return ch
+            ch = _ptree_cell_assoc(t._data, idx, ch)
+            return PTree{T}(t._n+1, t._id, t._bits, ch)
+        end
     else
-        # The node lies beneath us but the lower node doesn't exist; we can just
-        # make a twig node for this and put it there.
-        twig = _maketwig(k, u::T)
-        # Now us with that modification
-        bits = _PTREE_BITS_T(0x1) << (idx - 1)
-        dat = _ptree_cell_assoc(t._data, idx, twig)
-        return PTree{T}(t._n+1, t._id, t._bits | bits, dat)
+        # We might be a twig node.
+        if _node_depth(t._id) == _PTREE_TWIG_DEPTH
+            ch = _ptree_cell_assoc(t._data, idx, u)
+            return PTree{T}(t._n+1, t._id, t._bits | idxbit, ch)
+        else
+            # The node lies beneath us but the lower node doesn't exist; we can just
+            # make a twig node for this and put it there.
+            twig = _maketwig(k, u::T)
+            (t._n == 0) && return twig
+            # Now us with that modification
+            dat = _ptree_cell_assoc(t._data, idx, twig)
+            return PTree{T}(t._n+1, t._id, t._bits | idxbit, dat)
+        end
     end
 end
