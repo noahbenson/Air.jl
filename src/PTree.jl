@@ -39,7 +39,7 @@ const _PTREE_KEY_BITS = sizeof(_PTREE_KEY_T) * 8
 const _PTREE_LEAF_DEPTH = _PTREE_KEY_T(div(_PTREE_KEY_BITS + _PTREE_SHIFT - 1, _PTREE_SHIFT))
 const _PTREE_TWIG_DEPTH = _PTREE_KEY_T(_PTREE_LEAF_DEPTH - 1)
 # The mask of the bits that represent the depth of the node-id in a PTree.
-const _PTREE_DEPTH_MASK = ((_PTREE_KEY_T(0x1) << (_PTREE_SHIFT + 1)) - 1)
+const _PTREE_DEPTH_MASK = ((_PTREE_KEY_T(0x1) << (_PTREE_SHIFT)) - 1)
 # The pair type for the dict interface.
 const _PTREE_PAIR_T{T} = Pair{_PTREE_KEY_T, T} where {T}
 
@@ -124,7 +124,7 @@ end
 Yields the node-id for the node whose minimum leaf and depth are given.
 """
 _nodeid(minleaf::_PTREE_KEY_T, depth::_PTREE_KEY_T) = begin
-    return (depth & _PTREE_DEPTH_MASK) | (minleaf & ~_PTREE_DEPTH_MASK)
+    return (depth & _PTREE_DEPTH_MASK) | ((minleaf + 0x1) & ~_PTREE_DEPTH_MASK)
 end
 """
     _node_child(nodeid0, childno)
@@ -132,8 +132,8 @@ Yields the node-id of the child with the child-number `childno` of the node
 whose node-id is `nodeid0`.
 """
 _node_child(nodeid0::_PTREE_KEY_T, childno::UInt) = begin
-    d = _node_depth(nodeid0) - 1
-    return _node_min(nodeid0) | (childno << d) | d
+    d = _node_depth(nodeid0) + 0x1
+    return _nodeid(_node_min(nodeid0) | (childno << d), d)
 end
 """
     _node_parent(nodeid0)
@@ -142,7 +142,7 @@ theoretical root) has no parent. If given a node id of 0, this function will
 return an arbitrary large number.
 """
 _node_parent(nodeid0::_PTREE_KEY_T) = begin
-    d = _node_depth(nodeid0) - 1
+    d = _node_depth(nodeid0) - 0x1
     node = nodeid0 & ~((-_PTREE_KEY_T(1)) >> (d*_PTREE_SHIFT))
     return node | d
 end
@@ -582,5 +582,39 @@ setindex(t::PTree{T}, u::S, k::_PTREE_KEY_T) where {T,S} = begin
             dat = _ptree_cell_assoc(t._data, idx, twig)
             return PTree{T}(t._n+1, t._id, t._bits | idxbit, dat)
         end
+    end
+end
+delete(t::PTree{T}, k::_PTREE_KEY_T) where {T} = begin
+    idx = _node_index(t._id, k)
+    idxbit = _PTREE_BITS_T(1) << (idx - 1)
+    if idx == 0
+        # The node lies outside of this node, so nothing to do.
+        return t
+    elseif t._bits & idxbit > 0
+        (length(t._data) < idx) && return t
+        v = t._data[idx]
+        (v === _nought) && return t
+        # We might be a twig node.
+        if _node_depth(t._id) == _PTREE_TWIG_DEPTH
+            ch = _ptree_cell_assoc(t._data, idx, _nought)
+            return PTree{T}(t._n - 1, t._id, t._bits & ~idxbit, ch)
+        else
+            # The node lies below us in an existing node, so we can just pass along
+            # the responsibility of inserting it.
+            ch0 = t._data[idx]
+            ch = delete(ch0, k)
+            (ch === ch0) && return t
+            if ch._n == 0
+                ch = _ptree_cell_assoc(t._data, idx, _nought)
+                bits = t._bits & ~idxbit
+            else
+                ch = _ptree_cell_assoc(t._data, idx, ch)
+                bits = t._bits
+            end
+            return PTree{T}(t._n - 1, t._id, bits, ch)
+        end
+    else
+        # We're dropping something that isn't there
+        return t
     end
 end
