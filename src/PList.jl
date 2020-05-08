@@ -58,6 +58,7 @@ popfirst(l::PList{T}) where {T} = begin
 end
 _delete(l::PLink{T}, s::S, eqfn::Function) where {T, S} = begin
     if eqfn(s, l.first)
+        (l.rest === nothing) && return (1, nothing)
         (n, ll) = _delete(l.rest, s, eqfn)
         return (n+1, ll)
     elseif l.rest === nothing
@@ -67,11 +68,12 @@ _delete(l::PLink{T}, s::S, eqfn::Function) where {T, S} = begin
         return (n, q === l.rest ? l : PLink{T}(l.first, q))
     end
 end
-delete(l::PList{T}, s::S) where {T, S} = begin
+delete(l::PList{T}, s::S, eqfn::Function) where {T, S} = begin
     (l._data === nothing) && return l
-    (n, q) = _delete(l._data, s, isequiv)
+    (n, q) = _delete(l._data, s, eqfn)
     return q === l._data ? l : PList{T}(l._n - n, q)
 end
+delete(l::PList{T}, s::S) where {T, S} = delete(l, s, isequiv)
 Base.show(io::IO, l::PList{T}) where {T} = begin
     print(io, "$(typeof(l))(")
     k = l._data

@@ -156,10 +156,10 @@ macro _pset_code(name::Symbol, eqfn, hashfn)
                     (length(uu) === 0) && return u
                     vv = delete(uu, x, $eq)
                     (uu === vv) && return u
-                    if length(uu) == 0
+                    if length(vv) == 0
                         return $name{T}(u._n - 1, delete(u._tree, hh))
                     else
-                        return $name{T}(u._n - 1, setindex(u._tree, hh, vv))
+                        return $name{T}(u._n - 1, setindex(u._tree, vv, hh))
                     end
                 end
             end
