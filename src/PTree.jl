@@ -45,61 +45,6 @@ const _PTREE_PAIR_T{T} = Pair{_PTREE_KEY_T, T} where {T}
 
 # # Functions
 """
-    highbit(u)
-Yields the 1-based bit-index of the highest bit set in u. If u is equal to zero
-(i.e., no bits are set), then 1 is returned. The argument u is only implemented
-for Unsigned 
-"""
-highbit(u::UInt8) = begin
-    if u > 0b00001111
-        if u > 0b00111111
-            if u > 0b01111111 return 8
-            else              return 7
-            end
-        elseif u > 0b00011111 return 6
-        else                  return 5
-        end
-    elseif u > 0b00000011
-        if u > 0b00000111     return 4
-        else                  return 3
-        end
-    elseif u > 0b00000000
-        if u > 0b00000001     return 2
-        else                  return 1
-        end
-    else                      return 0
-    end
-end
-highbit(u::UInt16) = begin
-    if u > 0xff
-        return 8 + highbit(UInt8(u >> 8))
-    else
-        return highbit(UInt8(u & 0xff))
-    end
-end
-highbit(u::UInt32) = begin
-    if u > 0xffff
-        return 16 + highbit(UInt16(u >> 16))
-    else
-        return highbit(UInt16(u & 0xffff))
-    end
-end
-highbit(u::UInt64) = begin
-    if u > 0xffffffff
-        return 32 + highbit(UInt32(u >> 32))
-    else
-        return highbit(UInt32(u & 0xffffffff))
-    end
-end
-highbit(u::UInt128) = begin
-    if u > 0xffffffffffffffff
-        return 64 + highbit(UInt64(u >> 64))
-    else
-        return highbit(UInt64(u & 0xffffffffffffffff))
-    end
-end
-
-"""
     _node_depth(nodeid)
 Yields the depth of the node with the given nodeid. This depth is in the
 theoretical complete tree, not in the reified tree represented with memory.
@@ -470,6 +415,8 @@ equivhash(t::PTree{T}) where {T} = let h = hash(PTree)
     end
     return h
 end
+Base.convert(::Type{PTree{T}}, t::PTree{S}) where {T,S} = PTree{T}(t)
+Base.copy(t::PTree{T}) where {T} = t
 Base.get(u::PTree{T}, k::_PTREE_KEY_T, df) where {T} = begin
     # Is it in this Tree?
     idx = _node_index(u._id, k)

@@ -529,9 +529,8 @@ appended to the set.
 push(s::Set{T}, u::S) where {T,S} = push!(copy(s), u)
 push(s::Base.IdSet{T}, u::S) where {T,S} = push!(copy(s), u)
 # non-typed
-push(A, a) = push!(copy(A), a)
-push(A, a, b) = push(push(A, a), b)
-push(A, a, b, c...) = push(push(A, a), b...)
+#push(A, a) = push!(copy(A), a)
+push(A, a, b...) = push(push(A, a), b...)
 #
 # #pop =========================================================================
 """
@@ -660,3 +659,192 @@ delete(d::Dict{K,V}, k::J) where {K,V,J} = delete!(copy(d), k)
     assoc(d, k1, k2..., v)
 Yields a copy of the (optionally nested) dictionary or array object d
 """
+
+################################################################################
+# EquivRef and equiv-type collections.
+"""
+    EquivRef{T}
+An EquivRef wraps an object and mimics its equivhash() and equiv() functions on
+the hash() and isequal() functions.
+"""
+struct EquivRef{T} <: Ref{T}
+    object::T
+    function EquivRef{T}(u::T) where {T}
+        return new(u)
+    end
+    function EquivRef{T}(u::EquivRef) where {T}
+        return new(u.object)
+    end
+    function EquivRef{T}(u) where {T}
+        return new(u)
+    end
+end
+EquivRef(u::EquivRef{T}) where {T} = EquivRef{T}(u.object)
+EquivRef(u::T) where {T} = EquivRef{T}(u)
+Base.hash(r::EquivRef) = equivhash(r.object)
+Base.isequal(r::EquivRef, s::EquivRef) = isequiv(r.object, s.object)
+Base.:(==)(r::EquivRef, s::EquivRef) = isequiv(r.object, s.object)
+Base.getindex(r::EquivRef{T}) where {T} = r.object
+"""
+    EquivSet{T}
+The EquivSet type is like the Set and IdSet types, except that it works on the
+isequiv() and equivhash() functions instead of the isequal() and hash()
+functions or the === and objectid() functions.
+"""
+struct EquivSet{T} <: AbstractSet{T}
+    set::Set{EquivRef{T}}
+end
+EquivSet{T}() where {T} = EquivSet{T}(Set{EquivRef{T}}())
+EquivSet() = EquivSet{Any}()
+EquivSet{T}(arr::AbstractArray{S,1}) where {T,S<:T} = let ers = [EquivRef{T}(x) for x in arr]
+    return EquivSet{T}(Set{EquivRef{T}}(ers))
+end
+EquivSet{T}(arr::AbstractSet{S}) where {T,S<:T} = let ers = [EquivRef{T}(x) for x in arr]
+    return EquivSet{T}(Set{EquivRef{T}}(ers))
+end
+EquivSet(arr::AbstractArray{S,1}) where {T,S<:T} = begin
+    let T = typejoin([typeof(x) for x in arr]...), ers = [EquivRef{T}(x) for x in arr]
+        return EquivSet{T}(Set{EquivRef{T}}(ers))
+    end
+end
+EquivSet(arr::AbstractSet{S}) where {T,S<:T} = let ers = [EquivRef{T}(x) for x in arr]
+    let T = typejoin([typeof(x) for x in arr]...), ers = [EquivRef{T}(x) for x in arr]
+        return EquivSet{T}(Set{EquivRef{T}}(ers))
+    end
+end
+Base.length(s::EquivSet) = length(s.set)
+Base.in(x::S, s::EquivSet{T}) where {T, S<:T} = in(EquivRef{T}(x), s.set)
+Base.in(x::S, s::EquivSet{T}, f) where {T, S<:T} = in(EquivRef{T}(x), s.set, f)
+Base.iterate(s::EquivSet{T}) where {T} = let u = iterate(s.set)
+    (u === nothing) && return nothing
+    return (u[1].object, u[2])
+end
+Base.iterate(s::EquivSet{T}, it) where {T} = let u = iterate(s.set, it)
+    (u === nothing) && return nothing
+    return (u[1].object, u[2])
+end
+Base.push!(s::EquivSet{T}, x::S) where {T, S<:T} = begin
+    push!(s.set, EquivRef{T}(x))
+    return s
+end
+Base.delete!(s::EquivSet{T}, x::S) where {T, S<:T} = begin
+    delete!(s.set, EquivRef{T}(x))
+    return s
+end
+equalfn(::Type{EquivSet}) = isequiv
+equalfn(::Type{EquivSet{T}}) where {T} = isequiv
+hashfn(::Type{EquivSet}) = equivhash
+hashfn(::Type{EquivSet{T}}) where {T} = equivhash
+# A utility function for turning a list of pairs/tuples into a list of pairs.
+_to_pairs(kvs) = begin
+    if length(kvs) == 0
+        K = Any
+        V = Any
+        if Base.IteratorEltype(kvs) isa Base.HasEltype
+            ET = Base.eltype(itr)
+            if isa(ET, DataType)
+                if ET <: Pair
+                    K = ET.parameters[1]
+                    V = ET.parameters[2]
+                elseif ET <: Tuple && length(ET.parameters) == 2
+                    K = ET.parameters[1]
+                    V = ET.parameters[2]
+                end
+            end
+        end
+        return Pair{K,V}[]
+    else
+        ks = []
+        vs = []
+        for kv in kvs
+            if kv isa Pair || (kv isa Tuple && length(kv) == 2)
+                push!(ks, kv[1])
+                push!(vs, kv[2])
+            else
+                throw(ArgumentError("EquivDict(kv): kv needs to be an iterator of tuples or pairs"))
+            end
+        end
+        K = typejoin(map(typeof, ks)...)
+        V = typejoin(map(typeof, vs)...)
+        return Pair{K,V}[Pair{K,V}(k,v) for (k,v) in zip(ks,vs)]
+    end
+end
+"""
+    EquivDict{K,V}
+The EquivDict type is like the Dict and IdDict types, except that it works on
+the isequiv() and equivhash() functions instead of the isequal() and hash()
+functions or the === and objectid() functions.
+"""
+struct EquivDict{K,V} <: AbstractDict{K,V}
+    dict::Dict{EquivRef{K},V}
+    function EquivDict{K,V}() where {K,V}
+        return new(Dict{EquivRef{K},V}())
+    end
+    function EquivDict{K,V}(::Tuple{}) where {K,V}
+        return new(Dict{EquivRef{K},V}())
+    end
+    function EquivDict{K,V}(d::EquivDict) where {K,V}
+        return new(Dict{EquivRef{K},V}(d.dict))
+    end
+    function EquivDict{K,V}(d::AbstractDict{EquivRef{K},V}) where {K,V}
+        return new(Dict{EquivRef{K},V}(d))
+    end
+    function EquivDict{K,V}(d::AbstractDict) where {K,V}
+        return new(Dict{EquivRef{K},V}(d))
+    end
+    function EquivDict{K,V}(ps::Pair...) where {K,V}
+        return reduce(push!, ps, init=new(Dict{EquivRef{K},V}()))
+    end
+    function EquivDict{K,V}(itr) where {K,V}
+        return reduce(push!, itr, init=new(Dict{EquivRef{K},V}()))
+    end
+end
+const EquivPair{K,V} = Pair{EquivRef{K},V} where {K,V}
+const Equiv2Tuple{K,V} = Tuple{EquivRef{K},V} where {K,V}
+# Constructors.
+EquivDict() = EquivDict{Any,Any}()
+EquivDict(kv::Tuple{}) = EquivDict{Any,Any}()
+EquivDict(p::Pair{K,V}) where {K,V} = EquivDict{K,V}(p)
+EquivDict(d::AbstractDict{EquivRef{K},V}) where {K,V} = EquivDict{K,V}(d)
+EquivDict(d::AbstractDict{K,V}) where {K,V} = EquivDict{K,V}(d)
+EquivDict(ps::Pair...) = begin
+    ps = _to_pairs(ps)
+    T = Base.eltype(ps)
+    K = t.parameters[1]
+    V = t.parameters[2]
+    return EquivDict{K,V}(ps...)
+end
+EquivDict(itr) = begin
+    ps = _to_pairs(itr)
+    T = Base.eltype(ps)
+    K = t.parameters[1]
+    V = t.parameters[2]
+    return EquivDict{K,V}(ps...)
+end
+# Base methods.            
+Base.length(s::EquivDict) = length(s.dict)
+Base.in(x::Pair{KK,VV}, s::EquivDict{K,V}) where {K,V,KK,VV} = in(EquivRef{K}(x), s.dict)
+Base.in(x::Pair{KK,VV}, s::EquivDict{K,V}, f) where {K,V,KK,VV} = in(EquivRef{K}(x), s.dict, f)
+Base.iterate(s::EquivDict{K,V}) where {K,V} = let u = iterate(s.dict)
+    (u === nothing) && return nothing
+    p = u[1]
+    return (Pair{K,V}(p[1].object, p[2]), u[2])
+end
+Base.iterate(s::EquivDict{K,V}, it) where {K,V} = let u = iterate(s.dict, it)
+    (u === nothing) && return nothing
+    p = u[1]
+    return (Pair{K,V}(p[1].object, p[2]), u[2])
+end
+Base.push!(s::EquivDict{K,V}, kv::Pair{KK,VV}) where {K,V,KK,VV} = begin
+    push!(s.dict, EquivPair{K,V}(EquivRef{K}(kv[1]), kv[2]))
+    return s
+end
+Base.delete!(s::EquivDict{K,V}, kv::Pair{KK,VV}) where {K,V,KK,VV} = begin
+    delete!(s.dict, EquivPair{K,V}(EquivRef{K}(kv[1]), kv[2]))
+    return s
+end
+equalfn(::Type{EquivDict}) = isequiv
+equalfn(::Type{EquivDict{K,V}}) where {K,V} = isequiv
+hashfn(::Type{EquivDict}) = equivhash
+hashfn(::Type{EquivDict{K,V}}) where {K,V} = equivhash
+

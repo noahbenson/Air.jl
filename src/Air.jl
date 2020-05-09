@@ -1,14 +1,15 @@
 module Air
 
 include("API.jl")
+include("PList.jl")
 include("PTree.jl")
+include("PSet.jl")
+include("PDict.jl")
 #include("PArray.jl")
-#include("PMap.jl")
-#include("PSet.jl")
 
 # Exports; sorted by file:
 #      PArray exports:
-export PArray, PVector, TArray, TVector, PMatrix, TMatrix,
-       push, pop, pushfirst, popfirst, setindex #, insert, delete,
+export PSet, PDict, PList, #PArray, PVector, PMatrix
+       push, pop, pushfirst, popfirst, setindex, delete #, insert
 
 end # module

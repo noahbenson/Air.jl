@@ -1,404 +1,151 @@
 ################################################################################
 # PDict
-# A persistent dictionary type that uses PVec and PMap types.
+# A persistent dictionary type that uses the PTree type.
 
-   
-
-# Okay, now declare the persistent types:
-abstract type PDict{K,V} <: AbstractDict{K,V} end
-"""
-    PIdDict{K,V}
-A persistent version of IdDict{K,V}.
-"""
-abstract type PIdDict{K,V} <: PDict{K,V} end
-"""
-    PEqualDict{K,V}
-A persistent form of Dict{K,V}.
-"""
-abstract type PEqualDict{K,V} <: PDict{K,V} end
-"""
-    PEquivDict{K,V}
-A persistent dict based on object equivalence rather than equality or identity
-(see isequiv and equivhash). This is the default kind of PDict.
-"""
-abstract type PEquivDict{K,V} <: PDict{K,V} end
-
-# setup our equality functions functions
-equalfn(::Type{T}) where {T <: PIdDict} = (===)
-equalfn(::Type{T}) where {T <: PEqualDict} = isequal
-equalfn(::Type{T}) where {T <: PEquivDict} = isequiv
-hashfn(::Type{T}) where {T <: PIdDict} = objectid
-hashfn(::Type{T}) where {T <: PEqualDict} = hash
-hashfn(::Type{T}) where {T <: PEquivDict} = equivhash
-equalfn(::PIdDict) = (===)
-equalfn(::PEqualDict) = isequal
-equalfn(::PEquivDict) = isequiv
-hashfn(::PIdDict) = objectid
-hashfn(::PEqualDict) = hash
-hashfn(::PEquivDict) = equivhash
-_pdict_show(io::IO, u::PDict{K,V}, name::String) where {K,V} = begin
-    mime = MIME"text/plain"()
-    print(io, name)
-    (K === Any && V === Any) || print(io, "{$(repr(mime, K)),$(repr(mime, V))}")
-    print(io, "(")
-    let ii = 1, st = iterate(u)
-        while st !== nothing
-            ii >= 20 && break
-            (ii > 1) && print(io, ", ")
-            show(io, mime, st[1])
-            st = iterate(u, st[2])
-            ii += 1
-        end
-    end
-    print(io, ")")
-end
-Base.show(io::IO, ::MIME"text/plain", u::PDict{K,V}) where {K,V} = _pdict_show(io, u, "PDict")
-Base.show(io::IO, ::MIME"text/plain", u::PIdDict{K,V}) where {K,V} = _pdict_show(io, u, "PIdDict")
-Base.show(io::IO, ::MIME"text/plain", u::PEqualDict{K,V}) where {K,V} = _pdict_show(io, u, "PEqualDict")
-Base.show(io::IO, ::MIME"text/plain", u::PEquivDict{K,V}) where {K,V} = _pdict_show(io, u, "PDict")
-
-_iseq(t::PDict{K,V}, s::AbstractDict{KK,VV}, eqfn::Function) where {K,V,KK,VV} = begin
+# We should define an isequiv function for abstract dicts; this should work
+# equally well on PSets or normal sets.
+isequiv(s::DS, t::DT) where {KT,VT,KS,VS, DS <: AbstractDict{KS,VS}, DT <: AbstractDict{KT,VT}} = begin
+    (ismuttype(DT) || ismuttype(DS)) && return (s === t)
     (length(t) == length(s)) || return false
-    # we want the general types to match...
-    (equalfn(typeof(t)) === equalfn(typeof(s))) || return false
-    for x in s
-        in(x, t, eqfn) || return false
+    for (k,v) in s
+        tt = get(t, k, t)
+        (tt === t) && return false
+        isequiv(tt, v) || return false
+    end
+    (equalfn(DS) === equalfn(DT)) && return true
+    for (k,v) in t
+        ss = get(s, k, s)
+        (ss === s) && return false
+        isequiv(ss, v) || return false
     end
     return true
 end
-Base.isequal(t::PDict{K,V}, s::AbstractDict{KK,VV}) where {K,V,KK,VV} = _iseq(t, s, isequal)
-Base.isequal(s::AbstractDict{KK,VV}, t::PDict{K,V}) where {K,V,KK,VV} = _iseq(t, s, isequal)
-isequiv(t::PDict{K,V}, s::AbstractDict{KK,VV}) where {K,V,KK,VV} = _iseq(t, s, isequiv)
-isequiv(s::AbstractDict{KK,VV}, t::PDict{K,V}) where {K,V,KK,VV} = _iseq(t, s, isequiv)
 
-# PVectorDict objects don't attenpt to differentiate objects; they just act in
-# a naive linear fashion; this makes them good if, for example, you need to
-# keep track of objects that have already had a hash collision.
-struct PIdVectorDict{K,V} <: PIdDict{K,V}
-    _items::PVec{Pair{K,V}}
-    # When given a PVec or IdSet, PVectorSet-types don't have to check for correctness!
-    PIdVectorDict{K,V}(u::IdDict{KK,VV}) where {K,V,KK<:K,VV<:V} = new{K,V}(PVec{Pair{K,V}}(Pair{K,V}[u...]))
-    PIdVectorDict{K,V}(u::PIdDict{KK,VV}) where {K,V,KK<:K,VV<:V} = new{K,V}(PVec{Pair{K,V}}(Pair{K,V}[u...]))
-    # Otherwise, they do:
-    PIdVectorDict{K,V}(u::AbstractDict{KK,VV}) where {K,V,KK<:K,VV<:V} = begin
-        let U = typeof(u), eqfn = equalfn(U), hfn = hashfn(U)
-            if eqfn === (===)
-                return new{K,V}(PVec{Pair{K,V}}(Pair{K,V}[u...]))
-            else
-                return new{K,V}(PVec{Pair{K,V}}([IdDict{Pair{K,V}}(u)...]))
+################################################################################
+# PDict
+# We construct PDicts in an unfortunaetly complex way in order to reduce code
+# duplication. The three kinds of persistent sets are very similar, just using
+# different equality tests, so we can keep most of the code the same.
+const PDictLeaf{K,V} = PList{Pair{K,V}} where {K,V}
+macro _pdict_code(name::Symbol, eqfn, hashfn)
+    let eq = gensym(), h = gensym(), _name = gensym(), q
+        q = quote
+            let $eq = $eqfn, $h = $hashfn
+                struct $name{K,V} <: AbstractDict{K,V}
+                    _n::Int
+                    _tree::PTree{PDictLeaf{K,V}}
+                    function $name{K,V}() where {K,V}
+                        return new(0, PTree{PDictLeaf{K,V}}())
+                    end
+                    function $name{K,V}(d::$name{K,V}) where {K,V}
+                        return d
+                    end
+                    function $name{K,V}(d::AbstractDict) where {K,V}
+                        return reduce(push, d, init=new(0, PTree{PDictLeaf{K,V}}()))
+                    end
+                    function $name{K,V}(ps::Pair...) where {K,V}
+                        return reduce(push, ps, init=new(0, PTree{PDictLeaf{K,V}}()))
+                    end
+                    function $name{K,V}(ps::Tuple...) where {K,V}
+                        return reduce(push, ps, init=new(0, PTree{PDictLeaf{K,V}}()))
+                    end
+                    function $name{K,V}(itr) where {K,V}
+                        return reduce(push, itr, init=new(0, PTree{PDictLeaf{K,V}}()))
+                    end
+                    function $name{K,V}(n::Int, tree::PTree{PDictLeaf{K,V}}) where {K,V}
+                        return new(n, tree)
+                    end
+                end
+                # Document the equal/hash types.
+                equalfn(::Type{T}) where {T <: $name} = $eq
+                hashfn(::Type{T}) where {T <: $name} = $h
+                equalfn(::$name) = $eq
+                hashfn(::$name) = $h
+                # Generic construction.
+                $name() = $name{Any,Any}()
+                $name(::Tuple{}) = $name{Any,Any}()
+                $name(p::Pair{K,V}) where {K,V} = $name{K,V}(p)
+                $name(d::AbstractDict{EquivRef{K},V}) where {K,V} = $name{K,V}(d)
+                $name(d::AbstractDict{K,V}) where {K,V} = $name{K,V}(d)
+                $name(ps::Pair...) = begin
+                    ps = _to_pairs(ps)
+                    T = Base.eltype(ps)
+                    K = T.parameters[1]
+                    V = T.parameters[2]
+                    return $name{K,V}(ps...)
+                end
+                $name(itr) = begin
+                    ps = _to_pairs(itr)
+                    T = Base.eltype(ps)
+                    K = T.parameters[1]
+                    V = T.parameters[2]
+                    return $name{K,V}(ps...)
+                end
+                # Base methods.
+                Base.empty(s::$name{K,V}, ::Type{J}=K, ::Type{U}=V) where {K,V,J,U} = $name{J,U}()
+                Base.length(s::$name) = s._n
+                Base.iterate(u::$name{K,V}) where {K,V} = begin
+                    (u._n == 0) && return nothing
+                    (lst,titer) = iterate(u._tree)
+                    lst = lst[2]
+                    (el,liter) = iterate(lst)
+                    return (el,(lst,liter,titer))
+                end
+                Base.iterate(u::$name{K,V}, tup) where {K,V} = begin
+                    (lst,liter,titer) = tup
+                    if liter !== nothing
+                        (el,liter) = iterate(lst, liter)
+                        return (el,(lst,liter,titer))
+                    end
+                    q = iterate(u._tree, titer)
+                    (q === nothing) && return q
+                    (lst,titer) = q
+                    lst = lst[2]
+                    (el,liter) = iterate(lst)
+                    return (el,(lst,liter,titer))
+                end
+                Base.get(u::$name{K,V}, k, df) where {K,V} = begin
+                    hh = $h(k)
+                    uu = get(u._tree, hh, _nought)
+                    (uu === _nought) && return df
+                    for (kk,vv) in uu
+                        $eq(k, kk) && return vv
+                    end
+                    return df
+                end
+                Base.in(kv::Pair, u::$name{K,V}, eqfn::Function) where {K,V} = begin
+                    v = get(u, kv.first, u)
+                    (v === u) && return false
+                    return eqfn(kv.second, v)
+                end
+                Base.in(x::Pair, u::$name{K,V}) where {K,V} = in(x, u, $eq)
+                # And the Air methods.
+                Air.push(u::$name{K,V}, x::Pair) where {K,V} = begin
+                    hh = $h(x.first)
+                    uu = get(u._tree, hh, PDictLeaf{K,V}())
+                    in(x, u, $eq) && return u
+                    uu = pushfirst(uu, x)
+                    tr = setindex(u._tree, uu, hh)
+                    return $name{K,V}(u._n + 1, tr)
+                end
+                Air.delete(u::$name{K,V}, x::J) where {K,V,J} = begin
+                    hh = $h(x)
+                    uu = get(u._tree, hh, PDictLeaf{K,V}())
+                    (length(uu) === 0) && return u
+                    vv = delete(uu, x, (k,kv) -> $eq(k, kv.first))
+                    (uu === vv) && return u
+                    if length(vv) == 0
+                        return $name{K,V}(u._n - 1, delete(u._tree, hh))
+                    else
+                        return $name{K,V}(u._n - 1, setindex(u._tree, vv, hh))
+                    end
+                end
             end
         end
-    end
-    PIdVectorDict{K,V}(u::AbstractArray) where {K,V} = begin
-        new{K,V}(PVec{Pair{L,V}}(Pair{K,V}[IdDict{K,V}(Pair{K,V}[u...])...]))
-    end
-    # However, it is too expensive to check every possible iteration of a dict for
-    # correctness (e.g. as we build up or edit a dict), so we do not check when
-    # we are passed a PVec that is of the appropriate type:
-    PIdVectorDict{K,V}(u::PVec{Pair{K,V}}) where {K,V} = new{K,V}(u)
-end
-PIdVectorDict{K,V}(u::PIdVectorDict{K,V}) where {K,V} = u
-struct PEqualVectorDict{K,V} <: PEqualDict{K,V}
-    _items::PVec{Pair{K,V}}
-    PEqualVectorDict{K,V}(u::Dict{KK,VV}) where {K,V,KK<:K,VV<:V} = begin
-        return new{K,V}(PVec{Pair{K,V}}(Pair{K,V}[u...]))
-    end
-    PEqualVectorDict{K,V}(u::PEqualDict{KK,VV}) where {K,V,KK<:K,VV<:V} = begin
-        return new{K,V}(PVec{Pair{K,V}}(Pair{K,V}[u...]))
-    end
-    PEqualVectorDict{K,V}(u::AbstractDict{KK,VV}) where {K,V,KK<:K,VV<:V} = begin
-        let U = typeof(u), eqfn = equalfn(U), hfn = hashfn(U)
-            if eqfn === isequal
-                return new{K,V}(PVec{Pair{K,V}}(Pair{K,V}[u...]))
-            else
-                return new{K,V}(PVec{Pair{K,V}}([Dict{K,V}(u)...]))
-            end
-        end
-    end
-    PEqualVectorDict{K,V}(u::AbstractArray) where {K,V} = begin
-        return new{K,V}(PVec{Pair{K,V}}(Pair{K,V}[Dict{K,V}(u)...]))
-    end
-    PEqualVectorDict{K,V}(u::PVec{Pair{K,V}}) where {K,V} = new{K,V}(u)
-end
-PEqualVectorDict{K,V}(u::PEqualVectorDict{K,V}) where {K,V} = u
-struct PVectorDict{K,V} <: PEquivDict{K,V}
-    _items::PVec{Pair{K,V}}
-    PVectorDict{K,V}(u::PVec{Pair{K,V}}) where {K,V} = new{K,V}(u)
-    PVectorDict{K,V}(u::EquivDict{KK,VV}) where {K,V,KK,VV} = new{K,V}(PVec{Pair{K,V}}(Pair{K,V}[u...]))
-    PVectorDict{K,V}(u::PDict{KK,VV}) where {K,V,KK,VV} = new{K,V}(PVec{Pair{K,V}}(Pair{K,V}[u...]))
-    PVectorDict{K,V}(u::AbstractDict{KK,VV}) where {K,V,KK,VV} = begin
-        let U = typeof(u), eqfn = equalfn(U), hfn = hashfn(U)
-            if eqfn === isequiv
-                return new{K,V}(PVec{Pair{K,V}}(Pair{K,V}[u...]))
-            else
-                return new{K,V}(PVec{Pair{K,V}}([EquivDict{K,V}(u)...]))
-            end
-        end
-    end
-    PVectorDict{K,V}(u::AbstractArray) where {K,V} = new{K,V}(PVec{Pair{K,V}}(Pair{K,V}[EquivDict{K,V}(u)...]))
-end
-const PVECDICTS = (Union{PIdVectorDict{K,V}, PEqualVectorDict{K,V}, PVectorDict{K,V}} where {K,V})
-Base.convert(::Type{PVec{Pair{K,V}}}, u::PVectorDict{K,V}) where {K,V} = u._items
-Base.convert(::Type{PVec{Pair{K,V}}}, u::PIdVectorDict{K,V}) where {K,V} = u._items
-Base.convert(::Type{PVec{Pair{K,V}}}, u::PEqualVectorDict{K,V}) where {K,V} = u._items
-Base.length(u::PVectorDict) = length(u._items)
-Base.length(u::PIdVectorDict) = length(u._items)
-Base.length(u::PEqualVectorDict) = length(u._items)
-Base.iterate(u::PVectorDict) = iterate(u._items)
-Base.iterate(u::PIdVectorDict) = iterate(u._items)
-Base.iterate(u::PEqualVectorDict) = iterate(u._items)
-Base.iterate(u::PVectorDict, x) = iterate(u._items, x)
-Base.iterate(u::PIdVectorDict, x) = iterate(u._items, x)
-Base.iterate(u::PEqualVectorDict, x) = iterate(u._items, x)
-Base.in(x::Pair{KK,VV}, u::PVECDICTS{K,V}, eqfn::Function) where {K,V,KK<:K,VV<:V} = begin
-    for y in convert(PVec{Pair{K,V}}, u)
-        eqfn(y, x) && return true
-    end
-    return false
-end
-Base.in(x::Pair{KK,VV}, u::PVECDICTS{K,V}) where {K,V,KK<:K,VV<:V} = in(x, u, equalfn(u))
-push(u::PVECDICTS{K,V}, x::Pair{KK,VV}) where {K,V,KK<:K,VV<:V} = let U = typeof(u)
-    (x in u) && return u
-    return U(push(convert(PVec{Pair{K,V}}, u), x))
-end
-delete(u::PVECDICTS{K,V}, k::KK) where {K,V,KK<:K} = begin
-    let eq = equalfn(u), v = convert(PVec{Pair{K,V}}, u), U = typeof(u)
-        for (ii,ky,vy) in enumerate(v)
-            eq(ky, k) && return U(PVec{Pair{K,V}}(vcat(v[1:ii-1], v[ii+1:end])))
-        end
-        return u
+        return esc(q)
     end
 end
-
-# PHashDict is a a dict that uses persistent maps to keep track of keys in and
-# not in the dict. The expectation is that the dicts that make up the map values
-# are PVectordict type sets.
-struct PHashDict{K,V} <: PEquivDict{K,V}
-    _n::Integer
-    _table::PMap{PVectorSet{Pair{K,V}}}
-end
-struct PIdHashDict{K,V} <: PIdDict{K,V}
-    _n::Integer
-    _table::PMap{PVectorSet{Pair{K,V}}}
-end
-struct PEqualHashDict{K,V} <: PEqualDict{K,V}
-    _n::Integer
-    _table::PMap{PVectorSet{Pair{K,V}}}
-end
-_pvecset_type(::Type{PHashDict}) = PVectorSet
-_pvecset_type(::Type{PIdHashDict}) = PIdVectorSet
-_pvecset_type(::Type{PEqualHashDict}) = PEqualVectorSet
-_pvecset_type(::Type{PHashDict{K,V}}) where {K,V} = PVectorSet{Pair{K,V}}
-_pvecset_type(::Type{PIdHashDict{K,V}}) where {K,V} = PIdVectorSet{Pair{K,V}}
-_pvecset_type(::Type{PEqualHashDict{K,V}}) where {K,V} = PEqualVectorSet{Pair{K,V}}
-_pvecset_type(::Type{PVectorDict}) = PVectorSet
-_pvecset_type(::Type{PIdVectorDict}) = PIdVectorSet
-_pvecset_type(::Type{PEqualVectorDict}) = PEqualVectorSet
-_pvecset_type(::Type{PVectorDict{K,V}}) where {K,V} = PVectorSet{Pair{K,V}}
-_pvecset_type(::Type{PIdVectorDict{K,V}}) where {K,V} = PIdVectorSet{Pair{K,V}}
-_pvecset_type(::Type{PEqualVectorDict{K,V}}) where {K,V} = PEqualVectorSet{Pair{K,V}}
-_pvecset_type(::Type{EquivDict}) = PVectorSet
-_pvecset_type(::Type{IdDict}) = PIdVectorSet
-_pvecset_type(::Type{Dict}) = PEqualVectorSet
-_pvecset_type(::Type{EquivDict{K,V}}) where {K,V} = PVectorSet{Pair{K,V}}
-_pvecset_type(::Type{IdDict{K,V}}) where {K,V} = PIdVectorSet{Pair{K,V}}
-_pvecset_type(::Type{Dict{K,V}}) where {K,V} = PEqualVectorSet{Pair{K,V}}
-_pvecset_type(::Type{AbstractDict}) = PEqualVectorSet
-_pvecset_type(::Type{AbstractDict{K,V}}) where {K,V} = PEqualVectorSet{Pair{K,V}}
-_pvecdict_type(::Type{PHashDict}) = PVectorDict
-_pvecdict_type(::Type{PIdHashDict}) = PIdVectorDict
-_pvecdict_type(::Type{PEqualHashDict}) = PEqualVectorDict
-_pvecdict_type(::Type{PHashDict{K,V}}) where {K,V} = PVectorDict{K,V}
-_pvecdict_type(::Type{PIdHashDict{K,V}}) where {K,V} = PIdVectorDict{K,V}
-_pvecdict_type(::Type{PEqualHashDict{K,V}}) where {K,V} = PEqualVectorDict{K,V}
-_pvecdict_type(::Type{PVectorDict}) = PVectorDict
-_pvecdict_type(::Type{PIdVectorDict}) = PIdVectorDict
-_pvecdict_type(::Type{PEqualVectorDict}) = PEqualVectorDict
-_pvecdict_type(::Type{PVectorDict{K,V}}) where {K,V} = PVectorDict{K,V}
-_pvecdict_type(::Type{PIdVectorDict{K,V}}) where {K,V} = PIdVectorDict{K,V}
-_pvecdict_type(::Type{PEqualVectorDict{K,V}}) where {K,V} = PEqualVectorDict{K,V}
-_pvecdict_type(::Type{EquivDict}) = PVectorDict
-_pvecdict_type(::Type{IdDict}) = PIdVectorDict
-_pvecdict_type(::Type{Dict}) = PEqualVectorDict
-_pvecdict_type(::Type{EquivDict{K,V}}) where {K,V} = PVectorDict{K,V}
-_pvecdict_type(::Type{IdDict{K,V}}) where {K,V} = PIdVectorDict{K,V}
-_pvecdict_type(::Type{Dict{K,V}}) where {K,V} = PEqualVectorDict{K,V}
-_pvecdict_type(::Type{AbstractDict}) = PEqualVectorDict
-_pvecdict_type(::Type{AbstractDict{K,V}}) where {K,V} = PEqualVectorDict{K,V}
-_phashdict_type(::Type{PVectorDict}) = PHashDict
-_phashdict_type(::Type{PIdVectorDict}) = PIdHashDict
-_phashdict_type(::Type{PEqualVectorDict}) = PEqualHashDict
-_phashdict_type(::Type{PVectorDict{K,V}}) where {K,V} = PHashDict{K,V}
-_phashdict_type(::Type{PIdVectorDict{K,V}}) where {K,V} = PIdHashDict{K,V}
-_phashdict_type(::Type{PEqualVectorDict{K,V}}) where {K,V} = PEqualHashDict{K,V}
-_phashdict_type(::Type{PVectorDict}) = PHashDict
-_phashdict_type(::Type{PIdVectorDict}) = PIdHashDict
-_phashdict_type(::Type{PEqualVectorDict}) = PEqualHashDict
-_phashdict_type(::Type{PVectorDict{K,V}}) where {K,V} = PHashDict{K,V}
-_phashdict_type(::Type{PIdVectorDict{K,V}}) where {K,V} = PIdHashDict{K,V}
-_phashdict_type(::Type{PEqualVectorDict{K,V}}) where {K,V} = PEqualHashDict{K,V}
-_phashdict_type(::Type{PHashDict}) = PHashDict
-_phashdict_type(::Type{PIdHashDict}) = PIdHashDict
-_phashdict_type(::Type{PEqualHashDict}) = PEqualHashDict
-_phashdict_type(::Type{PHashDict{K,V}}) where {K,V} = PHashDict{K,V}
-_phashdict_type(::Type{PIdHashDict{K,V}}) where {K,V} = PIdHashDict{K,V}
-_phashdict_type(::Type{PEqualHashDict{K,V}}) where {K,V} = PEqualHashDict{K,V}
-_phashdict_type(::Type{EquivDict}) = PVectorDict
-_phashdict_type(::Type{IdDict}) = PIdHashDict
-_phashdict_type(::Type{Dict}) = PEqualHashDict
-_phashdict_type(::Type{EquivDict{K,V}}) where {K,V} = PVectorDict{K,V}
-_phashdict_type(::Type{IdDict{K,V}}) where {K,V} = PIdHashDict{K,V}
-_phashdict_type(::Type{Dict{K,V}}) where {K,V} = PEqualHashDict{K,V}
-_phashdict_type(::Type{AbstractDict}) = PEqualHashDict
-_phashdict_type(::Type{AbstractDict{K,V}}) where {K,V} = PEqualHashDict{K,V}
-# For hash-type sets:
-_pdict_init(P::DataType, arr::AbstractArray)= begin
-    let P = (isa(P, UnionAll) ? P{K,V} : P), K = P.parameters[1], V = P.parameters[2],
-        D = _pvecset_type(P), u = TMap{PSet{Pair{K,V}}}(), eqfn = equalfn(P), hfn = hashfn(P), h, x
-        for (k,v) in arr
-            h = hfn(k)
-            x = get(u, h, nothing)
-            if x === nothing
-                u[h] = D([Pair{K,V}(k,v)])
-            else
-                u[h] = push(x, Pair{K,V}(k,v))
-            end
-        end
-        return P(length(u), freeze(u))
-    end
-end
-_pdict_init(P::DataType, s::AbstractDict{KK,VV}) where {KK,VV} = _pdict_init(P, Array(s))
-# PHash type methods:
-const PHASHDICTS = (Union{PHashDict{K,V}, PIdHashDict{K,V}, PEqualHashDict{K,V}} where {K,V})
-Base.convert(::Type{PMap{PVectorSet{Pair{K,V}}}}, u::PHashDict{K,V}) where {K,V} = u._table
-Base.convert(::Type{PMap{PVectorSet{Pair{K,V}}}}, u::PIdHashDict{K,V}) where {K,V} = u._table
-Base.convert(::Type{PMap{PVectorSet{Pair{K,V}}}}, u::PEqualHashDict{K,V}) where {K,V} = u._table
-Base.length(u::PHashDict)       = u._n
-Base.length(u::PIdHashDict)     = u._n
-Base.length(u::PEqualHashDict)  = u._n
-Base.iterate(u::PHASHDICTS{K,V}) where {K,V} = begin
-    let t = convert(PMap{PVectorSet{Pair{K,V}}}, u), x = iterate(t)
-        (x === nothing) && return nothing
-        let ((kk,subd),addr1) = x, (kv,addr2) = iterate(subd)
-            return (kv, (t, subd, addr1, addr2))
-        end
-    end
-end
-Base.iterate(u::PHASHDICTS{K,V}, addr::Tuple) where {K,V} = let (t,subd,ad1,ad2) = addr, x
-    x = iterate(subd, ad2)
-    if x === nothing
-        x = iterate(t, ad1)
-        (x === nothing) && return nothing
-        let ((kk,subd),addr1) = x, (kv,addr2) = iterate(subd)
-            return (kv, (t, subd, addr1, addr2))
-        end
-    else
-        let (kv,addr2) = x
-            return (kv, (t, k, vs, ad1, addr2))
-        end
-    end
-end
-Base.haskey(u::PHASHDICTS{K,V}, k::KK) where {K,V,KK<:K} = begin
-    let h = UInt(hashfn(u)(k)), v = get(u._table, h, nothing), eqfn = equalfn(u)
-        (v === nothing) && return false
-        for p in v
-            eqfn(p[1], k) && return true
-        end
-        return false
-    end
-end
-Base.get(u::PHASHDICTS{K,V}, k::KK, df) where {K,V,KK<:K} = begin
-    let h = UInt(hashfn(u)(k)), v = get(u._table, h, nothing), eqfn = equalfn(u)
-        (v === nothing) && return df
-        for p in v
-            eqfn(p[1], k) && return p[2]
-        end
-        return df
-    end
-end
-Base.in(x::Pair{KK,VV}, u::PHASHDICTS{K,V}, eqfn::Function) where {K,V,KK<:K,VV<:V} = begin
-    let h = UInt(hashfn(u)(x[1])), t = convert(PMap{PVectorSet{Pair{K,V}}}, u), ys = get(t, h, nothing)
-        (ys === nothing) && return false
-        return in(Pair{K,V}(x[1],x[2]), ys, eqfn)
-    end
-end
-Base.in(x::Pair{KK,VV}, u::PHASHDICTS{K,V}) where {K,V,KK<:K,VV<:V} = in(x, u, equalfn(u))
-push(u::PHASHDICTS{K,V}, p::Pair{KK,VV}) where {K,V,KK<:K,VV<:V} = begin
-    let U = typeof(u), t = convert(PMap{PVectorSet{Pair{K,V}}}, u), eqfn = equalfn(u),
-        (k,v) = p, h = UInt(hashfn(u)(k)), vv = get(t, h, nothing)
-        (vv === nothing) && return U(u._n + 1, assoc(t, h, _pvecset_type(U)(Pair{K,V}[p])))
-        if haskey(vv, k)
-            (get(vv, k, nothing) === v) && return u
-            return U(u._n, assoc(t, h, assoc(vv, k, v)))
-        else
-            let vvv = push(vv, p)
-                (vvv === v) && return u
-                return U(u._n + 1, assoc(t, h, vvv))
-            end
-        end
-    end
-end
-insert(u::PHASHDICTS{K,V}, k::KK, v::VV) where {K,V,KK<:K,VV<:V} = push(u, k => v)
-delete(u::PHASHDICTS{K,V}, k::KK) where {K,V,KK<:K} = begin
-    let U = typeof(u), t = convert(PMap{PVectorSet{Pair{K,V}}}, u), eqfn = equalfn(u),
-        h = UInt(hashfn(u)(k)), v = get(t, h, nothing)
-        (v === nothing) && return u
-        for pair in v
-            eqfn(pair[1],k) || continue
-            return U(u._n - 1,
-                     length(v) == 1
-                     ? dissoc(t, h)
-                     : assoc(t, h, delete(v, pair)))
-        end
-    end
-end
-# Constructors:
-PHashDict{K,V}() where {K,V} = PHashDict{K,V}(0, PMap{PVectorSet{Pair{K,V}}}())
-PHashDict{K,V}(s::PHashDict{K,V}) where {K,V} = s
-PHashDict{K,V}(s::AbstractDict{KK,VV}) where {K,V,KK<:K,VV<:V} = _pdict_init(PHashDict{K,V}, s)
-PHashDict{K,V}(arr::AbstractArray{Pair{KK,VV}, 1}) where {K,V,KK<:K,VV<:V} = _pdict_init(PHashDict{K,V}, arr)
-PIdHashDict{K,V}() where {K,V} = PIdHashDict{K,V}(0, PMap{Pair{K,PSet{V}}}())
-PIdHashDict{K,V}(s::PIdHashDict{K,V}) where {K,V} = s
-PIdHashDict{K,V}(s::AbstractDict{KK,VV}) where {K,V,KK<:K,VV<:V} = _pdict_init(PIdHashDict{K,V}, s)
-PIdHashDict{K,V}(arr::AbstractArray{Pair{KK,VV}, 1}) where {K,V,KK<:K,VV<:V} = _pdict_init(PIdHashDict{K,V}, arr)
-PEqualHashDict{K,V}() where {K,V} = PEqualHashSet(0, PMap{Pair{K,PSet{V}}}())
-PEqualHashDict{K,V}(s::PEqualHashDict{K,V}) where {K,V} = s
-PEqualHashDict{K,V}(s::AbstractDict{KK,VV}) where {K,V,KK<:K,VV<:V} = _pdict_init(PEqualHashDict{K,V}, s)
-PEqualHashDict{K,V}(arr::AbstractArray{Pair{KK,VV}, 1}) where {K,V,KK<:K,VV<:V} = _pdict_init(PEqualHashDict{K,V}, arr)
-
-PDict{K,V}() where {K,V} = PHashDict{K,V}()
-PDict{K,V}(s::AbstractDict{KK,VV}) where {K,V,KK<:K,VV<:V} = PHashDict{K,V}(s)
-PDict{K,V}(s::AbstractArray{Pair{KK,VV},1}) where {K,V,KK<:K,VV<:V} = PHashDict{K,V}(s)
-PIdDict{K,V}() where {K,V} = PIdHashDict{K,V}()
-PIdDict{K,V}(s::AbstractDict{KK,VV}) where {K,V,KK<:K,VV<:V} = PIdHashDict{K,V}(s)
-PIdDict{K,V}(s::AbstractArray{Pair{KK,VV},1}) where {K,V,KK<:K,VV<:V} = PIdHashDict{K,V}(s)
-PEqualDict{K,V}() where {K,V} = PEqualHashDict{K,V}()
-PEqualDict{K,V}(s::AbstractDict{KK,VV}) where {K,V,KK<:K,VV<:V} = PEqualHashDict{K,V}(s)
-PEqualDict{K,V}(s::AbstractArray{Pair{KK,VV},1}) where {K,V,KK<:K,VV<:V} = PEqualHashDict{K,V}(s)
-_pdict_construct(PS::Type, s::AbstractArray{T,1}) where {T} = begin
-    let K = typejoin([typeof(k) for (k,v) in s]...), V = typejoin([typeof(v) for (k,v) in s]...)
-        return PS{K,V}(s)
-    end
-end
-_pdict_construct(PS::Type, s::AbstractDict{K,V}) where {K,V} = begin
-    return PS{K,V}(Pair{K,V}[s...])
-end
-PVectorDict(s::AbstractArray{T,1})      where {T} = _pdict_construct(PVectorDict, s)
-PIdVectorDict(s::AbstractArray{T,1})    where {T} = _pdict_construct(PIdVectorDict, s)
-PEqualVectorDict(s::AbstractArray{T,1}) where {T} = _pdict_construct(PEqualVectorDict, s)
-PHashDict(s::AbstractArray{T,1})      where {T} = _pdict_construct(PHashDict, s)
-PIdHashDict(s::AbstractArray{T,1})    where {T} = _pdict_construct(PIdHashDict, s)
-PEqualHashDict(s::AbstractArray{T,1}) where {T} = _pdict_construct(PEqualHashDict, s)
-PDict(s::AbstractArray{T,1})      where {T} = _pdict_construct(PHashDict, s)
-PIdDict(s::AbstractArray{T,1})    where {T} = _pdict_construct(PIdHashDict, s)
-PEqualDict(s::AbstractArray{T,1}) where {T} = _pdict_construct(PEqualHashDict, s)
-
-PVectorDict(s::AbstractDict{K,V})      where {K,V} = _pdict_construct(PVectorDict, s)
-PIdVectorDict(s::AbstractDict{K,V})    where {K,V} = _pdict_construct(PIdVectorDict, s)
-PEqualVectorDict(s::AbstractDict{K,V}) where {K,V} = _pdict_construct(PEqualVectorDict, s)
-PHashDict(s::AbstractDict{K,V})      where {K,V} = _pdict_construct(PHashDict, s)
-PIdHashDict(s::AbstractDict{K,V})    where {K,V} = _pdict_construct(PIdHashDict, s)
-PEqualHashDict(s::AbstractDict{K,V}) where {K,V} = _pdict_construct(PEqualHashDict, s)
-PDict(s::AbstractDict{K,V})      where {K,V} = _pdict_construct(PHashDict, s)
-PIdDict(s::AbstractDict{K,V})    where {K,V} = _pdict_construct(PIdHashDict, s)
-PEqualDict(s::AbstractDict{K,V}) where {K,V} = _pdict_construct(PEqualHashDict, s)
+    
+@_pdict_code PDict isequiv equivhash
+@_pdict_code PIdDict (===) objectid
+@_pdict_code PEqualDict isequal hash

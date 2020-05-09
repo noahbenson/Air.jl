@@ -4,85 +4,22 @@
 
 import Base.IdSet
 
-# Before we declare our own sets, let's use a clever trick to make a mutable set
-# type based on equivalence.
-
-"""
-    EquivRef{T}
-An EquivRef wraps an object and mimics its equivhash() and equiv() functions on
-the hash() and isequal() functions.
-"""
-struct EquivRef{T} <: Ref{T}
-    object::T
-end
-Base.hash(r::EquivRef) = equivhash(r.object)
-Base.isequal(r::EquivRef, s::EquivRef) = isequiv(r.object, s.object)
-Base.:(==)(r::EquivRef, s::EquivRef) = isequiv(r.object, s.object)
-Base.getindex(r::EquivRef{T}) where {T} = r.object
-"""
-    EquivSet{T}
-The EquivSet type is like the Set and IdSet types, except that it works on the
-isequiv() and equivhash() functions instead of the isequal() and hash()
-functions or the === and objectid() functions.
-"""
-struct EquivSet{T} <: AbstractSet{T}
-    set::Set{EquivRef{T}}
-end
-EquivSet{T}() where {T} = EquivSet{T}(Set{EquivRef{T}}())
-EquivSet() = EquivSet{Any}()
-EquivSet{T}(arr::AbstractArray{S,1}) where {T,S<:T} = let ers = [EquivRef{T}(x) for x in arr]
-    return EquivSet{T}(Set{EquivRef{T}}(ers))
-end
-EquivSet{T}(arr::AbstractSet{S}) where {T,S<:T} = let ers = [EquivRef{T}(x) for x in arr]
-    return EquivSet{T}(Set{EquivRef{T}}(ers))
-end
-EquivSet(arr::AbstractArray{S,1}) where {T,S<:T} = begin
-    let T = typejoin([typeof(x) for x in arr]...), ers = [EquivRef{T}(x) for x in arr]
-        return EquivSet{T}(Set{EquivRef{T}}(ers))
-    end
-end
-EquivSet(arr::AbstractSet{S}) where {T,S<:T} = let ers = [EquivRef{T}(x) for x in arr]
-    let T = typejoin([typeof(x) for x in arr]...), ers = [EquivRef{T}(x) for x in arr]
-        return EquivSet{T}(Set{EquivRef{T}}(ers))
-    end
-end
-Base.length(s::EquivSet) = length(s.set)
-Base.in(x::S, s::EquivSet{T}) where {T, S<:T} = in(EquivRef{T}(x), s.set)
-Base.in(x::S, s::EquivSet{T}, f) where {T, S<:T} = in(EquivRef{T}(x), s.set, f)
-Base.iterate(s::EquivSet{T}) where {T} = let u = iterate(s.set)
-    (u === nothing) && return nothing
-    return (u[1].object, u[2])
-end
-Base.iterate(s::EquivSet{T}, it) where {T} = let u = iterate(s.set, it)
-    (u === nothing) && return nothing
-    return (u[1].object, u[2])
-end
-Base.push!(s::EquivSet{T}, x::S) where {T, S<:T} = begin
-    push!(s.set, EquivRef{T}(x))
-    return s
-end
-Base.delete!(s::EquivSet{T}, x::S) where {T, S<:T} = begin
-    delete!(s.set, EquivRef{T}(x))
-    return s
-end
-equalfn(::Type{EquivSet}) = isequiv
-equalfn(::Type{EquivSet{T}}) where {T} = isequiv
-hashfn(::Type{EquivSet}) = equivhash
-hashfn(::Type{EquivSet{T}}) where {T} = equivhash
-
 # We should define an isequiv function for abstract sets; this should work
 # equally well on PSets or normal sets.
 isequiv(s::SS, t::ST) where {S, T, SS <: AbstractSet{S}, ST <: AbstractSet{T}} = begin
     (ismuttype(ST) || ismuttype(ST)) && return (s === t)
     (length(t) == length(s)) || return false
     for ss in s
-        tt = get(t, ss, t)
-        (tt === t) && return false
-        isequiv(ss, tt) || return false
+        (ss in t) || return false
+    end
+    # If s and t use the same notion of equivalence, this is enough
+    (equalfn(SS) === equalfn(ST)) && return true
+    # Otherwise, we need to check the other direction also
+    for tt in t
+        (tt in s) || return false
     end
     return true
 end
-
 
 ################################################################################
 # PSet
@@ -169,5 +106,5 @@ macro _pset_code(name::Symbol, eqfn, hashfn)
 end
     
 @_pset_code PSet isequiv equivhash
-#@_pset_code PIdSet (===) objectid
-#@_pset_code PEqualSet isequal hash
+@_pset_code PIdSet (===) objectid
+@_pset_code PEqualSet isequal hash
