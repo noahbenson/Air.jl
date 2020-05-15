@@ -106,8 +106,8 @@ macro _pdict_code(name::Symbol, eqfn, hashfn)
                 end
                 Base.get(u::$name{K,V}, k, df) where {K,V} = begin
                     hh = $h(k)
-                    uu = get(u._tree, hh, _nought)
-                    (uu === _nought) && return df
+                    uu = get(u._tree, hh, u)
+                    (uu === u) && return df
                     for (kk,vv) in uu
                         $eq(k, kk) && return vv
                     end
