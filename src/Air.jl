@@ -6,7 +6,9 @@ include("PTree.jl")
 include("PList.jl")
 include("PSet.jl")
 include("PDict.jl")
-include("PArray.jl")
+include("LazyDict.jl")
+include("TX.jl")
+#include("PArray.jl")
 
 # Exports; sorted by file:
 #      PArray exports:

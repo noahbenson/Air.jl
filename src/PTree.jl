@@ -134,11 +134,12 @@ hash-maps, and supports efficient lookup, association, and dissociation.
 `PTree{T}()` yields an empty tree.
 """
 struct PTree{T} <: AbstractDict{_PTREE_KEY_T, T}
-    _n::_PTREE_KEY_T
     _id::_PTREE_KEY_T
     _bits::_PTREE_BITS_T
     _data::_PTREE_CELLS_TYPE{PTree{T}, T}
 end
+mutability(::Type{PTree}) = Immutable
+mutability(::Type{PTree{T}}) where {T} = Immutable
 # #TTee ========================================================================
 """
     TTree{T}
@@ -187,17 +188,17 @@ macro _forcells_from(tree, var::Symbol, from, expr::Expr)
 end
 # # Constructors ===============================================================
 #   First, constructors for making empty Trees.
-PTree{T}() where {T} = PTree{T}(0x0, 0x0, 0x0, PTree{T}[])
+PTree{T}() where {T} = PTree{T}(0x0, 0x0, PTree{T}[])
 TTree{T}() where {T} = TTree{T}(0x0, 0x0, 0x0, PTree{T}[])
 #   Now for copying trees of the same type.
 PTree{T}(u::PTree{T}) where {T} = u
-PTree{T}(u::PTree{S}) where {T,S} = PTree{T}(u._n, u._id, u._bits, _PTREE_CELLS_T{T}(u._data))
+PTree{T}(u::PTree{S}) where {T,S} = PTree{T}(u._id, u._bits, _PTREE_CELLS_T{T}(u._data))
 #   Now for converting back and forth between PType and TType.
 PTree{T}(u::TTree{S}) where {T,S} = begin
     newdata = _PTREE_CELL_T{T}[(x isa PTree{S} ? PTree{T}(x) :
                                 x isa TTree{S} ? PTree{T}(x) : x)
                                for x in u._data]
-    return PTree{T}(u._n, u._id, u._bits, _PTREE_CELLS_T{T}(newdata))
+    return PTree{T}(u._id, u._bits, _PTREE_CELLS_T{T}(newdata))
 end
 #   Now for constructors from abstract dictionaries.
 PTree{T}(d::AbstractDict{_PTREE_KEY_T, S}) where {T,S} = let u = TTree{T}()
@@ -215,7 +216,7 @@ PTree{T}(a::AbstractArray{1,S}) where {T,S} = begin
     if n == 0
         return PTree{T}()
     elseif n == 1
-        return PTree{T}(0x1, _nodeid(0x0, depth), 0x1, T[a[1]])
+        return PTree{T}(_nodeid(0x0, depth), 0x1, T[a[1]])
     else
         while n > 1
             # First, divide the previous elements into grouped tree nodes.
@@ -228,7 +229,7 @@ PTree{T}(a::AbstractArray{1,S}) where {T,S} = begin
             for ii in 1:maxidx - 1
                 nid = _nodeid(hnp * (ii-1), depth)
                 ch = _PTREE_CELLS_T{T}(u[1 + (ii-1)*_PTREE_COUNT:ii*_PTREE_COUNT])
-                push!(a, PTree{T}(hn, nid, bits, ch))
+                push!(a, PTree{T}(nid, bits, ch))
             end
             # The last element we handle specially because we need to be
             # careful about its n.
@@ -238,7 +239,7 @@ PTree{T}(a::AbstractArray{1,S}) where {T,S} = begin
             nch = length(ch)
             ch = _PTREE_CELLS_T{T}(T[ch...])
             bids = (_PTREE_BITS_T(0x1) << nch) - 0x1
-            t = PTree{T}((nch-1)*hnp + ch[end-1]._n, nid, bits, ch)
+            t = PTree{T}(nid, bits, ch)
             push!(a, t)
             # Increment
             depth -= 1
@@ -262,17 +263,25 @@ end
 # Definitions of methods of the above type.
 Base.empty(u::PTree{T}) where {T} = PTree{T}()
 Base.empty(u::PTree{T}, S::Type) where {T} = PTree{S}()
-Base.isempty(u::PTree) = (u._n == 0x0)
-Base.length(u::PTree) = Int(u._n)
+Base.isempty(u::PTree) = (u._bits == 0x0)
+_lencount(u::PTree{T}, v::Vector{T}) where {T} = begin
+    n = 0
+    @_forcells u k n += 1
+    return n
+end
+_lencount(u::PTree{T}, v::Vector{PTree{T}}) where {T} = begin
+    n = 0
+    @_forcells u k n += length(v[k])
+    return n
+end
+Base.length(u::PTree) = _lencount(u, u._data)
 Base.isequal(t::PTree{T}, s::PTree{S}) where {T,S} = begin
-    (t._n == s._n) || return false
     (t._bits == s._bits) || return false
     (t._nodeid == s._nodeid) || return false
-    @_forcells t k ((t._data[k] == s._data[k]) || return false)
+    @_forcells t k isequal(t._data[k], s._data[k]) || return false
     return true
 end
 isequiv(t::PTree{T}, s::PTree{S}) where {T,S} = begin
-    (t._n == s._n) || return false
     (t._bits == s._bits) || return false
     (t._nodeid == s._nodeid) || return false
     @_forcells t k isequiv(t._data[k], s._data[k]) || return false
@@ -293,14 +302,15 @@ end
 Base.convert(::Type{PTree{T}}, t::PTree{S}) where {T,S} = PTree{T}(t)
 Base.copy(t::PTree{T}) where {T} = t
 Base.get(u::PTree{T}, k::_PTREE_KEY_T, df) where {T} = begin
+    one = _PTREE_BITS_T(0x1)
     while true
         # Is it in this Tree?
         idx = _node_index(u._id, k)
         (idx == 0) && return df
-        ((u._bits & (_PTREE_BITS_T(0x1) << (idx-1))) > 0) || return df
+        ((u._bits & (one << (idx-1))) > 0) || return df
         # Are we a twig?
-        #if _node_depth(u._id) == _PTREE_TWIG_DEPTH
-        if isa(u._data, Vector{T})
+        if _node_depth(u._id) == _PTREE_TWIG_DEPTH
+        #if isa(u._data, Vector{T})
             q = u._data::Vector{T}
             return u._data[idx]
         else
@@ -317,13 +327,11 @@ Base.in(kv::Pair{_PTREE_KEY_T,T}, u::PTree{T}) where {T} = begin
         (idx == 0) && return false
         ((u._bits & (_PTREE_BITS_T(0x1) << (idx-1))) > 0) || return false
         # Are we a twig?
-        #if isa(u._data, Vector{T})
-        if _node_depth(u._id) == _PTREE_TWIG_DEPTH
-            q = u._data::Vector{T}
-            return q[idx] === kv[2]
+        #if _node_depth(u._id) == _PTREE_TWIG_DEPTH
+        if isa(u._data, Vector{PTree{T}})
+            u = u._data[idx]::PTree{T}
         else
-            q = u._data::Vector{PTree{T}}
-            u = q[idx]
+            return u._data[idx] === kv[2]
         end
     end
 end
@@ -360,20 +368,47 @@ Base.iterate(t::PTree{T}, ks) where {T} = begin
     end
     return nothing
 end
-_maketwig(k::_PTREE_KEY_T, v::T) where {T} = begin
+_maketwig(::Type{T}, k::_PTREE_KEY_T, v::T) where {T} = begin
     mnk = k - rem(k, _PTREE_COUNT)
     kk = k - mnk
     bits = _PTREE_BITS_T(0x1) << kk
     kk = Int(kk + 1)
     dat = Vector{T}(undef, kk)
     dat[kk] = v
-    return PTree{T}(0x1, _nodeid(mnk, _PTREE_TWIG_DEPTH), bits, dat)
+    return PTree{T}(_nodeid(mnk, _PTREE_TWIG_DEPTH), bits, dat)
 end
 _cells_assoc(t::PTree, u::Vector{T}, k::Int, x) where {T} = begin
     dat = Vector{T}(undef, max(length(u), k))
     @_forcells t ii dat[ii] = u[ii]
     dat[k] = x
     return dat
+end
+function _ptree_setindex(data::Vector{T}, idx::Int, idxbit::_PTREE_BITS_T,
+                         t::PTree{T}, u::S, k::_PTREE_KEY_T) where {T,S}
+    bits = t._bits & idxbit > 0 ? t._bits : t._bits | idxbit
+    ch = _cells_assoc(t, data, idx, u)
+    return PTree{T}(t._id, bits, ch)
+end
+function _ptree_setindex(data::Vector{PTree{T}}, idx::Int, idxbit::_PTREE_BITS_T,
+                         t::PTree{T}, u::S, k::_PTREE_KEY_T) where {T,S}
+    if t._bits & idxbit > 0
+        # The node lies below us in an existing node, so we can just pass along
+        # the responsibility of inserting it.
+        ch0 = data[idx]
+        ch = setindex(ch0, u, k)
+        (ch === ch0) && return t
+        (t._bits == 0) && return ch
+        ch = _cells_assoc(t, data, idx, ch)
+        return PTree{T}(t._id, t._bits, ch)
+    else
+        # The node lies beneath us but the lower node doesn't exist; we can just
+        # make a twig node for this and put it there.
+        twig = _maketwig(T, k, u)
+        (t._bits == 0) && return twig
+        # Now update with that modification
+        dat = _cells_assoc(t, t._data, idx, twig)
+        return PTree{T}(t._id, t._bits | idxbit, dat)
+    end
 end
 setindex(t::PTree{T}, u::S, k::_PTREE_KEY_T) where {T,S} = begin
     idx = _node_index(t._id, k)
@@ -390,7 +425,7 @@ setindex(t::PTree{T}, u::S, k::_PTREE_KEY_T) where {T,S} = begin
             idx = _node_index(nid, k)
         end
         # idx is no longer 0 so we can create this node and insert the new twig.
-        twig = _maketwig(k, u::T)
+        twig = _maketwig(T, k, u)
         one = _PTREE_BITS_T(0x1)
         tidx = _node_index(nid, _node_min(t._id))
         bits = (one << (idx - 1)) | (one << (tidx - 1))
@@ -398,35 +433,9 @@ setindex(t::PTree{T}, u::S, k::_PTREE_KEY_T) where {T,S} = begin
         ch[idx] = twig
         ch[tidx] = t
         # We return this parent node, which now contains us plus the new twig.
-        return PTree{T}(t._n + 1, nid, bits, ch)
-    elseif t._bits & idxbit > 0
-        # We might be a twig node.
-        #if _node_depth(t._id) == _PTREE_TWIG_DEPTH
-        if isa(t._data, Vector{T})
-            ch = _cells_assoc(t, t._data, idx, u)
-            return PTree{T}(t._n, t._id, t._bits, ch)
-        else
-            # The node lies below us in an existing node, so we can just pass along
-            # the responsibility of inserting it.
-            ch0 = t._data[idx]
-            ch = setindex(ch0, u, k)
-            (ch === ch0) && return t
-            (t._n == 0) && return ch
-            ch = _cells_assoc(t, t._data, idx, ch)
-            return PTree{T}(t._n+1, t._id, t._bits, ch)
-        end
-    elseif isa(t._data, Vector{T})
-        # We're a twig node.
-        ch = _cells_assoc(t, t._data, idx, u)
-        return PTree{T}(t._n+1, t._id, t._bits | idxbit, ch)
+        return PTree{T}(nid, bits, ch)
     else
-        # The node lies beneath us but the lower node doesn't exist; we can just
-        # make a twig node for this and put it there.
-        twig = _maketwig(k, u::T)
-        (t._n == 0) && return twig
-        # Now update with that modification
-        dat = _cells_assoc(t, t._data, idx, twig)
-        return PTree{T}(t._n+1, t._id, t._bits | idxbit, dat)
+        return _ptree_setindex(t._data, idx, idxbit, t, u, k)
     end
 end
 delete(t::PTree{T}, k::_PTREE_KEY_T) where {T} = begin
@@ -440,13 +449,13 @@ delete(t::PTree{T}, k::_PTREE_KEY_T) where {T} = begin
         return t
     elseif isa(t._data, Vector{T})
         # We'e a twig node, so we just clear the bit
-        return PTree{T}(t._n - 0x1, t._id, t._bids & ~idxbit, t._data)
+        return PTree{T}(t._id, t._bids & ~idxbit, t._data)
     else
         # We recurse down...
         ch0 = t._data[idx]
         ch = delete(ch0, k)
         (ch === ch0) && return t
-        if ch._n == 0
+        if ch._bits == 0
             # Just clear the bit
             ch = t._data
             bits = t._bits & ~idxbit
@@ -454,6 +463,6 @@ delete(t::PTree{T}, k::_PTREE_KEY_T) where {T} = begin
             ch = _cells_assoc(t, t._data, idx, ch)
             bits = t._bits
         end
-        return PTree{T}(t._n - 1, t._id, bits, ch)
+        return PTree{T}(t._id, bits, ch)
     end
 end

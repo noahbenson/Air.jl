@@ -36,11 +36,15 @@ PList(u::PList{T}) where {T} = u
 Base.length(l::PList) = l._n
 Base.in(k, l::PList{T}, eqfn::Function) where {T} = begin
     (l._n == 0) && return false
-    q = l._data
+    q = l._data::PLink{T}
     while true
         eqfn(k, q.first) && return true
-        (q.rest === nothing) && break
-        q = q.rest
+        #(q.rest === nothing) && break
+        if q.rest === nothing
+            break
+        else
+            q = q.rest
+        end
     end
     return false
 end
