@@ -449,7 +449,7 @@ delete(t::PTree{T}, k::_PTREE_KEY_T) where {T} = begin
         return t
     elseif isa(t._data, Vector{T})
         # We'e a twig node, so we just clear the bit
-        return PTree{T}(t._id, t._bids & ~idxbit, t._data)
+        return PTree{T}(t._id, t._bits & ~idxbit, t._data)
     else
         # We recurse down...
         ch0 = t._data[idx]
