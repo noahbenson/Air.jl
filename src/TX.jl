@@ -894,9 +894,6 @@ Base.getindex(a::Actor{T}) where {T} = begin
     isa(x, ActorException{T}) && throw(x)
     return x
 end
-# There is no write function for actors.
-Base.setindex!(a::Actor, args...) = error(
-    "Actors cannot be set; to change an Actor, use send()")
 """
    send(f, args...)
 
