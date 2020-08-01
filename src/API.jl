@@ -847,4 +847,3 @@ equalfn(::Type{EquivDict}) = isequiv
 equalfn(::Type{EquivDict{K,V}}) where {K,V} = isequiv
 hashfn(::Type{EquivDict}) = equivhash
 hashfn(::Type{EquivDict{K,V}}) where {K,V} = equivhash
-

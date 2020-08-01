@@ -217,10 +217,10 @@ Base.put!(d::Promise{T}, x) where {T} = begin
     end
 end
 isready(d::Promise{T}) where {T} = isa(d._val, _ValueRealized{T})
-Base.isequal(a::Delay{T}, b::Delay{S}) where {T,S} = (a === b) || isequal(a[], b[])
-isequiv(a::Delay{T}, b::Delay{S}) where {T,S} = (a === b) || isequiv(a[], b[])
-Base.hash(d::Delay{T}) where {T} = 0x767127451c1e402a + hash(d[])
-equivhash(d::Delay{T}) where {T} = 0x767127451c1e402a + equivhash(d[])
+Base.isequal(a::Promise{T}, b::Promise{S}) where {T,S} = (a === b) || isequal(a[], b[])
+isequiv(a::Promise{T}, b::Promise{S}) where {T,S} = (a === b) || isequiv(a[], b[])
+Base.hash(d::Promise{T}) where {T} = 0x767127451c1e402a + hash(d[])
+equivhash(d::Promise{T}) where {T} = 0x767127451c1e402a + equivhash(d[])
 Base.show(io::IO, ::MIME"text/plain", d::Promise{T}) where {T} = begin
     v = d._val
     if isa(v, _ValueRealized)
@@ -230,3 +230,44 @@ Base.show(io::IO, ::MIME"text/plain", d::Promise{T}) where {T} = begin
     end
 end
 
+# #lockall #####################################################################
+_lockall(locks::Vector{T}) where {T} = begin
+    locked = 0
+    try
+        for l in locks
+            lock(l)
+            locked += 1
+        end
+    finally
+        (locked == length(locks)) || for l in locks
+            unlock(l)
+            locked -= 1
+            (locked == 0) && break
+        end
+    end
+    return locked
+end
+_lockall(f::Function, locks::Vector{T}) where {T} = begin
+    # This only gets called once we have our own copy of the vector
+    sort!(locks, by=objectid)
+    # This will either lock them all or raise an exception.
+    _lockall(locks)
+    # Now we can run the function
+    try
+        result = f()
+    finally
+        for l in locks
+            unlock(l)
+        end
+    end
+    return result
+end
+"""
+    lockall(f, l1, l2, ...)
+
+Locks all of the lockable objects l1, l2, etc. then runs f, unlocks the objects,
+and returns the return value of f.
+"""
+lockall(f::Function, locks::Vector{T}) where {T,N} = _lockall(f, copy(locks))
+lockall(f::Function, locks::NTuple{N,T}) where {T,N} = _lockall(f, [locks...])
+lockall(f::Function, locks::Vararg{T,N}) where {T,N} = _lockall(f, [locks...])

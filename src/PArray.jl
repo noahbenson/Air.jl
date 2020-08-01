@@ -8,6 +8,13 @@
 # MIT License
 # Copyright (c) 2019 Noah C. Benson
 
+#struct PArray{T,N} <: AbstractArray{T,N}
+#    _i0::Int
+#    _size::NTuple{N,Int}
+#    _tree::PTree{T}
+#end
+
+
 
 # ==============================================================================
 # Private
@@ -81,45 +88,22 @@ reference, changing one object's data may change the data for many objects.
 struct PArray{T, N} <: AbstractArray{T, N}
     # The size tuple stores the size of the array: the length of each dim.
     _size::NTuple{N, Int}
-    # The phase indicates if the first node(s) contain(s) fewer than _PTREE_COUNT
+    # The index0 indicates if the first node(s) contain(s) fewer than _PTREE_COUNT
     # elements; this allows for efficient shifting and unshifting.
-    _phase::NTuple{N, Int}
-    # The height of the array; determined by how many elements are in the
-    # subarrays, in conjunction with the phase
-    _height::Int
-    # The array nodes hold all the data. 
-    _root::Union{Array{T, N}, Array{PArray{T,N}, N}}
+    # An index0 of x indicates that element 1 maps to element x in the data-tree
+    _index0::NTuple{N, Int}
+    # The tree that actually stores the values
+    _tree::PTree{T}
+    # The default value for elements not set in the tree.
+    _default::T
 end
 # PArray is immutable, even though it employs a mutable field (Array)
 mutability(::Type{PArray}) = Immutable
 mutability(::Type{PArray{T,N}}) where {T,N} = Immutable
 #
-# #TArray ======================================================================
-"""
-    TArray{T, N}
-The TArray class is a mimic of the PArray class, but where P stands for
-persistent, the T of TArray stands for transient. Transient arrays can be
-edited like normal arrays but maintain the shape of persistent arrays and
-can be easily converted into them.
-"""
-mutable struct TArray{T,N} <: AbstractArray{T,N}
-    # The size tuple stores the size of the array: the length of each dim.
-    _size::NTuple{N, Int}
-    # The phase indicates if the first node(s) contain(s) fewer than _PTREE_COUNT
-    # elements; this allows for efficient shifting and unshifting.
-    _phase::NTuple{N, Int}
-    # The height of the array; determined by how many elements are in the
-    # subarrays, in conjunction with the phase
-    _height::Int
-    # The array nodes hold all the data. 
-    _root::Union{Array{T, N}, Array{Union{PArray{T,N}, TArray{T,N}}, N}}
-end
-#
 # PArrray and TArray aliases
 const PVector = PArray{T,1} where {T}
-const TVector = TArray{T,1} where {T}
 const PMatrix = PArray{T,2} where {T}
-const TMatrix = TArray{T,2} where {T}
 #
 # PArray and TArray are very similar, so I have a macro for when to duplicate
 # behavior across functions for both:

@@ -4,6 +4,49 @@ using Random.Random
 
 @testset "Air.jl" begin
 
+    # #PSet, simple tests ######################################################
+    @testset "PSet" begin
+        numops = 100
+        numits = 10
+        ops = Dict(:push => 
+        
+        
+            a = Real[]
+            p = Air.PTree{Real}()
+            ops = [:push, :pop, :popfirst, :set, :get]
+            for ii in 1:numops
+                q = rand(ops)
+                if q == :push
+                    x = rand(Float64)
+                    push!(a, x)
+                    p = Air.push(p, x)
+                elseif q == :pop && length(a) > 0
+                    x = pop!(a)
+                    @test x == p[end]
+                    p = Air.pop(p)
+                elseif q == :pushfirst
+                    x = rand(Float64)
+                    pushfirst!(a, x)
+                    p = Air.pushfirst(p, x)
+                elseif q == :popfirst && length(a) > 0
+                    x = popfirst!(a)
+                    @test x == p[1]
+                    p = Air.popfirst(p)
+                elseif q == :set && length(a) > 0
+                    k = rand(1:length(a))
+                    v = rand(Float64)
+                    a[k] = v
+                    p = Air.setindex(p, v, k)
+                elseif q == :get && length(a) > 0
+                    k = rand(1:length(a))
+                    @test a[k] == p[k]
+                end
+                @test a == p
+                @test size(a) == size(p)
+            end
+        end
+    end
+    
     # #PVec and #PMap, simple tests ############################################
     #@testset "PVec" begin
     #    # Some simple tests of the basic functions for PVec's:
