@@ -23,6 +23,7 @@ isequiv(s::DS, t::DT) where {KT,VT,KS,VS,
     return true
 end
 
+
 ################################################################################
 # PDict
 # We construct PDicts in an unfortunaetly complex way in order to reduce code
@@ -179,17 +180,20 @@ macro _pdict_code(name::Symbol, eqfn, hashfn)
                 Air.push(u::$name{K,V}, x::Pair) where {K,V} = begin
                     hh = $h(x.first)
                     uu = get(u.$tree, hh, u.$empt)::PDictLeaf{K,V}
-                    in(x, u, $eq) && return u
-                    uu = pushfirst(uu, x)
-                    tr = setindex(u.$tree, uu, hh)
-                    return $name{K,V}(u.$n + 1, tr, u.$empt)
+                    in(x, uu, $eq) && return u
+                    vv = delete(uu, x.first, (kv,k) -> $eq(kv.first, k))
+                    n = u.$n
+                    (uu === vv) || (n -= 1)
+                    vv = pushfirst(vv, x)
+                    tr = setindex(u.$tree, vv, hh)
+                    return $name{K,V}(n + 1, tr, u.$empt)
                 end
                 Air.setindex(u::$name{K,V}, v, k) where {K,V} = push(u, k => v)
                 Air.delete(u::$name{K,V}, x::J) where {K,V,J} = begin
                     hh = $h(x)
                     uu = get(u.$tree, hh, u.$empt)::PDictLeaf{K,V}
                     (length(uu) === 0) && return u
-                    vv = delete(uu, x, (k,kv) -> $eq(k, kv.first))
+                    vv = delete(uu, x, (kv,k) -> $eq(kv.first, k))
                     (uu === vv) && return u
                     if length(vv) == 0
                         return $name{K,V}(u.$n - 1, delete(u.$tree, hh), u.$empt)
@@ -455,4 +459,13 @@ woutmeta(Q::WithMetaData, t::T, args...) where {T} = begin
     return withmetadata(Q, t, md)
 end
 
-
+# IdDict has a special kind of isequals.
+Base.isequal(l::Base.IdDict{K,V}, r::PIdDict{J,U}) where {K,V,J,U} = begin
+    (l === r) && return true
+    (length(l) == length(r)) || return false
+    for pair in l
+        in(pair, r, isequal) || return false
+    end
+    return true
+end
+Base.isequal(l::PIdDict{J,U}, r::Base.IdDict{K,V}) where {K,V,J,U} = Base.isequal(r, l)

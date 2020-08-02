@@ -61,7 +61,7 @@ popfirst(l::PList{T}) where {T} = begin
     return PList{T}(l._n - 1, l._data.rest)
 end
 _delete(l::PLink{T}, s::S, eqfn::Function) where {T, S} = begin
-    if eqfn(s, l.first)
+    if eqfn(l.first, s)
         (l.rest === nothing) && return (1, nothing)
         (n, ll) = _delete(l.rest, s, eqfn)
         return (n+1, ll)

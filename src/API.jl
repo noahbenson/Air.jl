@@ -378,6 +378,7 @@ _isequiv(::Immutable, ::Immutable, t::T, s::T) where {T} = begin
         return true
     end
 end
+_isequiv(::Immutable, ::Immutable, t::T, s::S) where {T,S} = false
 """
     isequiv(x, y)
 Yields true if x and y are equivalent and false otherwise.
@@ -821,10 +822,17 @@ EquivDict(itr) = begin
     V = t.parameters[2]
     return EquivDict{K,V}(ps...)
 end
-# Base methods.            
+# Base methods.
 Base.length(s::EquivDict) = length(s.dict)
-Base.in(x::Pair{KK,VV}, s::EquivDict{K,V}) where {K,V,KK,VV} = in(EquivRef{K}(x), s.dict)
-Base.in(x::Pair{KK,VV}, s::EquivDict{K,V}, f) where {K,V,KK,VV} = in(EquivRef{K}(x), s.dict, f)
+Base.get(x::EquivDict{K,V}, k::KK, df) where {K,V,KK} = get(x.dict, EquivRef{K}(k), df)
+Base.in(x::Pair{KK,VV}, s::EquivDict{K,V}) where {K,V,KK,VV} = begin
+    kv = Pair{EquivRef{K},VV}(EquivRef{K}(x.first), x.second)
+    return in(kv, s.dict)
+end
+Base.in(x::Pair{KK,VV}, s::EquivDict{K,V}, f) where {K,V,KK,VV} = begin
+    kv = Pair{EquivRef{K},VV}(EquivRef{K}(x.first), x.second)
+    return in(kv, s.dict, f)
+end
 Base.iterate(s::EquivDict{K,V}) where {K,V} = let u = iterate(s.dict)
     (u === nothing) && return nothing
     p = u[1]
@@ -839,8 +847,8 @@ Base.push!(s::EquivDict{K,V}, kv::Pair{KK,VV}) where {K,V,KK,VV} = begin
     push!(s.dict, EquivPair{K,V}(EquivRef{K}(kv[1]), kv[2]))
     return s
 end
-Base.delete!(s::EquivDict{K,V}, kv::Pair{KK,VV}) where {K,V,KK,VV} = begin
-    delete!(s.dict, EquivPair{K,V}(EquivRef{K}(kv[1]), kv[2]))
+Base.delete!(s::EquivDict{K,V}, k::KK) where {K,V,KK} = begin
+    delete!(s.dict, EquivRef{K}(k))
     return s
 end
 equalfn(::Type{EquivDict}) = isequiv
