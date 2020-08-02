@@ -140,10 +140,10 @@ Base.getindex(d::Delay{T}) where {T} = begin
             else
                 u = d._val._val
             end
+            return u
         finally
             unlock(v._mux)
         end
-        return u
     else
         return v._val
     end
