@@ -43,8 +43,8 @@ currently undergoing testing.
     * A `Source` type for safely reading from inputs such as sockets or files
       while respecting the syncronization of transactional `tx` blocks.
 * Plans that are not yet implemented
-  * **Persistent Data Structures.** Tool for defining data structures that
-    support lazy reification.
+  * **Persistent Record Types.** Tool for defining data structures that
+    support lazy reification of members.
   * Trransient types
     * `PDict` should be O(1)-time convertable into the transient `TDict`
       type that can be updated without copying memory and that can be 
