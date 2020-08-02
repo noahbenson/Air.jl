@@ -8,6 +8,7 @@
 
 Functional collections and utilities for Julia as light as air.
 
+
 ## Author ######################################################################
 Noah C. Benson &lt;<nben@nyu.edu>&gt;
 
@@ -20,24 +21,39 @@ Scala.
 
 ### Plans
 
-* Persistent data structures:
-  * `PArray`, a persistent array type that mimics Julia's native `Array`
-    * (This isn't finished, but see the `PVec` type for simple immutable
-      1D vectors with O(log n) insert/delete/append.)
-  * `PDict`, a persistent dictionary type that mimics Julia's native `Dict`
-    * (**This is implemented! I'm still working on performance for insert and
-       delete operations, but The `PDict` type supports lookup with comparable
-       speed to Julia's native `Dict` type.**)
-  * `PSet`, a persistent set type.
-    * (**This is also working! See the `PSet` type.**)
-  * `LDict`, a persistent lazy dictionary type
-* Multi-threading utilities, inspired by Clojure
-  * Thread-safe `Delay` and `Promise` types
-  * A `TransactionalRef` type that operates with a `@sync` macro to ensure
-    that all updates to references within a synchronized block are performed
-    atomically
-  * An `Agent` type for sending asynchronous jobs to independent threads which
-    also respects the atomic requirements of synchronized blocks
+Note that most of the basic plans have already been implementted, but are
+currently undergoing testing.
+
+* Completed plans
+  * None
+* Plans that are implemented but requiier testing
+  * Persistent data structures:
+    * `PArray`, a persistent array type that mimics Julia's native `Array`
+    * `PDict`, a persistent dictionary type that mimics Julia's native `Dict`
+    * `PSet`, a persistent set type.
+    * `LazyDict`, a persistent lazy dictionary type.
+  * Multi-threading utilities, inspired by Clojure
+    * Thread-safe `Delay` and `Promise` types.
+    * Thread-local `Var` type.
+    * A `Volatile` type that operates with the `@tx` macro to ensure
+      that all updates to references within a synchronized block are performed
+      atomically.
+    * An `Actor` type for sending asynchronous jobs to independent threads which
+      also respects the atomic requirements of transactional `tx` blocks.
+    * A `Source` type for safely reading from inputs such as sockets or files
+      while respecting the syncronization of transactional `tx` blocks.
+* Plans that are not yet implemented
+  * **Persistent Data Structures.** Tool for defining data structures that
+    support lazy reification.
+  * Trransient types
+    * `PDict` should be O(1)-time convertable into the transient `TDict`
+      type that can be updated without copying memory and that can be 
+      converted into a persistent equivalent very quickly.
+    * `PArray` and `TArray` should have a similar relationship.
+  * `ChannelSourceKernel` type that creates a source kernel that pops values
+    from a channel.
+  * Better query/build/update API tools?
+
 
 ## License
 
