@@ -2,27 +2,6 @@
 # PDict
 # A persistent dictionary type that uses the PTree type.
 
-# We should define an isequiv function for abstract dicts; this should work
-# equally well on PSets or normal sets.
-isequiv(s::DS, t::DT) where {KT,VT,KS,VS,
-                             DS <: AbstractDict{KS,VS},
-                             DT <: AbstractDict{KT,VT}} = begin
-    (ismuttype(DT) || ismuttype(DS)) && return (s === t)
-    (length(t) == length(s)) || return false
-    for (k,v) in s
-        tt = get(t, k, t)
-        (tt === t) && return false
-        isequiv(tt, v) || return false
-    end
-    (equalfn(DS) === equalfn(DT)) && return true
-    for (k,v) in t
-        ss = get(s, k, s)
-        (ss === s) && return false
-        isequiv(ss, v) || return false
-    end
-    return true
-end
-
 
 ################################################################################
 # PDict
@@ -469,3 +448,32 @@ Base.isequal(l::Base.IdDict{K,V}, r::PIdDict{J,U}) where {K,V,J,U} = begin
     return true
 end
 Base.isequal(l::PIdDict{J,U}, r::Base.IdDict{K,V}) where {K,V,J,U} = Base.isequal(r, l)
+
+# We should define an isequiv function for abstract dicts; this should work
+# equally well on PSets or normal sets.
+_isequiv(::Immutable, ::Immutable, s::DS, t::DT) where {
+    KT,VT,KS,VS,
+    DS <: AbstractDict{KS,VS},
+    DT <: AbstractDict{KT,VT}
+} = begin
+    (length(t) == length(s)) || return false
+    for (k,v) in s
+        tt = get(t, k, t)
+        (tt === t) && return false
+        isequiv(tt, v) || return false
+    end
+    (equalfn(DS) === equalfn(DT)) && return true
+    for (k,v) in t
+        ss = get(s, k, s)
+        (ss === s) && return false
+        isequiv(ss, v) || return false
+    end
+    return true
+end
+_equivhash(::Immutable, u::PDict{K,V}) where {K,V} = begin
+    h = length(u)
+    for (k,v) in u
+        h += equivhash(k) ⊻ equivhash(v)
+    end
+    return h
+end

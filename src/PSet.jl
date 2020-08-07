@@ -4,22 +4,6 @@
 
 import Base.IdSet
 
-# We should define an isequiv function for abstract sets; this should work
-# equally well on PSets or normal sets.
-isequiv(s::SS, t::ST) where {S, T, SS <: AbstractSet{S}, ST <: AbstractSet{T}} = begin
-    (ismuttype(ST) || ismuttype(ST)) && return (s === t)
-    (length(t) == length(s)) || return false
-    for ss in s
-        (ss in t) || return false
-    end
-    # If s and t use the same notion of equivalence, this is enough
-    (equalfn(SS) === equalfn(ST)) && return true
-    # Otherwise, we need to check the other direction also
-    for tt in t
-        (tt in s) || return false
-    end
-    return true
-end
 
 ################################################################################
 # PSet
@@ -116,3 +100,28 @@ mutability(::Type{PIdSet}) = Immutable
 mutability(::Type{PIdSet{T}}) where {T} = Immutable
 mutability(::Type{PEqualSet}) = Immutable
 mutability(::Type{PEqualSet{T}}) where {T} = Immutable
+
+# We should define an isequiv function for abstract sets; this should work
+# equally well on PSets or normal sets.
+_isequiv(::Immutable, ::Immutable, s::SS, t::ST) where {
+    S,T,
+    SS <: AbstractSet{S},
+    ST <: AbstractSet{T}
+} = begin
+    (length(t) == length(s)) || return false
+    for k in s
+        (k in t) || return false
+    end
+    (equalfn(SS) === equalfn(ST)) && return true
+    for k in t
+        (k in s) || return false
+    end
+    return true
+end
+_equivhash(::Immutable, u::PSet{K}) where {K} = begin
+    h = length(u)
+    for k in u
+        h += equivhash(k)
+    end
+    return h
+end
