@@ -399,8 +399,9 @@ type, all
 """
 isequiv(t::T, s::S) where {T, S} = _isequiv(mutability(T), mutability(S), t, s)
 
-_hasheq(::Type, x) = objectid(x)
-_hasheq(::Immutable, x::T) where {T} = begin
+_equivhash(::Type, x) = objectid(x)
+_equivhash(::Mutable, x) = objectid(x)
+_equivhash(::Immutable, x::T) where {T} = begin
     isbitstype(T) && return objectid(x)
     # call isequiv on each of the fields
     let n = nfields(x), h = objectid(T) + 41
@@ -418,7 +419,7 @@ Yields a hash value appropriate for the isequiv() equality
 function. Generally, the hasheq of an immutable object is
 its hash; the equivhash of any other object is its objectid.
 """
-equivhash(x::T) where {T} = _hasheq(mutability(T), x)
+equivhash(x::T) where {T} = _equivhash(mutability(T), x)
 
 """
     equalfn(x)
