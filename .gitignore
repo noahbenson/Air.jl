@@ -8,3 +8,8 @@ deps/deps.jl
 /docs/build/
 /docs/site/
 .ipynb_checkpoints/
+
+# IPython Notebooks, in general, shouldn't be committed.
+*.ipynb
+# But anything in the notebooks directory is okay.
+!/notebooks/*.ipynb
