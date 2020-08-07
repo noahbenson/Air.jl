@@ -6,7 +6,7 @@ include("PTree.jl")
 include("PList.jl")
 include("PSet.jl")
 include("PDict.jl")
-#include("PArray.jl")
+include("PArray.jl")
 include("LazyDict.jl")
 include("TX.jl")
 
