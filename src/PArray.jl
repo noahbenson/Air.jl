@@ -96,6 +96,11 @@ PArray{T,N}(dflt::S, size::Vector{<:Integer}) where {T,N,S} = begin
     return PArray{T,N}(dflt, NTuple{N,Int}(size))
 end
 PArray{T,N}(p::PArray{T,N}) where {T,N} = p
+PArray(p::PArray{T,N}) where {T,N} = p
+PArray{T,N}() where {T,N} = PArray{T,N}(undef, (0,) + Tuple([1 for _ in 2:N]))
+PVector{T}() where {T} = PArray{T,1}(undef, (0,))
+PVector() = PArray{Any,1}()
+PArray(a::A) where {T,N,A<:AbstractArray{T,N}} = PArray{T,N}(a)
 # #TODO: PArray{T,N}(a::AbstractArray{T,N}) where {T,N}
 # #TODO: psparse() method for making PArrays similar to SparseArrays.sparse().
 
