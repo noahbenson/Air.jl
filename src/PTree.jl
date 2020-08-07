@@ -138,8 +138,8 @@ struct PTree{T} <: AbstractDict{_PTREE_KEY_T, T}
     _bits::_PTREE_BITS_T
     _data::_PTREE_CELLS_TYPE{PTree{T}, T}
 end
-mutability(::Type{PTree}) = Immutable
-mutability(::Type{PTree{T}}) where {T} = Immutable
+mutability(::Type{PTree}) = Immutable()
+mutability(::Type{PTree{T}}) where {T} = Immutable()
 # #TTee ========================================================================
 """
     TTree{T}
@@ -289,13 +289,13 @@ isequiv(t::PTree{T}, s::PTree{S}) where {T,S} = begin
 end
 Base.hash(t::PTree{T}) where {T} = let h = hash(PTree)
     for (k,v) in t
-        h += hash(v) * (k + 0x1f)
+        h += hash(v) ⊻ (k + 0x1f)
     end
     return h
 end
 equivhash(t::PTree{T}) where {T} = let h = hash(PTree)
     for (k,v) in t
-        h += equivhash(v) * (k + 0x1f)
+        h += equivhash(v) ⊻ k
     end
     return h
 end
