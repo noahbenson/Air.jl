@@ -10,7 +10,7 @@ Functional collections and utilities for Julia as light as air.
 
 
 ## Author ######################################################################
-Noah C. Benson &lt;<nben@nyu.edu>&gt;
+Noah C. Benson &lt;<nben@uw.edu>&gt;
 
 ## Description #################################################################
 Air is a Julia library that aims to take advantage of Julia's builtin immutable
