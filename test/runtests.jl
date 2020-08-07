@@ -4,48 +4,48 @@ using Random.Random
 
 @testset "Air.jl" begin
 
-    #@testset "PArray" begin
-    #    numops = 100
-    #    @testset "1D" begin
-    #        a = Real[]
-    #        p = Air.PVector{Real}()
-    #        ops = [:push, :pushfirst, :pop, :popfirst, :set, :get]
-    #        for ii in 1:numops
-    #            q = rand(ops)
-    #            if q == :push
-    #                x = rand(Float64)
-    #                push!(a, x)
-    #                p = Air.push(p, x)
-    #            elseif q == :pop && length(a) > 0
-    #                x = pop!(a)
-    #                @test x == p[end]
-    #                p = Air.pop(p)
-    #            elseif q == :pushfirst
-    #                x = rand(Float64)
-    #                pushfirst!(a, x)
-    #                p = Air.pushfirst(p, x)
-    #            elseif q == :popfirst && length(a) > 0
-    #                x = popfirst!(a)
-    #                @test x == p[1]
-    #                p = Air.popfirst(p)
-    #            elseif q == :set && length(a) > 0
-    #                k = rand(1:length(a))
-    #                v = rand(Float64)
-    #                a[k] = v
-    #                p = Air.setindex(p, v, k)
-    #            elseif q == :get && length(a) > 0
-    #                k = rand(1:length(a))
-    #                @test a[k] == p[k]
-    #            end
-    #            @test a == p
-    #            @test size(a) == size(p)
-    #        end
-    #    end
-    #    #@testset "2D" begin
-    #    #end
-    #    #@testset "3D" begin
-    #    #end
-    #end
+    @testset "PArray" begin
+        numops = 100
+        @testset "1D" begin
+            a = Real[]
+            p = Air.PVector{Real}()
+            ops = [:push, :pushfirst, :pop, :popfirst, :set, :get]
+            for ii in 1:numops
+                q = rand(ops)
+                if q == :push
+                    x = rand(Float64)
+                    push!(a, x)
+                    p = Air.push(p, x)
+                elseif q == :pop && length(a) > 0
+                    x = pop!(a)
+                    @test x == p[end]
+                    p = Air.pop(p)
+                elseif q == :pushfirst
+                    x = rand(Float64)
+                    pushfirst!(a, x)
+                    p = Air.pushfirst(p, x)
+                elseif q == :popfirst && length(a) > 0
+                    x = popfirst!(a)
+                    @test x == p[1]
+                    p = Air.popfirst(p)
+                elseif q == :set && length(a) > 0
+                    k = rand(1:length(a))
+                    v = rand(Float64)
+                    a[k] = v
+                    p = Air.setindex(p, v, k)
+                elseif q == :get && length(a) > 0
+                    k = rand(1:length(a))
+                    @test a[k] == p[k]
+                end
+                @test a == p
+                @test size(a) == size(p)
+            end
+        end
+        #@testset "2D" begin
+        #end
+        #@testset "3D" begin
+        #end
+    end
 
     # #PSet ####################################################################
     function compare_test(p::SIMM, s::SMUT, ks::Vector{T}, n::Int) where {T,SIMM<:AbstractSet{T},SMUT<:AbstractSet{T}}
