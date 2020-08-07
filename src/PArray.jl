@@ -207,22 +207,24 @@ Base.iterate(u::PArray{T,N}) where {T,N} = iterate(u, 1)
 
 IndexStyle(::Type{PArray{T,N}}) where {T,N} = IndexLinear()
 _parray_get(u::PTree{T}, ii::_PTREE_KEY_T, ::Nothing) where {T} = begin
-    x = get(u._tree, ii, nothing)
+    x = get(u, ii, nothing)
     (x === nothing) || return x
-    isa(nothing, T) && in(ii => nothing, u._tree) && return x
+    isa(nothing, T) && in(ii => nothing, u) && return x
     #error("PArray has unset values and no default")
     return Array{T}(undef, 1)[0]
 end
 _parray_get(u::PTree{T}, ii::_PTREE_KEY_T, d::Tuple{T}) where {T} = begin
     return get(u, ii, d[1])
 end
-Base.getindex(u::PArray{T,N}, k::Int) where {T,N} = begin
+Base.getindex(u::PArray{T,N}, k::Vararg{Int,N}) where {T,N} = begin
+    if N > 1
+        k = u._index[k...]
+    else
+        k = k[1]
+    end
     (k < 1) && throw(BoundsError(u, k))
     (k > length(u)) && throw(BoundsError(u, k))
     return _parray_get(u._tree, _PTREE_KEY_T(k) + u._i0, u._default)
-end
-Base.getindex(u::PArray{T,N}, k::Vararg{Int,N}) where {T,N} = begin
-    return getindex(u, u._index[k...])
 end
 Base.setindex!(u::PArray{T,N}, v, k::Int) where {T,N} = error(
     "setindex!: object of type $(typeof(u)) is immutable; see setindex()")
@@ -241,8 +243,8 @@ Base.pop!(u::PArray{T,N}, v) where {T,N} = error(
 #    "pushfirst!: object of type $(typeof(u)) is immutable; see first() pushfirst()")
 #Base.popfirst!(u::PArray{T,N}, v) where {T,N} = error(
 #    "popfist!: object of type $(typeof(u)) is immutable; see first() and popfist()")
-_lindex(u::Vararg{Int,N}) where {N} = LinearIndices{N,NTuple{Base.OneTo{Int}}}(
-    (Base.OneTo{Int}.(u))...)
+_lindex(u::Vararg{Int,N}) where {N} = LinearIndices{N,NTuple{N,Base.OneTo{Int}}}(
+    ((Base.OneTo{Int}.(u))...,))
 Base.permutedims(u::PArray{T,N}, dims::NTuple{N,Int}) where {T,N} = begin
     # This is actually pretty easy, code-wise:
     # #TODO: use TArray here
@@ -269,7 +271,12 @@ defaultvalue(u::PArray{T,N}) where {T,N} = _defaultvalue(u._default)
 setindex(u::PArray{T,N}, v::S, ci::CartesianIndex{N}) where {T,N,S} = begin
     return setindex(u, v, u._index[ci])
 end
-setindex(u::PArray{T,N}, v::S, k::Idx) where {T,N,S,Idx<:Integer} = begin
+setindex(u::PArray{T,N}, v::S, k::Vararg{Idx,N}) where {T,N,S,Idx<:Integer} = begin
+    if N == 1
+        k = k[1]
+    else
+        k = u._index[k...]
+    end
     (k < 1) && throw(BoundsError(u,k))
     n = length(u)
     (k > n + 1) && throw(BoundsError(u,k))
@@ -298,35 +305,34 @@ push(u::PVector{T}, x::S) where {T,S} = begin
     if _eqdefault(u._default, x)
         tree = u._tree
     else
-        ii   = u._i0 + PTREE_KEY_T(n)
+        ii   = u._i0 + _PTREE_KEY_T(n + 1)
         tree = setindex(u._tree, x, ii)
     end
     index = _lindex(n+1)
-    return PVector{T}(u._i0, index, u._default, tree)
+    return PVector{T}(u._i0, index, tree, u._default)
 end
 pushfirst(u::PVector{T}, x::S) where {T,S} = begin
     n = length(u)
     if _eqdefault(u._default, x)
         tree = u._tree
     else
-        ii   = u._i0 - 0x1
-        tree = setindex(u._tree, x, ii)
+        tree = setindex(u._tree, x, u._i0)
     end
     index = _lindex(n+1)
-    return PVector{T}(u._i0, index, u._default, tree)
+    return PVector{T}(u._i0 - 0x1, index, tree, u._default)
 end
 pop(u::PVector{T}) where {T} = begin
     n = length(u)
     (n == 0) && throw(ArgumentError("PArray must be non-empty"))
-    ii = u._i0 + _PTREE_KEY_T(n) - 0x1
+    ii = u._i0 + _PTREE_KEY_T(n)
     tree = delete(u._tree, ii)
-    return PVector{T}(u._i0, _lindex(n-1), u._default, tree)
+    return PVector{T}(u._i0, _lindex(n-1), tree, u._default)
 end
 popfirst(u::PVector{T}) where {T} = begin
     n = length(u)
     (n == 0) && throw(ArgumentError("PArray must be non-empty"))
-    tree = delete(u._tree, u._i0)
-    return PVector{T}(u._i0 + 0x1, _lindex(n-1), u._default, tree)
+    tree = delete(u._tree, u._i0 + 0x1)
+    return PVector{T}(u._i0 + 0x1, _lindex(n-1), tree, u._default)
 end
 _isequiv(::Immutable, ::Immutable, s::AS, t::AT) where {
     S,T,N,
