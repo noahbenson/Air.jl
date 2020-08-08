@@ -95,7 +95,7 @@ PArray{T,N}(a::AbstractArray{S,N}) where {T,N,S} = begin
     return PArray{T,N}(0x0, _lindex(size(a)...), tree, nothing)
 end
 PArray{T,N}(p::PArray{T,N}) where {T,N} = p
-PArray{T,N}() where {T,N} = PArray{T,N}(undef, (0,) + Tuple([1 for _ in 2:N]))
+PArray{T,N}() where {T,N} = PArray{T,N}(undef, (0, [1 for _ in 2:N]...))
 PArray(a::AbstractArray{T,N}) where {T,N} = PArray{T,N}(a)
 PArray(p::PArray{T,N}) where {T,N} = p
 PArray() = PArray{Any,1}()
