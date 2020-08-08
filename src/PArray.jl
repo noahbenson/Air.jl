@@ -62,38 +62,27 @@ struct PArray{T,N} <: AbstractPArray{T,N}
 end
 mutability(::Type{PArray}) = Immutable()
 mutability(::Type{PArray{T,N}}) where {T,N} = Immutable()
-# Declare some aliases of PArray.
-macro _declare_parray_alias(name::Symbol, d::Int)
-    sname = String(name)
-    docstr = ["    $(sname){T}",
-              "",
-              "$(sname){T} is an alias for PArray{T,$(d)}"]
-    docstr = join(docstr, "\n")
-    docstr = join(["\n", docstr, "\n"])
-    quote
-        $docstr
-        const $(name){T} = PArray{T,$(d)} where {T}
-    end |> esc
-end
-@_declare_parray_alias PVector 1
-@_declare_parray_alias PMatrix 2
-@_declare_parray_alias P1Tensor 1
-@_declare_parray_alias P2Tensor 2
-@_declare_parray_alias P3Tensor 3
-@_declare_parray_alias P4Tensor 4
-@_declare_parray_alias P5Tensor 5
-@_declare_parray_alias P6Tensor 6
 
 
 # ==============================================================================
 # PArray Constructors
 
-function PArray{T,N}(default::S, size::NTuple{N,Int}) where {T,N,S}
+PArray{T,N}(default::S, size::NTuple{N,<:Integer}) where {T,N,S} = begin
     default = isa(default, UndefInitializer) ? nothing : Tuple{T}(default)
     return PArray{T,N}(0x0, LinearIndices(size), PTree{T}(), default)
 end
+PArray{T,N}(default::S, size::Vararg{<:Integer,N}) where {T,N,S} = begin
+    return PArray{T,N}(dflt, NTuple{N,Int}(size))
+end
 PArray{T,N}(dflt::S, size::Vector{<:Integer}) where {T,N,S} = begin
     return PArray{T,N}(dflt, NTuple{N,Int}(size))
+end
+PArray(default::T, size::NTuple{N,<:Integer}) where {T,N} = PArray{T,N}(default, size)
+PArray(default::T, size::Vararg{<:Integer,N}) where {T,N} = begin
+    return PArray{T,N}(default, NTuple{N,Int}(size))
+end
+PArray(default::T, size::Vector{<:Integer}) where {T,N} = begin
+    return PArray{T,N}(default, NTuple{N,Int}(size))
 end
 PArray{T,N}(a::AbstractArray{S,N}) where {T,N,S} = begin
     # #TODO: rewrite using TArray or TTree
@@ -110,11 +99,46 @@ PArray{T,N}() where {T,N} = PArray{T,N}(undef, (0,) + Tuple([1 for _ in 2:N]))
 PArray(a::AbstractArray{T,N}) where {T,N} = PArray{T,N}(a)
 PArray(p::PArray{T,N}) where {T,N} = p
 PArray() = PArray{Any,1}()
-PVector(a::AbstractArray{T,1}) where {T} = PArray{T,1}(a)
-PVector(a::PArray{T,1}) where {T} = a
-PVector() = PArray{Any,1}()
 # #TODO: psparse() method for making PArrays similar to SparseArrays.sparse().
 
+
+# ==============================================================================
+# PArray aliases
+
+# Declare some aliases of PArray; this is most efficient using a macro to
+# generate the basic code block.
+macro _declare_parray_alias(name::Symbol, d::Int)
+    sname = String(name)
+    docstr = ["    $(sname){T}",
+              "",
+              "$(sname){T} is an alias for PArray{T,$(d)}"]
+    docstr = join(docstr, "\n")
+    docstr = join(["\n", docstr, "\n"])
+    return quote
+        $docstr
+        const $(name){T} = PArray{T,$(d)} where {T}
+        function $(name)(a::AbstractArray{T,$(d)}) where {T}
+            return PArray{T,$(d)}(a)
+        end
+        function $(name)(a::PArray{T,$(d)}) where {T}
+            return a
+        end
+        function $(name)()
+            return PArray{Any,$(d)}()
+        end
+    end |> esc
+end
+
+@_declare_parray_alias P1Tensor 1
+@_declare_parray_alias P2Tensor 2
+@_declare_parray_alias P3Tensor 3
+@_declare_parray_alias P4Tensor 4
+@_declare_parray_alias P5Tensor 5
+@_declare_parray_alias P6Tensor 6
+#@_declare_parray_alias PVector 1
+#@_declare_parray_alias PMatrix 2
+const PVector{T} = PArray{T,1} where {T}
+const PMatrix{T} = PArray{T,2} where {T}
 
 
 # ==============================================================================
