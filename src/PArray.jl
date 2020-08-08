@@ -95,14 +95,26 @@ end
 PArray{T,N}(dflt::S, size::Vector{<:Integer}) where {T,N,S} = begin
     return PArray{T,N}(dflt, NTuple{N,Int}(size))
 end
+PArray{T,N}(a::AbstractArray{S,N}) where {T,N,S} = begin
+    # #TODO: rewrite using TArray or TTree
+    tree = PTree{T}()
+    k = _PTREE_KEY_T(0x0)
+    for x in a
+        k += 0x1
+        tree = setindex(tree, x, k)
+    end
+    return PArray{T,N}(0x0, _lindex(size(a)...), tree, nothing)
+end
 PArray{T,N}(p::PArray{T,N}) where {T,N} = p
-PArray(p::PArray{T,N}) where {T,N} = p
 PArray{T,N}() where {T,N} = PArray{T,N}(undef, (0,) + Tuple([1 for _ in 2:N]))
-PVector{T}() where {T} = PArray{T,1}(undef, (0,))
+PArray(a::AbstractArray{T,N}) where {T,N} = PArray{T,N}(a)
+PArray(p::PArray{T,N}) where {T,N} = p
+PArray() = PArray{Any,1}()
+PVector(a::AbstractArray{T,1}) where {T} = PArray{T,1}(a)
+PVector(a::PArray{T,1}) where {T} = a
 PVector() = PArray{Any,1}()
-PArray(a::A) where {T,N,A<:AbstractArray{T,N}} = PArray{T,N}(a)
-# #TODO: PArray{T,N}(a::AbstractArray{T,N}) where {T,N}
 # #TODO: psparse() method for making PArrays similar to SparseArrays.sparse().
+
 
 
 # ==============================================================================
@@ -197,7 +209,7 @@ Base.size(u::PArray{T,N}) where {T,N} = size(u._index)
 Base.eltype(u::PArray{T,N}) where {T,N} = T
 
 Base.iterate(u::PArray{T,N}, k::Int) where {T,N} = begin
-    return k >= length(u) ? nothing : (u[k], k+1)
+    return k > length(u) ? nothing : (u[k], k+1)
 end
 Base.iterate(u::PArray{T,N}) where {T,N} = iterate(u, 1)
 
@@ -211,7 +223,7 @@ _parray_get(u::PTree{T}, ii::_PTREE_KEY_T, ::Nothing) where {T} = begin
     (x === nothing) || return x
     isa(nothing, T) && in(ii => nothing, u) && return x
     #error("PArray has unset values and no default")
-    return Array{T}(undef, 1)[0]
+    return Array{T}(undef, 1)[1]
 end
 _parray_get(u::PTree{T}, ii::_PTREE_KEY_T, d::Tuple{T}) where {T} = begin
     return get(u, ii, d[1])
