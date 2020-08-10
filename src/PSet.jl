@@ -5,7 +5,17 @@
 import Base.IdSet
 
 
-################################################################################
+# ==============================================================================
+# AbstractPSet
+"""
+    AbstractPSet{T}
+
+AbstractPSet is an abstract type extended by persistent set types such as PSet,
+PIdSet, and PEqualSet, as well as the weighted persistent set types.
+"""
+abstract type AbstractPSet{T} <: AbstractSet{T} end
+
+# ==============================================================================
 # PSet
 # We construct PSets in an unfortunaetly complex way in order to reduce code
 # duplication. The three kinds of persistent sets are very similar, just using
@@ -15,7 +25,7 @@ macro _pset_code(name::Symbol, eqfn, hashfn)
         n = gensym("[private] length"), tree = gensym("[private] tree")
         q = quote
             let $eq = $eqfn, $h = $hashfn
-                struct $name{T} <: AbstractSet{T}
+                struct $name{T} <: AbstractPSet{T}
                     $n::Int
                     $tree::PTree{PList{T}}
                 end
@@ -118,8 +128,8 @@ _isequiv(::Immutable, ::Immutable, s::SS, t::ST) where {
     end
     return true
 end
-_equivhash(::Immutable, u::PSet{K}) where {K} = begin
-    h = length(u)
+_equivhash(::Immutable, u::SS) where {K,SS<:AbstractPSet{K}} = begin
+    h = hash(length(u))
     for k in u
         h += equivhash(k)
     end

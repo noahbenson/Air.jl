@@ -11,7 +11,7 @@ macro _ldict_code(name::Symbol, eqfn, hashfn)
     let eq = gensym(), h = gensym(), _name = gensym(), q
         q = quote
             let $eq = $eqfn, $h = $hashfn
-                struct $name{K,V} <: AbstractDict{K,V}
+                struct $name{K,V} <: AbstractPDict{K,V}
                     _n::Int
                     _tree::PTree{LazyDictLeaf{K,V}}
                     function $name{K,V}() where {K,V}
