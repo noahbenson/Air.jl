@@ -31,13 +31,19 @@ macro _pwset_code(name::Symbol, dicttype::Symbol)
             local $eq = equalfn($(dicttype))
             local $h = hashfn($(dicttype))
             struct $name{T,W} <: AbstractPWSet{T,W}
-                heap::PHeap{T,W,typeof(>),$(dicttype)}
+                heap::PHeap{T,W,typeof(>),$dicttype{T,Int}}
             end
-            function $name{T,W}(itr) where {T,W<:Number}
+            function $name{T,W}(itr::AbstractArray) where {T,W<:Number}
+                return $name{T,W}(itr...)
+            end
+            function $name{T,W}(itr::AbstractSet) where {T,W<:Number}
+                return $name{T,W}(itr...)
+            end
+            function $name{T,W}(itr::AbstractDict) where {T,W<:Number}
                 return $name{T,W}(itr...)
             end
             function $name{T,W}() where {T,W<:Number}
-                return $name{K,V,W}(PHeap{T,W,$dicttype}(>))
+                return $name{T,W}(PHeap{T,W,typeof(>),$dicttype{T,Int}}(>))
             end
             function $name{T,W}(d::$name{T,W}) where {T,W}
                 return d
@@ -49,10 +55,10 @@ macro _pwset_code(name::Symbol, dicttype::Symbol)
                 return $name{T}(itr...)
             end
             function $name{T}(::Tuple{}) where {T,W<:Number}
-                return $name{T,Float64}(PHeap{T,Float64,$dicttype}(>))
+                return $name{T,Float64}(PHeap{T,Float64,typeof(>),$dicttype{T,Int}}(>))
             end
             function $name{T}() where {T,W<:Number}
-                return $name{T,Float64}(PHeap{T,Float64,$dicttype}(>))
+                return $name{T,Float64}(PHeap{T,Float64,typeof(>),$dicttype{T,Int}}(>))
             end
             function $name{T}(d::$name{T,W}) where {T,W}
                 return d
@@ -73,7 +79,7 @@ macro _pwset_code(name::Symbol, dicttype::Symbol)
                 return $name{Any,Float64}()
             end
             function $name()
-                return $name{Any,Float64}(PHeap{Any,Float64,$dicttype}(>))
+                return $name{Any,Float64}(PHeap{Any,Float64,typeof(>),$dicttype{T,Int}}(>))
             end
             # Document the equal/hash types.
             equalfn(::Type{T}) where {T <: $name} = $eq
@@ -114,7 +120,7 @@ macro _pwset_code(name::Symbol, dicttype::Symbol)
                 return $name{T,W}(heap)
             end
             Random.rand(u::$name{T,W}) where {T,W} = begin
-                (lengt(u) > 0) || throw(ArgumentError("PWSet must be non-empty"))
+                (length(u) > 0) || throw(ArgumentError("PWSet must be non-empty"))
                 return rand(u.heap)
             end
         end
@@ -136,11 +142,9 @@ mutability(::Type{PWIdSet{T}}) where {T} = Immutable
 mutability(::Type{PWEqualSet}) = Immutable
 mutability(::Type{PWEqualSet{T}}) where {T} = Immutable
 
-_isequiv(::Immutable, ::Immutable, s::ST, t::AbstractSet) where {
-    T,ST <: AbstractPWSet{T}} = false
-_isequiv(::Immutable, ::Immutable, s::AbstractSet, t::ST) where {
-    T,ST <: AbstractPWSet{T}} = false
-_isequiv(::Immutable, ::Immutable, s::SS, t::ST) where {
+isequiv(s::ST, t::AbstractSet) where {T,ST <: AbstractPWSet{T}} = false
+isequiv(s::AbstractSet, t::ST) where {T,ST <: AbstractPWSet{T}} = false
+isequiv(s::SS, t::ST) where {
     S,T,
     SS <: AbstractPWSet{S},
     ST <: AbstractPWSet{T}} = begin

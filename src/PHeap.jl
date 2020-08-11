@@ -52,7 +52,7 @@ PHeap{T,W,D}(f::F) where {T, W<:Number, F<:Function, D<:AbstractPDict{T,Int}} = 
     PVector{Tuple{T,W,W}}(),
     D(),
     f)
-PHeap{T,W,D}()   where {T, W<:Number, F<:Function, D<:AbstractPDict} = PHeap{T,W,D}(>)
+PHeap{T,W,D}()   where {T, W<:Number, D<:AbstractPDict} = PHeap{T,W,D}(>)
 PHeap{T,W}(f::F) where {T, W<:Number, F<:Function} = PHeap{T,W,PDict}(f)
 PHeap{T,W}()     where {T, W<:Number} = PHeap{T,W,PDict}(>)
 PHeap{T,D}(f::F) where {T, F<:Function, D<:AbstractPDict} = PHeap{T,Float64,D}(f)
@@ -61,11 +61,11 @@ PHeap{T}(f::F)   where {T, F<:Function} = PHeap{T,Float64,F,PDict}(f)
 PHeap{T}()       where {T} = PHeap{T,Float64,PDict}(>)
 PHeap(f::F)      where {F <: Function} = PHeap{Any,Float64,F,PDict}(f)
 PHeap() = PHeap{Any,Float64,PDict}(>)
-_pheap_swap(heap::PVector{Tuple{T,W,W}}, index::D, ii::Int, jj::Int, dwii::W, dwjj::W) where {T,W,D<:AbstractPDict{T,Int}} = begin
+_pheap_swap(heap::PVector{Tuple{T,W,W}}, index::D, ii::Int, jj::Int, subii::Bool, subjj::Bool) where {T,W,D<:AbstractPDict{T,Int}} = begin
     (tii,wii,totii) = heap[ii]
     (tjj,wjj,totjj) = heap[jj]
-    newtotii = totjj - wjj + wii + dwjj
-    newtotjj = totii - wii + wjj + dwii
+    newtotii = totjj + wii - (subjj ? wjj : 0)
+    newtotjj = totii + wjj - (subii ? wii : 0)
     heap = setindex(heap, (tjj, wjj, newtotjj), ii)
     heap = setindex(heap, (tii, wii, newtotii), jj)
     index = setindex(index, ii, tjj)
@@ -95,7 +95,7 @@ _pheap_fix_up(heap::PVector{Tuple{T,W,W}}, index::D, cmp::F, ii::Int, oldw::W) w
         # Break when we don't need to percolate up anymore.
         cmp(neww, parent[2]) || break
         # We need to swap with the parent
-        (heap, index) = _pheap_swap(heap, index, ii, pp, zW, dw)
+        (heap, index) = _pheap_swap(heap, index, ii, pp, true, false)
         ii = pp
     end
     # At this point we may have gone all the way up the heap, but we might have
@@ -121,7 +121,7 @@ _pheap_fix_down(heap::PVector{Tuple{T,W,W}}, index::D, cmp::F, ii::Int) where {T
             # Only check the left...
             if cmp(lnode[2], node[2])
                 # Swap these two
-                (heap, index) = _pheap_swap(heap, index, ii, lch, zW, zW)
+                (heap, index) = _pheap_swap(heap, index, ii, lch, true, true)
             end
             # There can't be children beyond this point.
             break
@@ -130,12 +130,12 @@ _pheap_fix_down(heap::PVector{Tuple{T,W,W}}, index::D, cmp::F, ii::Int) where {T
             if cmp(lnode[2], rnode[2])
                 cmp(node[2], lnode[2]) && break
                 # lnode < node and lnode < rnode
-                (heap, index) = _pheap_swap(heap, index, ii, lch, zW, zW)
+                (heap, index) = _pheap_swap(heap, index, ii, lch, true, true)
                 ii = lch
             else
                 cmp(node[2], rnode[2]) && beak
                 # rnode < node and rnode < lnode
-                (heap, index) = _pheap_swap(heap, index, ii, rch, zW, zW)
+                (heap, index) = _pheap_swap(heap, index, ii, rch, true, true)
                 ii = rch
             end
         end
@@ -166,23 +166,23 @@ end
 push(p::PHeap{T,W,F,D}, tw::Tuple{S,X}) where {T,W,F,D,S,X<:Number} = begin
     (t,w) = tw
     (w <= 0) && throw(ArgumentError("Weights must be positive"))
-    # If t is already in the heap, we are just editing the weight.
-    ii = get(p._index, t, 0)
     cmp = p._compare
     heap = p._heap
     index = p._index
+    # If t is already in the heap, we are just editing the weight.
+    ii = get(index, t, 0)
     if ii == 0
         # Since t isn't already in the heap, we need to add it to the end
         # with a weight of 0 (which keeps the tree valid and all of the
         # weight totals in tact) then fix its weight.
-        zw = zero(W)
+        zW = zero(W)
         heap = push(heap, (t,zW,zW))
         ii = length(heap)
         index = setindex(index, ii, t)
     end
-    (heap, index) = _pheap_fixw(p._heap, p._index, cmp, ii, w)
+    (heap, index) = _pheap_fixw(heap, index, cmp, ii, w)
     (p._heap === heap && p._index === index) && return p
-    return PHeap{T,W,F}(heap, index, cmp)
+    return PHeap{T,W,F,D}(heap, index, cmp)
 end
 push(p::PHeap{T,W,F,D}, tw::Pair{S,X}) where {T,W,F,D,S,X<:Number} = begin
     return push(p, (tw[1],tw[2]))
@@ -194,7 +194,7 @@ Sets the weight of the value x in the given persistent heap or persistent
 weighted collection object h to be w and yields the new updated version of h.
 If x is not already in the object h, then an error is thrown.
 """
-setweight(h::PHeap{T,W,F,D}, t::S, w::X) where {T,W,F,D,S,X<:Number} = begin
+setweight(p::PHeap{T,W,F,D}, t::S, w::X) where {T,W,F,D,S,X<:Number} = begin
     (w <= 0) && throw(ArgumentError("Weights must be positive"))
     ii = get(p._index, t, 0)
     (ii == 0) && error("cannot setweight on item that is not in the PHeap")
@@ -211,14 +211,19 @@ should be the key.
 
 If the key or object x is not found in the collection h, then 0 is returned.
 """
-getweight(h::PHeap{T,W,F,D}, t::S) where {T,W,F,D,S} = get(h._index, t, 0)
+getweight(h::PHeap{T,W,F,D}, t::S) where {T,W,F,D,S} = begin
+    ii = get(h._index, t, 0)
+    (ii == 0) && return 0
+    return h._heap[ii][2]
+end
 _pheap_delete(p::PHeap{T,W,F,D}, ii::Int) where {T,W,F,D} = begin
     n = length(p)
     cmp = p._compare
+    (n == 1) && return PHeap{T,W,F,D}(pop(p._heap), empty(p._index), cmp)
     # Grab the very last node, then we can prep the removal by updating its
     # weight to be zero (this subtracts its weight from the tree's totals).
     (tn,wn,totn) = p._heap[n]
-    (heap, index) = _pheap_fixw(p._heap, p._index, cmp, n, 0)
+    (heap, index) = _pheap_fixw(p._heap, p._index, cmp, n, zero(W))
     # Now we replace the node in slot ii with the last node, but keep the
     # old weight so that the tree's totals are still valid.
     (tii, wii, totii) = heap[ii]
@@ -253,22 +258,20 @@ Base.in(x::S, p::PHeap{T,W,F,D}) where {S,T,W,F,D} = begin
     return (get(p._index, x, 0) != 0)
 end
 Random.rand(p::PHeap{T,W,F,D}) where {T,W,F,D} = begin
-    (length(p) == 0) && throw(ArgumentError("PHeap must be non-empty"))
+    n = length(p)
+    (n == 0) && throw(ArgumentError("PHeap must be non-empty"))
     x = Random.rand(Float64) * p._heap[1][3]
     ii = 1
     (t,w,tot) = p._heap[ii]
     while true
-        (x < w) && return t
+        (x <= w) && return t
         x -= w
-        ch = 2*ii
-        (t,w,tot) = p._heap[ch]
-        if x < tot
-            ii = ch
-            continue
-        end
+        ii *= 2
+        (t,w,tot) = p._heap[ii]
+        (x <= tot) && continue
         x -= tot
-        ii = ch + 1
-        (t,w,tot) = p._heap[ch]
+        ii += 1
+        (t,w,tot) = p._heap[ii]
     end
     error("invalid state reached")
 end

@@ -47,7 +47,7 @@ _to_pwtup(p::Pair{Pair{K,V},W}) where {K,V,W<:Number} = begin
     ((k,v),w) = p
     return (k,v,w)
 end
-const PWDictHeap{K,W,D} = PHeap{K,W,typeof(>),D} where {K,W<:Number}
+const PWDictHeap{K,W,D} = PHeap{K,W,typeof(>),D} where {K,W<:Number,D<:AbstractPDict{K,Int}}
 macro _pwdict_code(name::Symbol, dicttype::Symbol)
     eq = gensym()
     h = gensym()
@@ -60,8 +60,8 @@ macro _pwdict_code(name::Symbol, dicttype::Symbol)
                 dict::$dicttype{K,V}
             end
             function $name{K,V,W}() where {K,V,W<:Number}
-                return $name{K,V,W}(PWDictHeap{K,W,dicttype}(),
-                                    dicttype{K,V}())
+                return $name{K,V,W}(PWDictHeap{K,W,$dicttype{K,Int}}(>),
+                                    $dicttype{K,V}())
             end
             function $name{K,V,W}(d::$name{K,V,W}) where {K,V,W}
                 return d
@@ -69,13 +69,13 @@ macro _pwdict_code(name::Symbol, dicttype::Symbol)
             function $name{K,V,W}(ps::Union{Tuple,Pair}...) where {K,V,W<:Number}
                 return reduce(push, ps, init=$name{K,V,W}())
             end
-            function $name{K,V}(::Tuple{}) where {K,V,W<:Number}
-                return $name{K,V,Float64}(PWDictHeap{K,Float64,dicttype}(),
-                                          dicttype{K,V}())
+            function $name{K,V}(::Tuple{}) where {K,V}
+                return $name{K,V,Float64}(PWDictHeap{K,Float64,$dicttype{K,Int}}(>),
+                                          $dicttype{K,V}())
             end
-            function $name{K,V}() where {K,V,W<:Number}
-                return $name{K,V,Float64}(PWDictHeap{K,Float64,dicttype}(),
-                                          dicttype{K,V}())
+            function $name{K,V}() where {K,V}
+                return $name{K,V,Float64}(PWDictHeap{K,Float64,$dicttype{K,Int}}(>),
+                                          $dicttype{K,V}())
             end
             function $name{K,V}(d::$name{K,V,W}) where {K,V,W<:Number}
                 return d
@@ -93,8 +93,8 @@ macro _pwdict_code(name::Symbol, dicttype::Symbol)
                 return $name{Any,Any,Float64}()
             end
             function $name()
-                return $name{Any,Any,Float64}(PWDictHeap{Any,Float64,dicttype}(),
-                                              dicttype{Any,Any}())
+                return $name{Any,Any,Float64}(PWDictHeap{Any,Float64,$dicttype{Any,Int}}(),
+                                              $dicttype{Any,Any}())
             end
             # Document the equal/hash types.
             equalfn(::Type{T}) where {T <: $name} = $eq
@@ -119,12 +119,30 @@ macro _pwdict_code(name::Symbol, dicttype::Symbol)
             Base.in(kv::Pair, u::$name{K,V,W}, eqfn::Function) where {K,V,W} = in(kv, u.dict, eqfn)
             Base.in(kv::Pair, u::$name{K,V,W}) where {K,V,W} = in(kv, u.dict)
             # And the Air methods.
-            Air.push(u::$name{K,V,W}, x::Union{Pair,Tuple}) where {K,V,W} = begin
+            Air.push(u::$name{K,V,W}, x::Pair{J,U}) where {K,V,W,J,U} = begin
                 (k,v,w) = _to_pwtup(x)
                 heap = push(u.heap, (k,w))
                 dict = push(u.dict, k => v)
                 (heap === u.heap && dict === u.dict) && return u
                 return $name{K,V,W}(heap, dict)
+            end
+            Air.push(u::$name{K,V,W}, x::Tuple) where {K,V,W,J,U} = begin
+                (k,v,w) = _to_pwtup(x)
+                heap = push(u.heap, (k,w))
+                dict = push(u.dict, k => v)
+                (heap === u.heap && dict === u.dict) && return u
+                return $name{K,V,W}(heap, dict)
+            end
+            Air.pop(u::$name{K,V,W}) where {K,V,W} = begin
+                (length(u) == 0) && throw(ArgumentError("PWDict must be non-empty"))
+                x = first(u.heap)
+                dict = delete(u.dict, x)
+                return $name{K,V,W}(pop(u.heap), dict)
+            end
+            Air.first(u::$name{K,V,W}) where {K,V,W} = begin
+                (length(u) == 0) && throw(ArgumentError("PWDict must be non-empty"))
+                k = first(u.heap)
+                return k => u.dict[k]
             end
             Air.setindex(u::$name{K,V,W}, v, k::J) where {K,V,W,J} = begin
                 (get(u.heap._index, k, 0) == 0) && throw(
@@ -152,7 +170,7 @@ macro _pwdict_code(name::Symbol, dicttype::Symbol)
                 return $name{K,V,W}(heap, u.dict)
             end
             Random.rand(u::$name{K,V,W}) where {K,V,W} = begin
-                (lengt(u) > 0) || throw(ArgumentError("PWDict must be non-empty"))
+                (length(u) > 0) || throw(ArgumentError("PWDict must be non-empty"))
                 k = rand(u.heap)
                 return k => u.dict[k]
             end
@@ -175,9 +193,9 @@ mutability(::Type{PWIdDict{K,V}}) where {K,V} = Immutable
 mutability(::Type{PWEqualDict}) = Immutable
 mutability(::Type{PWEqualDict{K,V}}) where {K,V} = Immutable
 
-_isequiv(::Immutable, ::Immutable, s::DS, t) where {DS <: AbstractPWDict} = false
-_isequiv(::Immutable, ::Immutable, t, s::DS) where {DS <: AbstractPWDict} = false
-_isequiv(::Immutable, ::Immutable, s::DS, t::DT) where {
+isequiv(s::DS, t) where {DS <: AbstractPWDict} = false
+isequiv(t, s::DS) where {DS <: AbstractPWDict} = false
+isequiv(s::DS, t::DT) where {
     KT,VT,KS,VS,
     DS <: AbstractPWDict{KS,VS},
     DT <: AbstractPWDict{KT,VT}} = begin
@@ -217,7 +235,7 @@ Base.isequal(s::DS, t::DT) where {
     end
     return true
 end
-_equivhash(::Immutable, u::PWD) where {K,V,W,PWD<:AbstractPWDict{K,V,W}} = begin
+equivhash(u::PWD) where {K,V,W,PWD<:AbstractPWDict{K,V,W}} = begin
     h = length(u)
     for (k,v) in u.dict
         w = getweight(u.heap, k)
