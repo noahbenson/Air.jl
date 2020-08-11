@@ -364,6 +364,7 @@ deepthawcopy(x) = deepthaw(deepcopy(x))
 _isequiv(::Type, ::Type, t, s) = (t === s)
 # but for two objects of the same type, we can also check if all the
 # equivalent fields are equivalent.
+_isequiv(::Immutable, ::Immutable, t::T, s::S) where {T,S} = false
 _isequiv(::Immutable, ::Immutable, t::T, s::T) where {T} = begin
     t === s && return true
     isbitstype(T) && return isequal(t, s)
@@ -378,7 +379,6 @@ _isequiv(::Immutable, ::Immutable, t::T, s::T) where {T} = begin
         return true
     end
 end
-_isequiv(::Immutable, ::Immutable, t::T, s::S) where {T,S} = false
 """
     isequiv(x, y)
 Yields true if x and y are equivalent and false otherwise.
