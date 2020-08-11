@@ -370,10 +370,10 @@ popfirst(u::PVector{T}) where {T} = begin
     tree = delete(u._tree, u._i0 + 0x1)
     return PVector{T}(u._i0 + 0x1, _lindex(n-1), tree, u._default)
 end
-_isequiv(::Immutable, ::Immutable, s::AS, t::AT) where {
+isequiv(u::AS, v::AT) where {
     S,T,N,
-    AS <: AbstractArray{S,N},
-    AT <: AbstractArray{T,N}
+    AS <: AbstractPArray{S,N},
+    AT <: AbstractPArray{T,N}
 } = begin
     (u === v) && return true
     (size(u) == size(v)) || return false
@@ -382,7 +382,7 @@ _isequiv(::Immutable, ::Immutable, s::AS, t::AT) where {
     end
     return true
 end
-_equivhash(::Immutable, u::PArray{T,N}) where {T,N} = begin
+equivhash(u::AA) where {T,N,AA<:AbstractPArray{T,N}} = begin
     h = equivhash(size(u))
     for x in u
         h *= 0x1f

@@ -113,11 +113,7 @@ mutability(::Type{PEqualSet{T}}) where {T} = Immutable
 
 # We should define an isequiv function for abstract sets; this should work
 # equally well on PSets or normal sets.
-_isequiv(::Immutable, ::Immutable, s::SS, t::ST) where {
-    S,T,
-    SS <: AbstractSet{S},
-    ST <: AbstractSet{T}
-} = begin
+isequiv(s::SS, t::ST) where {S,T,SS <: AbstractPSet{S},ST <: AbstractPSet{T}} = begin
     (length(t) == length(s)) || return false
     for k in s
         (k in t) || return false
@@ -128,7 +124,7 @@ _isequiv(::Immutable, ::Immutable, s::SS, t::ST) where {
     end
     return true
 end
-_equivhash(::Immutable, u::SS) where {K,SS<:AbstractPSet{K}} = begin
+equivhash(u::SS) where {K,SS<:AbstractPSet{K}} = begin
     h = hash(length(u))
     for k in u
         h += equivhash(k)

@@ -189,13 +189,6 @@ macro _pdict_code(name::Symbol, eqfn, hashfn)
                     return $name{K,V}(u.$n - 1, setindex(u.$tree, vv, hh), u.$empt)
                 end
             end
-            Air._equivhash(::Immutable, u::$name{K,V}) where {K,V} = begin
-                h = length(u)
-                for (k,v) in u
-                    h += $h(k) ⊻ $h(v)
-                end
-                return h
-            end
         end
     end |> esc
 end
@@ -465,11 +458,7 @@ Base.isequal(l::PIdDict{J,U}, r::Base.IdDict{K,V}) where {K,V,J,U} = Base.isequa
 
 # We should define an isequiv function for abstract dicts; this should work
 # equally well on PSets or normal sets.
-_isequiv(::Immutable, ::Immutable, s::DS, t::DT) where {
-    KT,VT,KS,VS,
-    DS <: AbstractDict{KS,VS},
-    DT <: AbstractDict{KT,VT}
-} = begin
+isequiv(s::DS, t::DT) where {DS <: AbstractPDict, DT <: AbstractPDict} = begin
     (length(t) == length(s)) || return false
     for (k,v) in s
         tt = get(t, k, t)
@@ -483,4 +472,11 @@ _isequiv(::Immutable, ::Immutable, s::DS, t::DT) where {
         isequiv(ss, v) || return false
     end
     return true
+end
+equivhash(u::DD) where {K,V,DD<:AbstractPDict{K,V}} = begin
+    h = length(u)
+    for (k,v) in u
+        h += equivhash(k) ⊻ equivhash(v)
+    end
+    return h
 end
