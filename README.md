@@ -10,27 +10,37 @@ Functional collections and utilities for Julia as light as air.
 
 
 ## Author ######################################################################
+
 Noah C. Benson &lt;<nben@uw.edu>&gt;
 
+
 ## Description #################################################################
+
 Air is a Julia library that aims to take advantage of Julia's builtin immutable
 paradigms to provide a set of functional utilities. Air is currently heavily
 under development and will be changing drastically in the foreseeable future.
 Inspiration for Air's design is derived largely from paradigms in Clojure and
 Scala.
 
+
 ### Plans
 
-Note that most of the basic plans have already been implementted, but are
-currently undergoing testing.
+Note that many of the core components for Air already working (if
+not-yet-optimized) implementations. Several more are currently undergoing
+testing.
 
 * Completed plans
-  * None
-* Plans that are implemented but requiier testing
   * Persistent data structures:
     * `PArray`, a persistent array type that mimics Julia's native `Array`
     * `PDict`, a persistent dictionary type that mimics Julia's native `Dict`
     * `PSet`, a persistent set type.
+    * `PWDict`, a persistent weighted dictionary type that trackss an ordering
+      (descending by weight) of the elements using a persistent heap and allows
+      pairs to be sampled (using `rand(pwdict)`) with probabilities equal to
+      their (relative) weights in the dictionary.
+    * `PWSet`, a weighted persistent set type, like `PWDict` but just objects
+      with weights instead of key-value pairs with weights.
+* Plans that are implemented but require testing
     * `LazyDict`, a persistent lazy dictionary type.
   * Multi-threading utilities, inspired by Clojure
     * Thread-safe `Delay` and `Promise` types.
@@ -45,6 +55,13 @@ currently undergoing testing.
 * Plans that are not yet implemented
   * **Persistent Record Types.** Tool for defining data structures that
     support lazy reification of members.
+  * **Inheritable Method Parameters.** A common problem in many languages is
+    that an API function that calls another lower-level function often needs to
+    support some subset of the argument preprocessiing that occurs in the
+    lower-level function. The preprocessing and documentation of the shared
+    arguments shouldn't need to be duplicated in multiple places; rather a
+    simple macro should make it easy for common parameters to occur in both
+    places and be documented identically in both.
   * Trransient types
     * `PDict` should be O(1)-time convertable into the transient `TDict`
       type that can be updated without copying memory and that can be 
