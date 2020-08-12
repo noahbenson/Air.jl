@@ -135,12 +135,12 @@ Base.empty(s::PWSet{T,W}, ::Type{S}=T, ::Type{X}=W) where {T,W,S,X} = PWSet{S,X}
 Base.empty(s::PWEqualSet{T,W}, ::Type{S}=T, ::Type{X}=W) where {T,W,S,X} = PWIdSet{S,X}()
 Base.empty(s::PWIdSet{T,W}, ::Type{S}=T, ::Type{X}=W) where {T,W,S,X} = PWEqualSet{S,X}()
 
-mutability(::Type{PWSet}) = Immutable
-mutability(::Type{PWSet{T}}) where {T} = Immutable
-mutability(::Type{PWIdSet}) = Immutable
-mutability(::Type{PWIdSet{T}}) where {T} = Immutable
-mutability(::Type{PWEqualSet}) = Immutable
-mutability(::Type{PWEqualSet{T}}) where {T} = Immutable
+mutability(::Type{PWSet}) = Immutable()
+mutability(::Type{PWSet{T}}) where {T} = Immutable()
+mutability(::Type{PWIdSet}) = Immutable()
+mutability(::Type{PWIdSet{T}}) where {T} = Immutable()
+mutability(::Type{PWEqualSet}) = Immutable()
+mutability(::Type{PWEqualSet{T}}) where {T} = Immutable()
 
 isequiv(s::ST, t::AbstractSet) where {T,ST <: AbstractPWSet{T}} = false
 isequiv(s::AbstractSet, t::ST) where {T,ST <: AbstractPWSet{T}} = false

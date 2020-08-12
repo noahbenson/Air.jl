@@ -186,12 +186,12 @@ Base.empty(s::PWDict{K,V,W}, ::Type{J}=K, ::Type{U}=V, ::Type{X}=W) where {K,V,W
 Base.empty(s::PWIdDict{K,V,W}, ::Type{J}=K, ::Type{U}=V, ::Type{X}=W) where {K,V,W,J,U,X} = PWIdDict{J,U,X}()
 Base.empty(s::PWEqualDict{K,V,W}, ::Type{J}=K, ::Type{U}=V, ::Type{X}=W) where {K,V,W,J,U,X} = PWEqualDict{J,U,X}()
 
-mutability(::Type{PWDict}) = Immutable
-mutability(::Type{PWDict{K,V}}) where {K,V} = Immutable
-mutability(::Type{PWIdDict}) = Immutable
-mutability(::Type{PWIdDict{K,V}}) where {K,V} = Immutable
-mutability(::Type{PWEqualDict}) = Immutable
-mutability(::Type{PWEqualDict{K,V}}) where {K,V} = Immutable
+mutability(::Type{PWDict}) = Immutable()
+mutability(::Type{PWDict{K,V}}) where {K,V} = Immutable()
+mutability(::Type{PWIdDict}) = Immutable()
+mutability(::Type{PWIdDict{K,V}}) where {K,V} = Immutable()
+mutability(::Type{PWEqualDict}) = Immutable()
+mutability(::Type{PWEqualDict{K,V}}) where {K,V} = Immutable()
 
 isequiv(s::DS, t) where {DS <: AbstractPWDict} = false
 isequiv(t, s::DS) where {DS <: AbstractPWDict} = false

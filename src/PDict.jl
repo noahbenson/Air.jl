@@ -197,12 +197,12 @@ end
 @_pdict_code PIdDict (===) objectid
 @_pdict_code PEqualDict isequal hash
 
-mutability(::Type{PDict}) = Immutable
-mutability(::Type{PDict{K,V}}) where {K,V} = Immutable
-mutability(::Type{PIdDict}) = Immutable
-mutability(::Type{PIdDict{K,V}}) where {K,V} = Immutable
-mutability(::Type{PEqualDict}) = Immutable
-mutability(::Type{PEqualDict{K,V}}) where {K,V} = Immutable
+mutability(::Type{PDict}) = Immutable()
+mutability(::Type{PDict{K,V}}) where {K,V} = Immutable()
+mutability(::Type{PIdDict}) = Immutable()
+mutability(::Type{PIdDict{K,V}}) where {K,V} = Immutable()
+mutability(::Type{PEqualDict}) = Immutable()
+mutability(::Type{PEqualDict{K,V}}) where {K,V} = Immutable()
 
 
 ################################################################################

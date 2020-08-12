@@ -360,12 +360,18 @@ Yields deepthaw(deepcopy(x)).
 """
 deepthawcopy(x) = deepthaw(deepcopy(x))
 
-# isequiv should always default to ===
-_isequiv(::Type, ::Type, t, s) = (t === s)
-# but for two objects of the same type, we can also check if all the
-# equivalent fields are equivalent.
-_isequiv(::Immutable, ::Immutable, t::T, s::S) where {T,S} = false
-_isequiv(::Immutable, ::Immutable, t::T, s::T) where {T} = begin
+# isequiv should always default to === unnless both objects are immutable
+# or the mutabiilities are different (in which case the are not equiv).
+_isequiv(::UnknownMutability, ::UnknownMutability, t, s) = (t === s)
+_isequiv(::Mutable,           ::Mutable,           t, s) = (t === s)
+_isequiv(::UnknownMutability, ::Mutable,           t, s) = false
+_isequiv(::UnknownMutability, ::Immutable,         t, s) = false
+_isequiv(::Mutable,           ::UnknownMutability, t, s) = false
+_isequiv(::Mutable,           ::Immutable,         t, s) = false
+_isequiv(::Immutable,         ::UnknownMutability, t, s) = false
+_isequiv(::Immutable,         ::Mutable,           t, s) = false
+_isequiv(::Immutable,         ::Immutable,         t::T, s::S) where {T,S} = false
+_isequiv(::Immutable,         ::Immutable,         t::T, s::T) where {T} = begin
     t === s && return true
     isbitstype(T) && return isequal(t, s)
     # call isequiv on each of the fields
@@ -379,6 +385,8 @@ _isequiv(::Immutable, ::Immutable, t::T, s::T) where {T} = begin
         return true
     end
 end
+_isequiv(::Immutable, ::Immutable, t::T, s::S) where {T<:Number, S<:Number} = (t == s)
+_isequiv(::Immutable, ::Immutable, t::T, s::S) where {T<:AbstractString, S<:AbstractString} = (t == s)
 """
     isequiv(x, y)
 Yields true if x and y are equivalent and false otherwise.
@@ -399,7 +407,7 @@ type, all
 """
 isequiv(t::T, s::S) where {T, S} = _isequiv(mutability(T), mutability(S), t, s)
 
-_equivhash(::Type, x) = objectid(x)
+_equivhash(::UnknownMutability, x) = objectid(x)
 _equivhash(::Mutable, x) = objectid(x)
 _equivhash(::Immutable, x::T) where {T} = begin
     isbitstype(T) && return objectid(x)
@@ -413,6 +421,9 @@ _equivhash(::Immutable, x::T) where {T} = begin
         return h
     end
 end
+_equivhash(::Immutable, x::T) where {T <: Number} = hash(x)
+_equivhash(::Immutable, x::T) where {T <: AbstractString} = hash(x)
+_equivhash(::Immutable, x::Symbol) = hash(x)
 """
     equivhash(x)
 Yields a hash value appropriate for the isequiv() equality

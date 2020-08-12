@@ -4,6 +4,142 @@ using Random.Random
 
 @testset "Air.jl" begin
 
+    @testset "API" begin
+        @testset "PArray" begin
+            a = collect(reshape(1:100, (10,10)))
+            b = convert(Array{Float64,2}, collect(reshape(1:100, (10,10))))
+            p = PArray(a)
+            q = PArray(b)
+            @test a == b
+            @test p == q
+            @test a == p
+            @test a == q
+            @test b == p
+            @test b == q
+            @test !isequiv(a, b)
+            @test !isequiv(a, p)
+            @test !isequiv(a, q)
+            @test !isequiv(b, p)
+            @test !isequiv(b, q)
+            @test isequiv(p, q)
+            @test !(a === b)
+            @test !(a === p)
+            @test !(a === q)
+            @test !(b === p)
+            @test !(b === q)
+            @test !(p === q)
+            @test hash(a) == hash(b)
+            @test hash(p) == hash(q)
+            @test hash(a) == hash(p)
+            @test hash(a) == hash(q)
+            @test hash(b) == hash(p)
+            @test hash(b) == hash(q)
+            @test equivhash(a) != equivhash(b)
+            @test equivhash(p) == equivhash(q)
+            @test equivhash(a) != equivhash(p)
+            @test equivhash(a) != equivhash(q)
+            @test equivhash(b) != equivhash(p)
+            @test equivhash(b) != equivhash(q)
+        end
+        @testset "PDict" begin
+            intels = [gensym() => x for x in 1:2000]
+            fltels = [k => Float64(v) for (k,v) in intels]
+            a = Dict(intels...)
+            b = Dict(fltels...)
+            p = PDict(a)
+            q = PDict(b)
+            @test a == b
+            @test p == q
+            @test a == p
+            @test a == q
+            @test b == p
+            @test b == q
+            @test !isequiv(a, b)
+            @test !isequiv(a, p)
+            @test !isequiv(a, q)
+            @test !isequiv(b, p)
+            @test !isequiv(b, q)
+            @test isequiv(p, q)
+            @test !(a === b)
+            @test !(a === p)
+            @test !(a === q)
+            @test !(b === p)
+            @test !(b === q)
+            @test !(p === q)
+            @test hash(a) == hash(b)
+            @test hash(p) == hash(q)
+            @test hash(a) == hash(p)
+            @test hash(a) == hash(q)
+            @test hash(b) == hash(p)
+            @test hash(b) == hash(q)
+            @test equivhash(a) != equivhash(b)
+            @test equivhash(p) == equivhash(q)
+            @test equivhash(a) != equivhash(p)
+            @test equivhash(a) != equivhash(q)
+            @test equivhash(b) != equivhash(p)
+            @test equivhash(b) != equivhash(q)
+        end
+        @testset "PSet" begin
+            intels = collect(1:1000)
+            fltels = [Float64(v) for v in intels]
+            a = Set(intels)
+            b = Set(fltels)
+            p = PSet(a)
+            q = PSet(b)
+            @test a == b
+            @test p == q
+            @test a == p
+            @test a == q
+            @test b == p
+            @test b == q
+            @test !isequiv(a, b)
+            @test !isequiv(a, p)
+            @test !isequiv(a, q)
+            @test !isequiv(b, p)
+            @test !isequiv(b, q)
+            @test isequiv(p, q)
+            @test !(a === b)
+            @test !(a === p)
+            @test !(a === q)
+            @test !(b === p)
+            @test !(b === q)
+            @test !(p === q)
+            @test hash(a) == hash(b)
+            @test hash(p) == hash(q)
+            @test hash(a) == hash(p)
+            @test hash(a) == hash(q)
+            @test hash(b) == hash(p)
+            @test hash(b) == hash(q)
+            @test equivhash(a) != equivhash(b)
+            @test equivhash(p) == equivhash(q)
+            @test equivhash(a) != equivhash(p)
+            @test equivhash(a) != equivhash(q)
+            @test equivhash(b) != equivhash(p)
+            @test equivhash(b) != equivhash(q)
+        end
+        @testset "PWDict" begin
+            intels = [gensym() => (x,rand(Float64)) for x in 1:2000]
+            fltels = [k => (Float64(v),w) for (k,(v,w)) in intels]
+            p = PWDict(intels...)
+            q = PWDict(fltels...)
+            @test p == q
+            @test isequiv(p, q)
+            @test !(p === q)
+            @test hash(p) == hash(q)
+            @test equivhash(p) == equivhash(q)
+        end
+        @testset "PWSet" begin
+            intels = [gensym() => rand(Float64) for x in 1:2000]
+            p = PSet(intels)
+            q = PSet(reverse(intels))
+            @test p == q
+            @test isequiv(p, q)
+            @test !(p === q)
+            @test hash(p) == hash(q)
+            @test equivhash(p) == equivhash(q)
+        end
+    end
+    
     @testset "PArray" begin
         numops = 100
         @testset "1D" begin
@@ -41,10 +177,41 @@ using Random.Random
                 @test size(a) == size(p)
             end
         end
-        #@testset "2D" begin
-        #end
-        #@testset "3D" begin
-        #end
+        @testset "2D" begin
+            # These should be more fleshed out, but for now, we can do just a
+            # few simple tests.
+            a = Array(reshape(1:200, (20,10)))
+            p = PArray(a)
+            @test p == a
+            @test !isequiv(p, a)
+            @test p[5,8] == a[5,8]
+            @test p[:,4] == a[:,4]
+            @test p[9,:] == a[9,:]
+            p1 = setindex(p, -5, 15, 8)
+            @test p1 != a
+            @test p1[:,4] == a[:,4]
+            @test p1[9,:] == a[9,:]
+            @test p1[:,8] != a[:,8]
+            @test p1[15,:] != a[15,:]
+        end
+        @testset "3D" begin
+            a = Array(reshape(1:1000, (20,10,5)))
+            p = PArray(a)
+            @test p == a
+            @test !isequiv(p, a)
+            @test p[5,8,2] == a[5,8,2]
+            @test p[:,4,1] == a[:,4,1]
+            @test p[9,:,3] == a[9,:,3]
+            @test p[:,2,4] == a[:,2,4]
+            p1 = setindex(p, -5, 15, 8, 5)
+            @test p1 != a
+            @test p1[9,:,:] == a[9,:,:]
+            @test p1[:,3,:] == a[:,3,:]
+            @test p1[:,:,4] == a[:,:,4]
+            @test p1[15,:,:] != a[15,:,:]
+            @test p1[:,8,:] != a[:,8,:]
+            @test p1[:,:,5] != a[:,:,5]
+        end
     end
 
     # #PSet ####################################################################

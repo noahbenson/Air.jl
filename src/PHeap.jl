@@ -133,7 +133,7 @@ _pheap_fix_down(heap::PVector{Tuple{T,W,W}}, index::D, cmp::F, ii::Int) where {T
                 (heap, index) = _pheap_swap(heap, index, ii, lch, true, true)
                 ii = lch
             else
-                cmp(node[2], rnode[2]) && beak
+                cmp(node[2], rnode[2]) && break
                 # rnode < node and rnode < lnode
                 (heap, index) = _pheap_swap(heap, index, ii, rch, true, true)
                 ii = rch
@@ -274,4 +274,43 @@ Random.rand(p::PHeap{T,W,F,D}) where {T,W,F,D} = begin
         (t,w,tot) = p._heap[ii]
     end
     error("invalid state reached")
+end
+
+# ==============================================================================
+# Core Air API methods and related Base methods
+Base.isequal(a::PHeap, b::PHeap) = begin
+    (length(a) == length(b)) || return false
+    while length(a) > 0
+        f = first(a)
+        isequal(f, first(b)) || return false
+        (getweight(a, f) == getweight(b, f)) || return false
+        a = pop(a)
+        b = pop(b)
+    end
+    return true
+end
+isequiv(a::PHeap, b::PHeap) = begin
+    (length(a) == length(b)) || return false
+    while length(a) > 0
+        f = first(a)
+        isequiv(f, first(b)) || return false
+        (getweight(a, f) == getweight(b, f)) || return false
+        a = pop(a)
+        b = pop(b)
+    end
+    return true
+end
+equivhash(a::PHeap{T,W,F,D}) where {T,W,F,D}  = begin
+    h = 0x13 * UInt(length(a))
+    for (t,w,tot) in a._heap
+        h += equivhash(t) ⊻ equivhash(w)
+    end
+    return h
+end
+Base.hash(a::PHeap{T,W,F,D}) where {T,W,F,D}  = begin
+    h = 0x11 * UInt(length(a))
+    for (t,w,tot) in a._heap
+        h += hash(t) ⊻ hash(w)
+    end
+    return h
 end

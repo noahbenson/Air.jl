@@ -23,8 +23,10 @@ abstract type AbstractPSet{T} <: AbstractSet{T} end
 macro _pset_code(name::Symbol, eqfn, hashfn)
     let eq = gensym(), h = gensym(), _name = gensym(), q,
         n = gensym("[private] length"), tree = gensym("[private] tree")
-        q = quote
-            let $eq = $eqfn, $h = $hashfn
+        return quote
+            begin
+                local $eq = $eqfn
+                local $h = $hashfn
                 struct $name{T} <: AbstractPSet{T}
                     $n::Int
                     $tree::PTree{PList{T}}
@@ -95,8 +97,7 @@ macro _pset_code(name::Symbol, eqfn, hashfn)
                     end
                 end
             end
-        end
-        return esc(q)
+        end |> esc
     end
 end
     
@@ -104,12 +105,12 @@ end
 @_pset_code PIdSet (===) objectid
 @_pset_code PEqualSet isequal hash
 
-mutability(::Type{PSet}) = Immutable
-mutability(::Type{PSet{T}}) where {T} = Immutable
-mutability(::Type{PIdSet}) = Immutable
-mutability(::Type{PIdSet{T}}) where {T} = Immutable
-mutability(::Type{PEqualSet}) = Immutable
-mutability(::Type{PEqualSet{T}}) where {T} = Immutable
+mutability(::Type{PSet}) = Immutable()
+mutability(::Type{PSet{T}}) where {T} = Immutable()
+mutability(::Type{PIdSet}) = Immutable()
+mutability(::Type{PIdSet{T}}) where {T} = Immutable()
+mutability(::Type{PEqualSet}) = Immutable()
+mutability(::Type{PEqualSet{T}}) where {T} = Immutable()
 
 # We should define an isequiv function for abstract sets; this should work
 # equally well on PSets or normal sets.
