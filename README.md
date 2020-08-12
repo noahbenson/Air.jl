@@ -57,7 +57,7 @@ testing.
     support lazy reification of members.
   * **Inheritable Method Parameters.** A common problem in many languages is
     that an API function that calls another lower-level function often needs to
-    support some subset of the argument preprocessiing that occurs in the
+    support some subset of the argument preprocessing that occurs in the
     lower-level function. The preprocessing and documentation of the shared
     arguments shouldn't need to be duplicated in multiple places; rather a
     simple macro should make it easy for common parameters to occur in both
