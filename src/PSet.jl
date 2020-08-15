@@ -49,6 +49,10 @@ macro _pset_code(name::Symbol, eqfn, hashfn)
                 # Base methods.
                 Base.empty(s::$name{T}, ::Type{U}=T) where {T,U} = $name{U}()
                 Base.length(s::$name) = s.$n
+                Base.IteratorSize(::Type{$name{T}}) where {T} = Base.HasLength()
+                Base.IteratorEltype(::Type{$name{T}}) where {T} = Base.HasEltype()
+                Base.eltype(::Type{$name{T}}) where {T,N} = T
+                Base.eltype(u::$name{T}) where {T,N} = T
                 Base.iterate(u::$name{T}) where {T} = begin
                     (u.$n == 0) && return nothing
                     (lst,titer) = iterate(u.$tree)

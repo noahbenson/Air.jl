@@ -225,11 +225,12 @@ SparseArrays.issparse(::PArray) = true
 # ==============================================================================
 # Iterator methods
 
-Base.IteratorSize(::Type{PArray{T,N}}) where {T,N} = HasSize{N}()
-Base.IteratorEltype(::Type{PArray{T,N}}) where {T,N} = HasEltype()
+Base.IteratorSize(::Type{PArray{T,N}}) where {T,N} = Base.HasShape{N}()
+Base.IteratorEltype(::Type{PArray{T,N}}) where {T,N} = Base.HasEltype()
 
 Base.length(u::PArray{T,N}) where {T,N} = length(u._index)
 Base.size(u::PArray{T,N}) where {T,N} = size(u._index)
+Base.eltype(::Type{PArray{T,N}}) where {T,N} = T
 Base.eltype(u::PArray{T,N}) where {T,N} = T
 
 Base.iterate(u::PArray{T,N}, k::Int) where {T,N} = begin

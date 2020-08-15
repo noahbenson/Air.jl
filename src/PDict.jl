@@ -88,6 +88,10 @@ macro _pdict_code(name::Symbol, eqfn, hashfn)
             # Base methods.
             Base.empty(s::$name{K,V}, ::Type{J}=K, ::Type{U}=V) where {K,V,J,U} = $name{J,U}()
             Base.length(s::$name) = s.$n
+            Base.IteratorEltype(::Type{$name{K,V}}) where {K,V} = Base.HasEltype()
+            Base.eltype(::Type{$name{K,V}}) where {K,V} = Pair{K,V}
+            Base.eltype(::$name{K,V}) where {K,V} = Pair{K,V}
+            Base.IteratorSize(::Type{$name{K,V}}) where {K,V} = Base.HasLength()
             Base.iterate(u::$name{K,V}) where {K,V} = begin
                 (u.$n == 0) && return nothing
                 (lst,titer) = iterate(u.$tree)
