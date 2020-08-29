@@ -271,3 +271,179 @@ and returns the return value of f.
 lockall(f::Function, locks::Vector{T}) where {T,N} = _lockall(f, copy(locks))
 lockall(f::Function, locks::NTuple{N,T}) where {T,N} = _lockall(f, [locks...])
 lockall(f::Function, locks::Vararg{T,N}) where {T,N} = _lockall(f, [locks...])
+
+
+# ==============================================================================
+# Array tools
+
+"""
+    CollectionType
+
+CollectionType(T) should yield the CollectionType trait for the type T. The
+yielded value will be of abstract type CollectionType: one of the objects
+IsCollection(), NonCollection(), or CollectionUnknown(). The last case may
+indicate that whether an item is interpreted as a collection depends on the
+object specifically; in this case, the function iscoll() should be overloaded
+for objects of that type.
+"""
+abstract type CollectionType end
+"""
+    IsCollection
+
+IsCollection is a subtype of CollectionType that is returned from 
+`CollectionType(T)` to indicate that type `T` is always a collection.
+
+Note that `String` and `Symbol` are considered iterable collections by the
+Julia core libraries, but this interface considers both to be non-collections.
+"""
+struct IsCollection <: CollectionType end
+"""
+    NonCollection
+
+NonCollection is a subtype of CollectionType that is returned from 
+`CollectionType(T)` to indicate that type `T` is never a collection.
+
+Note that `String` and `Symbol` are considered iterable collections by the
+Julia core libraries, but this interface considers both to be non-collections.
+"""
+struct NonCollection <: CollectionType end
+"""
+    CollectionUnknown
+
+CollectionUnknown is a subtype of CollectionType that is returned from 
+`CollectionType(T)` to indicate that type `T` may or may not be a collection
+depending on the state of the object, thus `iscoll` should be used to determine
+if it is a collection.
+"""
+struct CollectionUnknown <: CollectionType end
+# Implement the collection types
+CollectionType(::Type{T}) where {T} = CollectionType(Base.IteratorSize(T), T)
+CollectionType(::Base.HasShape{N}, ::Type{T}) where {N,T} = 
+    (N > 0 ? IsCollection() : NonCollection())
+CollectionType(::Base.IsInfinite, ::Type{T}) where {N,T} = IsCollection()
+CollectionType(::Base.SizeUnknown, ::Type{T}) where {N,T} = CollectionUnknown()
+# HasLength is the weird one: stucts have HasLength defined by default, but
+# we don't want to treat them as collections. So instead, we treat HasLength
+# as a single and manually define the acceptable types that implement only
+# HasLength but are in fact 
+CollectionType(::Base.HasLength, ::Type{T}) where {T} = NonCollection()
+CollectionType(::Type{T}) where {T <: AbstractArray} = IsCollection()
+CollectionType(::Type{T}) where {T <: AbstractSet} = IsCollection()
+CollectionType(::Type{T}) where {T <: AbstractDict} = IsCollection()
+"""
+    iscolltype(T)
+
+Yields true if T is a collection type, according to the Air type system. See
+also `iscoll()`.
+"""
+iscolltype(x) = false
+iscolltype(::Type{T}) where {T} = iscolltype(CollectionType(T), T)
+iscolltype(::IsCollection, T) = true
+iscolltype(::NonCollection, T) = false
+iscolltype(::CollectionUnknown, ::Type{T}) where {T} =
+    error("type $T did not overload iscolltype")
+"""
+    iscoll(x)
+
+Yields true if x is a collection, according to the Air type system, and false
+otherwise. Collections in Air are anything that in Julia implements a HasLength
+or HasShape{N>0} returrn value from `IteratorSize()` with the exception of 
+`String`s and `Symbol`s, which are considered singleton items.
+
+Objects whose collection status are for some reason unknown are considered to
+be non-collections. Collections in Air are anything that in Julia implements a
+`HasLength` or `HasShape{N}` for `N > 0` returrn value from `IteratorSize()` 
+with the exception of `String`s and `Symbol`s, which are considered singleton
+items.
+"""
+iscoll(x::T) where {T} = iscolltype(T)
+"""
+    issingletype()
+
+Yields true if the given object is a singleton type, according to the Air type
+system, and false otherwise. The issingle(x) function is equivalent to
+!iscolltype(x).
+"""
+issingletype(T) = !iscolltype(T)
+"""
+    issingle()
+
+Yields true if the object is a singleton, according to the Air type system, and
+false otherwise. The issingle(x) function is equivalent to !iscoll(x).
+"""
+issingle(x) = !iscoll(x)
+
+# This code not yet fully developed; possibbly not really worth it to fix.
+#"""
+#    isflat(x)
+#
+#Yields true if x is as flat as it can be and false if a flattened version would
+#be flatter than the current object x.
+#"""
+#isflat(x::T) where {T} = true
+#isflat(x::Q) where {T, N, Q <: AbstractArray{T,N}} = begin
+#    (N > 1) && return false
+#    (length(x) == 0) && return true
+#    issingletype(T) && return true
+#    error("not yet implemented")
+#end
+#"""
+#    flateltype(T::Type)
+#
+#Yields the element type that would result from `flat(x)` where x is of type `T`.
+#"""
+#flateltype(::Type{T}) where {T} = _flateltype(CollectionType(T), T)
+#_flateltype(::NonCollection, ::Type{T}) where {T} = T
+#_flateltype(c::IsCollection, ::Type{T}) where {T} =
+#    _flateltype(c, Base.IteratorEltype(T), T)
+#_flateltype(c::IsCollection, ::Base.HasEltype, ::Type{T}) where {T} =
+#    _flateltype(elttype(T))
+#_flateltype(c::IsCollection, ::Base.EltypeUnknown, ::Type{T}) where {T} = T
+#"""
+#    flatlength(x)
+#
+#Yields the length of the Array object that would be yielded by `flat(x)`.
+#"""
+#flatlength(x::T) where {T} = _flatlength(CollectionType(T), x)
+#_flatlength(::NonCollection, x::T) where {T} = 1
+#_flatlength(c::IsCollection, x::T) where {T} =
+#    _flatlength(c, flateltype(T), x)
+#_flatlength(::IsCollection, ::Base.HasEltype
+#
+#    """
+#    arraywrite!(dst::Array, src::AbstractArray, i0::Int=1)
+#
+#Writes the contents of the entire given source array `src` into the destination
+#array `dst`, with the first element of `dst` overwritten being `dst[i0]`.
+#Yields the number of array elements of `dst` that were written.
+#"""
+#function arraywrite!(dst::Array{T,N}, src::AA, i0::Int=1) where {
+#    T,N,S,M,
+#    AA<:AbstractArray{S,M}}
+#    m = length(sc)
+#    dst[i0:i0+m] = src[:]
+#    return m
+#end
+#function arraywrite!(dst::Array{T,N}, src::AA, i0::Int=1) where {
+#    T,N,S,M,
+#    AA<:AbstractArray{T,M}}
+#    m = length(sc)
+#    dst[i0:i0+m] = src[:]
+#    return m
+#end
+#function arraywrite!(dst::Array{T,N}, src::AA, i0::Int=1) where {
+#    T,N,S,M,R,L,
+#    SubAA<:AbstractArray{R,L},
+#    AA<:AbstractArray{SubAA,M}}
+#    ii = i0
+#    for aa in src
+#        ii += arraywrite!(dst, aa, ii)
+#    end
+#    return ii - i0
+#end
+#arrayjoin(itr, shape::NTuple{N,Int}, ::Type{T}=Any) where {T,N} = begin
+#    out = PArray{T}(undef, shape)
+#    arraywrite!(out, itr)
+#    return out
+#end
+#arrayjoin(itr::AA)
