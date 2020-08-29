@@ -2,6 +2,11 @@ using Air
 using Test
 using Random.Random
 
+struct TestType
+    a::Int
+    b::Symbol
+end
+
 @testset "Air.jl" begin
 
     @testset "API" begin
@@ -330,5 +335,46 @@ using Random.Random
                          Base.Dict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
                          syms, nums, n)
         end
+    end
+    @testset "general" begin
+        @testset "Air.iscoll" begin
+            @test Air.iscoll([1,2,3])
+            @test Air.iscoll(Set([:a, :b, :c]))
+            @test Air.iscoll(Air.PDict(:a => 1, :b => 2))
+            @test !Air.iscoll(TestType(10, :x))
+            @test !Air.iscoll(10)
+            @test !Air.iscoll(1.5)
+            @test !Air.iscoll(:abc)
+            @test !Air.iscoll("string")
+
+            @test Air.iscolltype(Array{Int,2})
+            @test Air.iscolltype(Set{Symbol})
+            @test Air.iscolltype(Air.PDict{Symbol,Int})
+            @test !Air.iscolltype(TestType)
+            @test !Air.iscolltype(Int)
+            @test !Air.iscolltype(Float64)
+            @test !Air.iscolltype(Symbol)
+            @test !Air.iscolltype(String)
+        end
+        @testset "collections" begin
+            @test !Air.issingle([1,2,3])
+            @test !Air.issingle(Set([:a, :b, :c]))
+            @test !Air.issingle(Air.PDict(:a => 1, :b => 2))
+            @test Air.issingle(TestType(10, :x))
+            @test Air.issingle(10)
+            @test Air.issingle(1.5)
+            @test Air.issingle(:abc)
+            @test Air.issingle("string")
+            
+            @test !Air.issingletype(Array{Int,2})
+            @test !Air.issingletype(Set{Symbol})
+            @test !Air.issingletype(Air.PDict{Symbol,Int})
+            @test Air.issingletype(TestType)
+            @test Air.issingletype(Int)
+            @test Air.issingletype(Float64)
+            @test Air.issingletype(Symbol)
+            @test Air.issingletype(String)
+        end
+        
     end
 end
