@@ -22,6 +22,7 @@ export PList, PSet, PDict, PArray, PVector, PMatrix, LazyDict,
     Var, Volatile, Actor, Source, tx, ReentrantRef,
     TransactionalRef, AbstractSourceKernel, getfilter,
     getfinalize, setfilter!, setfinalize!, send, geterror,
-    receive, reset, PWDict, PWSet, getweight, setweight
+    receive, reset, PWDict, PWSet, getweight, setweight,
+    iscoll, iscolltype, issingle, issingletype
 
 end # module
