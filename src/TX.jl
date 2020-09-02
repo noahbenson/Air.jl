@@ -305,7 +305,7 @@ end
 struct VolatileValue{T}
     value::T
     filter::Union{Nothing, Function}
-    finalie::Union{Nothing, Function}
+    finalize::Union{Nothing, Function}
     function VolatileValue{T}(v::S, flt::Function, fin::Function) where {T,S}
         return new{T}(flt(v), flt, fin)
     end
@@ -329,7 +329,7 @@ struct VolatileValue{T}
     end
 end
 _volatile_finalize(v::VolatileValue{T}) where {T} = begin
-    (v.finalize === nothinng) && return v
+    (v.finalize === nothing) && return v
     u = v.finalize(v.value)
     return (u === v.value ? v : VolatileValue{T}(u, v.filter, v.finalize))
 end
@@ -544,12 +544,12 @@ touched directly.
 mutable struct Transaction
     _state::Symbol
     _reads::IdDict{Volatile, VolatileValue}
-    _writes::IdDict{Volatile, VolatileValue}
+    _writes::IdDict{Volatile, NTuple{2,VolatileValue}}
     _actors::IdDict{Actor, _ActorTxData}
     _sources::IdDict{Source, _SourceTxData}
     Transaction() = new(:running,
                         IdDict{Volatile, VolatileValue}(),
-                        IdDict{Volatile, Tuple{VolatileValue,VolatileValue}}(),
+                        IdDict{Volatile, NTuple{2,VolatileValue}}(),
                         IdDict{Actor, _ActorTxData}(),
                         IdDict{Source, _SourceTxData}())
 end
@@ -621,14 +621,14 @@ function tx(fn::F, args...) where {F <: Function}
         n  = nw + nr
         m  = length(currtx._actors)
         p  = length(currtx._sources)
-        vols = Vector{Actor}(n, undef)
+        vols = Vector{Volatile}(undef, n)
         vols[1:nr] .= keys(currtx._reads)
         vols[nr+1:end] .= keys(currtx._writes)
         sort!(vols, by=objectid)
-        acts = Vector{Actor}(m, undef)
+        acts = Vector{Actor}(undef, m)
         acts[1:m] .= keys(currtx._actors)
         sort!(acts, by=objectid)
-        srcs = Vector{Source}(p, undef)
+        srcs = Vector{Source}(undef, p)
         srcs[1:p] .= keys(currtx._sources)
         sort!(srcs, by=objectid)
         # go through and lock; check while doinng so.
@@ -636,7 +636,7 @@ function tx(fn::F, args...) where {F <: Function}
         checked = 0
         success = false
         try
-            while true # We use a loop so that we can break.
+            while !success
                 # First, go through and lock all the volatiles in order.
                 for vol in vols
                     _tx_lock(vol)
@@ -649,8 +649,8 @@ function tx(fn::F, args...) where {F <: Function}
                 end
                 (checked == length(currtx._reads)) || break
                 # Next, check the written volatiles.
-                for (v,(x0,)) in currtx._writes
-                    (x0 === vol._value) || break
+                for (v,(x0,x)) in currtx._writes
+                    (x0 === v._value) || break
                     checked += 1
                 end
                 (checked == length(vols)) || break
@@ -681,15 +681,15 @@ function tx(fn::F, args...) where {F <: Function}
                     vol._value = x
                 end
                 # We need to commit the actors as well.
-                for (act,dat) in currtx._sends
+                for (act,dat) in currtx._actors
                     q = dat.msgs
-                    v = a._value
+                    v = act._value
                     while !isempty(q)
-                        msg = dequeue!(q)
-                        enqueue!(a._msgs, msg)
+                        msg = DataStructures.dequeue!(q)
+                        DataStructures.enqueue!(act._msgs, msg)
                     end
                     # We notify the condition since there's something new to process.
-                    notify(a._cond)
+                    notify(act._cond)
                 end
                 # And we need to claim the received items from the sources
                 for (src,dat) in currtx._sources
@@ -740,7 +740,7 @@ end
 # methods.
 _volatile_getindex(v::Volatile{T}, t::Transaction) where {T} = begin
     w = get(t._writes, v, nothing)
-    (w === nothing) || return w
+    (w === nothing) || return w[2]
     w = get(t._reads, v, nothing)
     (w === nothing) || return w
     w = v._value
@@ -755,15 +755,16 @@ _volatile_setindex!(v::Volatile{T}, x::VolatileValue{T}, t::Transaction) where {
     # See if it this ref has already been written to in this transaction.
     w = get(t._writes, v, nothing)
     if w !== nothing
+        (x0,x1) = w
         # If this doesn't change annything, don't do aything.
-        (w === x) && return x
+        (x === x1) && return x
         # If this changes the volatile back to its inintial value, we convert
         # this to a read operation. Otherwise we record the new value.
-        if w === x
+        if x === x0
             delete!(t._writes, v)
-            t._reads[v] = w
+            t._reads[v] = x0
         else
-            t._writes[v] = (w[1], x)
+            t._writes[v] = (x0, x)
         end
         return x
     end
@@ -837,12 +838,12 @@ _txdata(a::Actor{T}, t::Transaction) where {T} = begin
     w = get(t._actors, a, nothing)
     if w === nothing
         w = _ActorTxData{T}(a._value)
-        t._actors[v] = w
+        t._actors[a] = w
     end
     return w
 end
 _txdata(a::Actor{T}, ::Nothing) where {T} = nothing
-_recv(a::Actor{T}, t::Transaction) where {T} = _txdatat(a, t).tx_value
+_recv(a::Actor{T}, t::Transaction) where {T} = _txdata(a, t).tx_value
 _recv(a::Actor{T}, ::Nothing) where {T} = a._value
 _send(a::Actor{T}, argno::Int, args::Tuple, t::Transaction) where {T} = begin
     w = _txdata(a, t)
@@ -856,7 +857,7 @@ _send(a::Actor{T}, argno::Int, args::Tuple, t::Transaction) where {T} = begin
     elseif argno == 0
         error("attempt to reset actor that is not in an error state")
     end
-    enqueue!(w.msgs, _ActorMsg{T}(argno, args))
+    DataStructures.enqueue!(w.msgs, _ActorMsg{T}(argno, args))
     return nothing
 end
 _send(a::Actor{T}, argno::Int, args::Tuple, ::Nothing) where {T} = begin
@@ -877,7 +878,7 @@ _send(a::Actor{T}, argno::Int, args::Tuple, ::Nothing) where {T} = begin
             error("attempt to reset actor that is not in an error state")
         end
         # The actor isn't in an error state; we can schedule the function.
-        enqueue!(a._msgs, _ActorMsg{T}(argno, args))
+        DataStructures.enqueue!(a._msgs, _ActorMsg{T}(argno, args))
         # We notify the condition since there's something new to process.
         notify(a._cond)
         # That's all.
