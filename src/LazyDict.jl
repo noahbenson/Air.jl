@@ -96,7 +96,7 @@ macro _ldict_code(name::Symbol, eqfn, hashfn)
                     (uu === u) && return df
                     for (kk,vv) in uu
                         $eq(k, kk) || continue
-                        isa(vv, Delay) && vv = vv[]
+                        isa(vv, Delay) && (vv = vv[])
                         return vv
                     end
                     return df
@@ -104,7 +104,7 @@ macro _ldict_code(name::Symbol, eqfn, hashfn)
                 Base.in(kv::Pair, u::$name{K,V}, eqfn::Function) where {K,V} = begin
                     v = get(u, kv.first, u)
                     (v === u) && return false
-                    isa(v, Delay) && v = v[]
+                    isa(v, Delay) && (v = v[])
                     return eqfn(kv.second, v)
                 end
                 Base.in(x::Pair, u::$name{K,V}) where {K,V} = in(x, u, $eq)
@@ -135,9 +135,9 @@ macro _ldict_code(name::Symbol, eqfn, hashfn)
     end
 end
     
-@_pdict_code LazyDict isequiv equivhash
-@_pdict_code LazyIdDict (===) objectid
-@_pdict_code LazyEqualDict isequal hash
+@_ldict_code LazyDict isequiv equivhash
+@_ldict_code LazyIdDict (===) objectid
+@_ldict_code LazyEqualDict isequal hash
 
 mutability(::Type{LazyDict}) = Immutable
 mutability(::Type{LazyDict{K,V}}) where {K,V} = Immutable
