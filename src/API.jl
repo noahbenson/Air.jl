@@ -1,4 +1,32 @@
 
+import Base.setindex
+import Base.delete!
+
+################################################################################
+# Abstract Types
+"""
+    AbstractPDict{K,V}
+
+AbstractPDict is a subtype of AbstractDict that is extended only by persistent
+dictionary types such as PDict and LazyDict.
+"""
+abstract type AbstractPDict{K,V} <: AbstractDict{K,V} end
+"""
+    AbstractPSet{T}
+
+AbstractPSet is an abstract type extended by persistent set types such as PSet,
+PIdSet, and PEqualSet, as well as the weighted persistent set types.
+"""
+abstract type AbstractPSet{T} <: AbstractSet{T} end
+"""
+    AbstractPArray{T,N}
+
+The Abstract persistent array type represents any Array-like type that is
+persistent. Reified types include PArray{T,N} and LazyArray{T,N}.
+"""
+abstract type AbstractPArray{T,N} <: AbstractArray{T,N} end
+
+
 ################################################################################
 # Mutability
 """
@@ -44,6 +72,15 @@ mutability(T::UnionAll) = mutability(T{T.var.ub})
 # these two come out wrong in the above code, according to the documentation:
 mutability(::Type{String}) = _IMM_TYPE
 mutability(::Type{Symbol}) = _IMM_TYPE
+# These also seem to come out wrong:
+mutability(::Type{Set}) = _MUT_TYPE
+mutability(::Type{Set{T}}) where {T} = _MUT_TYPE
+mutability(::Type{Base.IdSet}) = _MUT_TYPE
+mutability(::Type{Base.IdSet{T}}) where {T} = _MUT_TYPE
+mutability(::Type{Dict}) = _MUT_TYPE
+mutability(::Type{Dict{K,V}}) where {K,V} = _MUT_TYPE
+mutability(::Type{IdDict}) = _MUT_TYPE
+mutability(::Type{IdDict{K,V}}) where {K,V} = _MUT_TYPE
 
 
 ################################################################################
@@ -385,8 +422,66 @@ _isequiv(::Immutable,         ::Immutable,         t::T, s::T) where {T} = begin
         return true
     end
 end
-_isequiv(::Immutable, ::Immutable, t::T, s::S) where {T<:Number, S<:Number} = (t == s)
-_isequiv(::Immutable, ::Immutable, t::T, s::S) where {T<:AbstractString, S<:AbstractString} = (t == s)
+function _isequiv(
+    ::Immutable, ::Immutable, t::T, s::S
+) where {T<:Number, S<:Number}
+    return isequal(t, s)
+end
+function _isequiv(
+    ::Immutable, ::Immutable, t::T, s::S
+) where {T<:AbstractString, S<:AbstractString}
+    return isequal(t, s)
+end
+function _isequiv(
+    ::Immutable, ::Immutable, t::T, s::S
+) where {
+    KT,VT, T<:AbstractDict{KT,VT},
+    KS,VS, S<:AbstractDict{KS,VS}
+}
+    # Dictionaries can only be equivalent if they use the same equal function.
+    (equalfn(T) === equalfn(S)) || return false
+    # Dictionaries are equivalent when immutable and when they share equivalent
+    # key/value pairs.
+    (t === s) && return true
+    (length(t) == length(s)) || return false
+    for pair in t
+        in(pair, s, isequiv) || return false
+    end
+    return true
+end
+function _isequiv(
+    ::Immutable, ::Immutable, t::T, s::S
+) where {
+    TT, T<:AbstractSet{TT},
+    SS, S<:AbstractSet{SS}
+}
+    # Sets can only be equivalent if they use the same equal function.
+    (equalfn(T) === equalfn(S)) || return false
+    # Dictionaries are equivalent when immutable and when they share equivalent
+    # key/value pairs.
+    (t === s) && return true
+    (length(t) == length(s)) || return false
+    for el in t
+        in(el, s, isequiv) || return false
+    end
+    return true
+end
+function _isequiv(
+    ::Immutable, ::Immutable, t::T, s::S
+) where {
+    TT, NT, T<:AbstractArray{TT,NT},
+    SS, NS, S<:AbstractArray{SS,NS}
+}
+    # Arrays are equivalent when immutable and when they share equivalent
+    # key/value pairs.
+    (t === s) && return true
+    (size(t) == size(s)) || return false
+    for (xt,xs) in zip(t,s)
+        isequiv(xt, xs) || return false
+    end
+    return true
+end
+
 """
     isequiv(x, y)
 Yields true if x and y are equivalent and false otherwise.
@@ -406,11 +501,23 @@ equivalent rather than equal. By default, for a structure
 type, all 
 """
 isequiv(t::T, s::S) where {T, S} = _isequiv(mutability(T), mutability(S), t, s)
+# Some builtin equivs:
+isequiv(t::Pair{KT,VT}, s::Pair{KS,VS}) where {KT,VT,KS,VS} =
+    isequiv(t.first, s.first) && isequiv(t.second, s.second)
+isequiv(t::Tuple, s::Tuple) = begin
+    (length(t) == length(s)) || return false
+    for (xt,xs) in zip(t, s)
+        isequiv(xt,xs) || return false
+    end
+    return true
+end
+isequiv(t::Symbol, s::Symbol) = isequal(t, s)
+isequiv(t::String, s::String) = isequal(t, s)
 
 _equivhash(::UnknownMutability, x) = objectid(x)
 _equivhash(::Mutable, x) = objectid(x)
 _equivhash(::Immutable, x::T) where {T} = begin
-    isbitstype(T) && return objectid(x)
+    isbitstype(T) && return hash(x)
     # call isequiv on each of the fields
     let n = nfields(x), h = objectid(T) + 41
         n == 0 && return objectid(x)
@@ -423,7 +530,28 @@ _equivhash(::Immutable, x::T) where {T} = begin
 end
 _equivhash(::Immutable, x::T) where {T <: Number} = hash(x)
 _equivhash(::Immutable, x::T) where {T <: AbstractString} = hash(x)
-_equivhash(::Immutable, x::Symbol) = hash(x)
+# Special versions for dictionaries, sets, and arrays...
+_equivhash(::Immutable, u::DD) where {K,V,DD<:AbstractDict{K,V}} = begin
+    h = UInt(0x0)
+    for (k,v) in u
+        h += equivhash(k) ⊻ equivhash(v)
+    end
+    return h
+end
+_equivhash(::Immutable, u::SS) where {T,SS<:AbstractSet{T}} = begin
+    h = UInt(0x0)
+    for x in u
+        h += equivhash(x)
+    end
+    return h
+end
+_equivhash(::Immutable, u::AA) where {T,D,AA<:AbstractArray{T,D}} = begin
+    h = UInt(sum(size(u) .* collect(1:D)))
+    for (k,v) in enumerate(u)
+        h += UInt(k) * equivhash(v)
+    end
+    return h
+end
 """
     equivhash(x)
 Yields a hash value appropriate for the isequiv() equality
@@ -431,12 +559,26 @@ function. Generally, the hasheq of an immutable object is
 its hash; the equivhash of any other object is its objectid.
 """
 equivhash(x::T) where {T} = _equivhash(mutability(T), x)
+equivhash(x::Symbol) = hash(x)
+equivhash(x::String) = hash(x)
+# Tuples get equivhash'ed also, but slightly differently than arrays
+equivhash(u::Tuple) = begin
+    h = UInt(length(u))
+    for x in u
+        h = (0x1 + h) * equivhash(x)
+    end
+    return h
+end
+equivhash(u::Pair{K,V}) where {K,V} =
+    (0x1f + equivhash(u.first)) * equivhash(u.second)
 
 """
     equalfn(x)
 If x is an object (such as a PSet or Dict) that has an opinion about equality,
 equalfn(x) returns the function that it uses.
 """
+equalfn(x::T) where {T} = equalfn(T)
+equalfn(x::Type{T}) where {T} = throw(ArgumentError("no equalfn for type $T"))
 equalfn(x::Type{Dict}) = isequal
 equalfn(x::Type{Set}) = isequal
 equalfn(x::Type{IdDict}) = (===)
@@ -445,27 +587,15 @@ equalfn(x::Type{Dict{K,V}}) where {K,V} = isequal
 equalfn(x::Type{Set{T}}) where {T} = isequal
 equalfn(x::Type{IdDict{K,V}}) where {K,V} = (===)
 equalfn(x::Type{Base.IdSet{T}}) where {T} = (===)
-equalfn(x::Dict) = isequal
-equalfn(x::Set) = isequal
-equalfn(x::IdDict) = (===)
-equalfn(x::Base.IdSet) = (===)
 """
     hashfn(x)
 If x is an object (such as a PSet or Dict) that has an opinion about how it
-hashes objects, hashfn(x) returns the function that it uses.
+hashes objects, hashfn(x) returns the function that it uses. It is
+sufficient in almost all circumstances to define `equalfn(T)`; the `hashfn`
+should always match the `equalfn` regardless.
 """
-hashfn(x::Type{Dict}) = hashcode
-hashfn(x::Type{IdDict}) = objectid
-hashfn(x::Type{Set}) = hashcode
-hashfn(x::Type{Base.IdSet}) = objectid
-hashfn(x::Type{Dict{K,V}}) where {K,V} = hashcode
-hashfn(x::Type{Set{T}}) where {T} = hashcode
-hashfn(x::Type{IdDict{K,V}}) where {K,V} = objectid
-hashfn(x::Type{Base.IdSet{T}}) where {T} = objectid
-hashfn(x::Dict) = hashcode
-hashfn(x::IdDict) = objectid
-hashfn(x::Set) = hashcode
-hashfn(x::Base.IdSet) = objectid
+hashfn(x::T) where {T} = hashfn(equalfn(T))
+hashfn(::Type{T}) where {T} = hashfn(equalfn(T))
 
 # equalfn and hashfn can also be used on their respective functions
 equalfn(::typeof(objectid))  = (===)
@@ -477,17 +607,18 @@ hashfn(::typeof(isequal)) = hashcode
 
 #
 # #setindex ====================================================================
-"""
-    setindex(tup, val, index) 
-Yields a copy of the given n-tuple with the value at the given indiex changed to
-val.
-"""
-setindex(u::NTuple{N,T}, el::S, I...) where {T,N,S} = begin
-    # make a temporary array...
-    ar = T[u...]
-    ar[I...] = el
-    return NTuple{N,T}(ar)
-end
+# The setindex for tuples from StaticArrays is better than this version:
+#"""
+#    setindex(tup, val, index) 
+#Yields a copy of the given n-tuple with the value at the given indiex changed to
+#val.
+#"""
+#setindex(u::NTuple{N,T}, el::S, I...) where {T,N,S} = begin
+#    # make a temporary array...
+#    ar = T[u...]
+#    ar[I...] = el
+#    return NTuple{N,T}(ar)
+#end
 """
     setindex(arr, val, index) 
 Yields a copy of the given array with the value at the given indiex changed to
@@ -496,19 +627,23 @@ val.
 Note that setindex() *always* returns a copy of the array arr, so unless arr is
 a persistent array (PArray), then this operation is not very efficient.
 """
-setindex(u::Array{T,N}, x::S, I...) where {T,N,S} = setindex!(copy(u), x, I...)
+setindex(u::Array{T,N}, x::S, I...) where {T,N,S} =
+    Base.setindex!(copy(u), x, I...)
 """
     setindex(d, val, key)
 Yields a copy of the given dictionary d with the given key associated with the
 given value val.
 """
-setindex(d::Dict{K,V}, v::U, k::J) where {K,V,U,J} = setindex!(copy(d), v, k)
-setindex(d::IdDict{K,V}, v::U, k::J) where {K,V,U,J} = setindex!(copy(d), v, k)
+setindex(d::Dict{K,V}, v::U, k::J) where {K,V,U,J} =
+    Base.setindex!(copy(d), v, k)
+setindex(d::IdDict{K,V}, v::U, k::J) where {K,V,U,J} =
+    Base.setindex!(copy(d), v, k)
 # non-typed or redirected calls:
-setindex(u::SubArray, args...) = setindex!(copy(u), args...)
-setindex(u::Base.ReshapedArray, args...) = setindex!(copy(u), args...)
-setindex(u::Base.ReinterpretArray, args...) = setinndex!(copy(u), args...)
-setindex(u::BitArray, args...) = setindex!(copy(u), args...)
+setindex(u::SubArray, args...) = Base.setindex!(copy(u), args...)
+setindex(u::Base.ReshapedArray, args...) = Base.setindex!(copy(u), args...)
+setindex(u::Base.ReinterpretArray, args...) =
+    Base.setindex!(copy(u), args...)
+setindex(u::BitArray, args...) = Base.setindex!(copy(u), args...)
 #
 # #push ========================================================================
 """
@@ -531,7 +666,7 @@ push(u::Vector{T}, val::S) where {T,N,S} = T[u..., val]
 Yields a copy of the given dictionary d with the given key/value pair added.
 This is equivalent to setindex(d, v, k).
 """
-push(d::AbstractDict{K,V}, kv::Pair{J,U}) where {K,V,J,U} = begin
+push(d::DT, kv::Pair{K,V}) where {K,V,DT<:AbstractDict} = begin
     return setindex(d, kv[2], kv[1])
 end
 """
@@ -551,10 +686,8 @@ push(A, a, b...) = push(push(A, a), b...)
 Yields a tuple (last, most) where last is the last element of the given tuple
 tup and most is a duplicate tuple of all but the last element of tup.
 """
-pop(u::NTuple{N,T}) where {N,T} = begin
-    (N > 0) || throw(ArgumentError("n-tuple must be non-empty"))
-    return (u[end], u[1:end-1])
-end
+pop(u::NTuple{N,T}) where {N,T} = (u[end], u[1:end-1])
+pop(u::Tuple{}) = throw(ArgumentError("n-tuple must be non-empty"))
 """
     pop(arr)
 Yields a tuple (last, most) where last is the final element of the given (1D)
@@ -612,7 +745,8 @@ pop(d::IdDict{K,V}, k::J, dv) where {K,V,J} = begin
 end
 """
     pop(s)
-Yields a tuple (u, rem) where u is an element from the set s and 
+Yields a tuple (u, rem) where u is an element from the set s and rem is the
+remainder of the set. Note that this always makes a copy of s.
 """
 pop(s::Set{T}) where {T} = begin
     rem = copy(s)
@@ -656,8 +790,111 @@ end
 Yields a copy of the given vector arr with the given value inserted at the given
 index. Equivalent to insert!(copy(arr), idx, va).
 """
-insert(a::Vector{T}, idx::Int, val::S) where {T,S} = insert!(copy(a), idx, val)
-insert(a::BitArray{T}, idx::Integer, val::S) where {T,S} = insert!(copy(a), idx, val)
+insert(a::Vector{T}, k::K, val::S) where {T,K<:Integer,S} = begin
+    n = length(a) + 1
+    (k > n) && throw(
+        ArgumentError("insert: $k is out of range for Vector of length $(n-1)"))
+    out = Vector{T}(undef, n)
+    (k > 1) && copyto!(out, 1, a, 1, k - 1)
+    @inbounds out[k] = val
+    (k < n) && copyto!(out, k + 1, a, k, n - k)
+    return out
+end
+insert(a::BitArray{T}, idx::II, val::S) where {T,S,II<:Integer} =
+    insert!(copy(a), idx, val)
+insert(a::Tuple, idx::II, val::T) where {II<:Integer,T} =
+    (a[1:idx]..., val, a[idx:end]...)
+insert(a::Tuple{}, idx::II, val::T) where {II<:Integer,T} = begin
+    if idx == 1
+        return (val,)
+    else
+        throw(ArgumentError("invalid index $idx for tuple of size 0"))
+    end
+end
+# For tuples, we want to generate versions of this for NTuples up to size 64;
+# beyond that we can use a generic function.
+macro _tuple_insert_gencode(N::Int)
+    # We'll want to refer to the tuple elements:
+    els = [:(tup[$k]) for k in 1:N]
+    # Build up the if-elseif-else expression, starting with the else:
+    ifexpr = :(throw(ArgumentError(
+        "insert: $k if out of range for a Tuple of length $(length(tup))")))
+    ifexpr = Expr(:elseif, :(k == $(N+1)), :(push(tup, el)), ifexpr) 
+    for k in N:-1:1
+        ifexpr = Expr(k == 1 ? :if : :elseif,
+                      :(k == $k),
+                      :(($(els[1:k-1]...), el, $(els[k:end]...))),
+                      ifexpr)
+    end
+    return quote
+        insert(tup::NTuple{$N,T}, k::K, el::S) where {T,K<:Integer,S} = $ifexpr
+    end |> esc
+end
+# Now generate functions for up to 64:
+(@_tuple_insert_gencode  1)
+(@_tuple_insert_gencode  2)
+(@_tuple_insert_gencode  3)
+(@_tuple_insert_gencode  4)
+(@_tuple_insert_gencode  5)
+(@_tuple_insert_gencode  6)
+(@_tuple_insert_gencode  7)
+(@_tuple_insert_gencode  8)
+(@_tuple_insert_gencode  9)
+(@_tuple_insert_gencode 10)
+(@_tuple_insert_gencode 11)
+(@_tuple_insert_gencode 12)
+(@_tuple_insert_gencode 13)
+(@_tuple_insert_gencode 14)
+(@_tuple_insert_gencode 15)
+(@_tuple_insert_gencode 16)
+(@_tuple_insert_gencode 17)
+(@_tuple_insert_gencode 18)
+(@_tuple_insert_gencode 19)
+(@_tuple_insert_gencode 20)
+(@_tuple_insert_gencode 21)
+(@_tuple_insert_gencode 22)
+(@_tuple_insert_gencode 23)
+(@_tuple_insert_gencode 24)
+(@_tuple_insert_gencode 25)
+(@_tuple_insert_gencode 26)
+(@_tuple_insert_gencode 27)
+(@_tuple_insert_gencode 28)
+(@_tuple_insert_gencode 29)
+(@_tuple_insert_gencode 30)
+(@_tuple_insert_gencode 31)
+(@_tuple_insert_gencode 32)
+(@_tuple_insert_gencode 33)
+(@_tuple_insert_gencode 34)
+(@_tuple_insert_gencode 35)
+(@_tuple_insert_gencode 36)
+(@_tuple_insert_gencode 37)
+(@_tuple_insert_gencode 38)
+(@_tuple_insert_gencode 39)
+(@_tuple_insert_gencode 40)
+(@_tuple_insert_gencode 41)
+(@_tuple_insert_gencode 42)
+(@_tuple_insert_gencode 43)
+(@_tuple_insert_gencode 44)
+(@_tuple_insert_gencode 45)
+(@_tuple_insert_gencode 46)
+(@_tuple_insert_gencode 47)
+(@_tuple_insert_gencode 48)
+(@_tuple_insert_gencode 49)
+(@_tuple_insert_gencode 50)
+(@_tuple_insert_gencode 51)
+(@_tuple_insert_gencode 52)
+(@_tuple_insert_gencode 53)
+(@_tuple_insert_gencode 54)
+(@_tuple_insert_gencode 55)
+(@_tuple_insert_gencode 56)
+(@_tuple_insert_gencode 57)
+(@_tuple_insert_gencode 58)
+(@_tuple_insert_gencode 59)
+(@_tuple_insert_gencode 60)
+(@_tuple_insert_gencode 61)
+(@_tuple_insert_gencode 62)
+(@_tuple_insert_gencode 63)
+(@_tuple_insert_gencode 64)
 #
 # #delete ======================================================================
 """
@@ -665,13 +902,120 @@ insert(a::BitArray{T}, idx::Integer, val::S) where {T,S} = insert!(copy(a), idx,
 Yields a copy of the dictionary d with the given key k deleted.
 """
 delete(d::Dict{K,V}, k::J) where {K,V,J} = delete!(copy(d), k)
+"""
+    delete(v, k)
+Yields a copy of the vector v with index k deleted.
+"""
+delete(u::Vector{T}, k::K) where {T,K<:Integer} = begin
+    n = length(u)
+    (n == 0 || k < 0 || k > n) && throw(
+        ArgumentError("delete: $k is out of range for Vector of length $n"))
+    out = Vector{T}(undef, n - 1)
+    (k > 1) && copyto!(out, 1, u, 1, k - 1)
+    (k < n) && copyto!(out, k, u, k + 1, n - k)
+    return out
+end
+delete(a::Tuple, idx::K) where {K<:Integer,T} = (a[1:idx-1]..., a[idx+1:end]...)
+delete(a::Tuple{}, idx::II, val::T) where {II<:Integer,T} =
+    throw(ArgumentError("delete: $idx is out of range for a Tuple{}"))
+# For tuples, we want to generate versions of this for NTuples up to size 64;
+# beyond that we can use a generic function.
+macro _tuple_delete_gencode(N::Int)
+    # We'll want to refer to the tuple elements:
+    els = [:(tup[$k]) for k in 1:N]
+    # Build up the if-elseif-else expression, starting with the else:
+    ifexpr = :(throw(ArgumentError(
+        "delete: $k if out of range for a Tuple of length $(length(tup))")))
+    for k in N:-1:1
+        ifexpr = Expr(k == 1 ? :if : :elseif,
+                      :(k == $k),
+                      :(($(els[1:k-1]...), $(els[k+1:end]...))),
+                      ifexpr)
+    end
+    return quote
+        delete(tup::NTuple{$N,T}, k::K) where {T,K<:Integer} = $ifexpr
+    end |> esc
+end
+# Now generate functions for up to 64:
+(@_tuple_delete_gencode  1)
+(@_tuple_delete_gencode  2)
+(@_tuple_delete_gencode  3)
+(@_tuple_delete_gencode  4)
+(@_tuple_delete_gencode  5)
+(@_tuple_delete_gencode  6)
+(@_tuple_delete_gencode  7)
+(@_tuple_delete_gencode  8)
+(@_tuple_delete_gencode  9)
+(@_tuple_delete_gencode 10)
+(@_tuple_delete_gencode 11)
+(@_tuple_delete_gencode 12)
+(@_tuple_delete_gencode 13)
+(@_tuple_delete_gencode 14)
+(@_tuple_delete_gencode 15)
+(@_tuple_delete_gencode 16)
+(@_tuple_delete_gencode 17)
+(@_tuple_delete_gencode 18)
+(@_tuple_delete_gencode 19)
+(@_tuple_delete_gencode 20)
+(@_tuple_delete_gencode 21)
+(@_tuple_delete_gencode 22)
+(@_tuple_delete_gencode 23)
+(@_tuple_delete_gencode 24)
+(@_tuple_delete_gencode 25)
+(@_tuple_delete_gencode 26)
+(@_tuple_delete_gencode 27)
+(@_tuple_delete_gencode 28)
+(@_tuple_delete_gencode 29)
+(@_tuple_delete_gencode 30)
+(@_tuple_delete_gencode 31)
+(@_tuple_delete_gencode 32)
+(@_tuple_delete_gencode 33)
+(@_tuple_delete_gencode 34)
+(@_tuple_delete_gencode 35)
+(@_tuple_delete_gencode 36)
+(@_tuple_delete_gencode 37)
+(@_tuple_delete_gencode 38)
+(@_tuple_delete_gencode 39)
+(@_tuple_delete_gencode 40)
+(@_tuple_delete_gencode 41)
+(@_tuple_delete_gencode 42)
+(@_tuple_delete_gencode 43)
+(@_tuple_delete_gencode 44)
+(@_tuple_delete_gencode 45)
+(@_tuple_delete_gencode 46)
+(@_tuple_delete_gencode 47)
+(@_tuple_delete_gencode 48)
+(@_tuple_delete_gencode 49)
+(@_tuple_delete_gencode 50)
+(@_tuple_delete_gencode 51)
+(@_tuple_delete_gencode 52)
+(@_tuple_delete_gencode 53)
+(@_tuple_delete_gencode 54)
+(@_tuple_delete_gencode 55)
+(@_tuple_delete_gencode 56)
+(@_tuple_delete_gencode 57)
+(@_tuple_delete_gencode 58)
+(@_tuple_delete_gencode 59)
+(@_tuple_delete_gencode 60)
+(@_tuple_delete_gencode 61)
+(@_tuple_delete_gencode 62)
+(@_tuple_delete_gencode 63)
+(@_tuple_delete_gencode 64)
 #
-# #assoc =======================================================================
+# #getpair =====================================================================
+let _private_symbol = gensym("private_getpair_c61d3fee7deae4d3d2237de9044247b2")
 """
-    assoc(d, k, v)
-    assoc(d, k1, k2..., v)
-Yields a copy of the (optionally nested) dictionary or array object d
+    getpair(d, k)
+
+If the key k is found in the dictionary d, yields the pair (k => d[k]); 
+otherwise yields missing.
 """
+global getpair(d::AbstractDict, k) = begin
+    v = get(d, k, _private_symbol)
+    return (v === _private_symbol) ? missing : (k => v)
+end
+end
+ 
 
 ################################################################################
 # EquivRef and equiv-type collections.
@@ -707,6 +1051,8 @@ functions or the === and objectid() functions.
 struct EquivSet{T} <: AbstractSet{T}
     set::Set{EquivRef{T}}
 end
+mutability(::Type{EquivSet}) = Mutable()
+mutability(::Type{EquivSet{T}}) where {T} = Mutable()
 EquivSet{T}() where {T} = EquivSet{T}(Set{EquivRef{T}}())
 EquivSet() = EquivSet{Any}()
 EquivSet{T}(arr::AbstractArray{S,1}) where {T,S<:T} = let ers = [EquivRef{T}(x) for x in arr]
@@ -774,7 +1120,8 @@ _to_pairs(kvs) = begin
                 push!(ks, kv[1])
                 push!(vs, kv[2])
             else
-                throw(ArgumentError("EquivDict(kv): kv needs to be an iterator of tuples or pairs"))
+                msg = "EquivDict: arg must be iterator of tuples or pairs"
+                throw(ArgumentError(msg))
             end
         end
         K = typejoin(map(typeof, ks)...)
@@ -814,6 +1161,9 @@ struct EquivDict{K,V} <: AbstractDict{K,V}
 end
 const EquivPair{K,V} = Pair{EquivRef{K},V} where {K,V}
 const Equiv2Tuple{K,V} = Tuple{EquivRef{K},V} where {K,V}
+# EquivDict is not immutable despite being a struct.
+mutability(::Type{EquivDict}) = Mutable()
+mutability(::Type{EquivDict{K,V}}) where {K,V} = Mutable()
 # Constructors.
 EquivDict() = EquivDict{Any,Any}()
 EquivDict(kv::Tuple{}) = EquivDict{Any,Any}()
@@ -823,15 +1173,15 @@ EquivDict(d::AbstractDict{K,V}) where {K,V} = EquivDict{K,V}(d)
 EquivDict(ps::Pair...) = begin
     ps = _to_pairs(ps)
     T = Base.eltype(ps)
-    K = t.parameters[1]
-    V = t.parameters[2]
+    K = T.parameters[1]
+    V = T.parameters[2]
     return EquivDict{K,V}(ps...)
 end
 EquivDict(itr) = begin
     ps = _to_pairs(itr)
     T = Base.eltype(ps)
-    K = t.parameters[1]
-    V = t.parameters[2]
+    K = T.parameters[1]
+    V = T.parameters[2]
     return EquivDict{K,V}(ps...)
 end
 # Base methods.
@@ -867,3 +1217,137 @@ equalfn(::Type{EquivDict}) = isequiv
 equalfn(::Type{EquivDict{K,V}}) where {K,V} = isequiv
 hashfn(::Type{EquivDict}) = equivhash
 hashfn(::Type{EquivDict{K,V}}) where {K,V} = equivhash
+
+# Given the new category of equivalence, we actually need to rewrite the isequal
+# function for dictionaries and sets--this is because at least some versions of
+# the Julia base use the assumption that there is either Dict or IdDict, and
+# that is just not correct any more.
+function _isequiv(l::DL, r::DR, MUTL, MUTR) where {
+    KL,VL, DL <: AbstractDict{KL,VL},
+    KR,VR, DR <: AbstractDict{KR,VR}}
+    return (l === r)
+end
+function _isequiv(l::DL, r::DR, ::Immutable, ::Immutable) where {
+    KL,VL, DL <: AbstractDict{KL,VL},
+    KR,VR, DR <: AbstractDict{KR,VR}}
+    # Identical dictionaries are always equal.
+    (l === r) && return true
+    # Equality functions must match.
+    (equalfn(DL) === equalfn(DR)) || return false
+    # Dictionaries must be the same length to be equal.
+    (length(l) == length(r)) || return false
+    # All pairs from one must be in the other.
+    for pair in l
+        in(pair, r, isequiv) || return false
+    end
+    return true
+end
+function isequiv(l::DL, r::DR) where {
+    KL,VL, DL <: AbstractDict{KL,VL},
+    KR,VR, DR <: AbstractDict{KR,VR}}
+    return _isequiv(l, r, mutability(DL), mutability(DR))
+end
+function _isequiv(l::SL, r::SR, MUTL, MUTR) where {
+    TL, SL <: AbstractSet{TL},
+    TR, SR <: AbstractSet{TR}}
+    return (l === r)
+end
+function _isequiv(l::SL, r::SR, ::Immutable, ::Immutable) where {
+    TL, SL <: AbstractSet{TL},
+    TR, SR <: AbstractSet{TR}}
+    # Sets must have the same equality base to be equal.
+    (equalfn(SL) === equalfn(SR)) || return false
+    # Identical sets are always equal.
+    (l === r) && return true
+    # Sets must be the same length to be equal.
+    (length(l) == length(r)) || return false
+    # And all elements must be found in both.
+    for el in l
+        in(el, r) || return false
+    end
+    return true
+end
+function isequiv(l::SL, r::SR) where {
+    TL, SL <: AbstractSet{TL},
+    TR, SR <: AbstractSet{TR}}
+    return _isequiv(l, r, mutability(SL), mutability(SR))
+end
+function Base.isequal(
+    l::DL, r::DR
+) where {
+    KL,VL, DL <: AbstractDict{KL,VL},
+    KR,VR, DR <: AbstractDict{KR,VR}
+}
+    # Identical dictionaries are always equal.
+    (l === r) && return true
+    # Equality functions must match.
+    (equalfn(DL) === equalfn(DR)) || return false
+    # Dictionaries must be the same length to be equal.
+    (length(l) == length(r)) || return false
+    # All pairs from one must be in the other.
+    for pair in l
+        in(pair, r, isequal) || return false
+    end
+    return true
+end
+function Base.isequal(
+    l::SL, r::SR
+) where {
+    TL, SL <: AbstractSet{TL},
+    TR, SR <: AbstractSet{TR}
+}
+    # Sets must have the same equality base to be equal.
+    (equalfn(SL) === equalfn(SR)) || return false
+    # Identical sets are always equal.
+    (l === r) && return true
+    # Sets must be the same length to be equal.
+    (length(l) == length(r)) || return false
+    # And all elements must be found in both.
+    for el in l
+        in(el, r) || return false
+    end
+    return true
+end
+function Base.:(==)(
+    l::DL, r::DR
+) where {
+    KL,VL, DL <: AbstractDict{KL,VL},
+    KR,VR, DR <: AbstractDict{KR,VR}
+}
+    # Dictionaries must have the same equality base to be equal.
+    (equalfn(DL) === equalfn(DR)) || return false
+    # Identical dictionaries are always equal.
+    (l === r) && return true
+    # Dictionaries must be the same length to be equal.
+    (length(l) == length(r)) || return false
+    # And all pairs must be found in both.
+    anymissing = false
+    for pair in l
+        isin = in(pair, r)
+        if ismissing(isin)
+            anymissing = true
+        else
+            isin || return false
+        end
+    end
+    return anymissing ? missing : true
+end
+function Base.:(==)(
+    l::SL, r::SR
+) where {
+    TL, SL <: AbstractSet{TL},
+    TR, SR <: AbstractSet{TR}
+}
+    # Sets must have the same equality base to be equal.
+    (equalfn(SL) === equalfn(SR)) || return false
+    # Identical sets are always equal.
+    (l === r) && return true
+    # Sets must be the same length to be equal.
+    (length(l) == length(r)) || return false
+    # And all elements must be found in both.
+    for el in l
+        in(el, r) || return false
+    end
+    return true
+end
+# We also want to declare an equivhash version for sets and dictionaries.

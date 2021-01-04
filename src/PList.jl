@@ -6,7 +6,7 @@
 
 """
 PLink{T}
-    PLink objects make up the persistent links in persistnet linked lists.
+    PLink objects make up the persistent links in persistent linked lists.
 """
 struct PLink{T}
     first::T

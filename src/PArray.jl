@@ -31,14 +31,6 @@
 import SparseArrays
 
 """
-    AbstractPArray{T,N}
-
-The Abstract persistent array type represents any Array-like type that is
-persistent. Reified types include PArray{T,N} and LazyArray{T,N}.
-"""
-abstract type AbstractPArray{T,N} <: AbstractArray{T,N} end
-
-"""
     PArray{T,N}
 
 The PArray type is a persistent/immutable corrolary to the Array{T,N} type. Like
@@ -52,7 +44,7 @@ PArrays also have efficient implementations of `pushfirst` and `popfirst`.
 struct PArray{T,N} <: AbstractPArray{T,N}
     # The initial element of the list; the tree is basically an enormous
     # circular buffer, so it's okay for this to roll around at UInt max.
-    _i0::_PTREE_KEY_T
+    _i0::HASH_T
     # The dimensions of the array and the indices into the tree.
     _index::LinearIndices{N,NTuple{N,Base.OneTo{Int}}}
     # The data in a long array.
@@ -87,7 +79,7 @@ end
 PArray{T,N}(a::AbstractArray{S,N}) where {T,N,S} = begin
     # #TODO: rewrite using TArray or TTree
     tree = PTree{T}()
-    k = _PTREE_KEY_T(0x0)
+    k = HASH_T(0x0)
     for x in a
         k += 0x1
         tree = setindex(tree, x, k)
@@ -243,14 +235,14 @@ Base.iterate(u::PArray{T,N}) where {T,N} = iterate(u, 1)
 # Indexing methods
 
 IndexStyle(::Type{PArray{T,N}}) where {T,N} = IndexLinear()
-_parray_get(u::PTree{T}, ii::_PTREE_KEY_T, ::Nothing) where {T} = begin
+_parray_get(u::PTree{T}, ii::HASH_T, ::Nothing) where {T} = begin
     x = get(u, ii, nothing)
     (x === nothing) || return x
     isa(nothing, T) && in(ii => nothing, u) && return x
     #error("PArray has unset values and no default")
     return Array{T}(undef, 1)[1]
 end
-_parray_get(u::PTree{T}, ii::_PTREE_KEY_T, d::Tuple{T}) where {T} = begin
+_parray_get(u::PTree{T}, ii::HASH_T, d::Tuple{T}) where {T} = begin
     return get(u, ii, d[1])
 end
 Base.getindex(u::PArray{T,N}, k::Vararg{Int,N}) where {T,N} = begin
@@ -261,7 +253,7 @@ Base.getindex(u::PArray{T,N}, k::Vararg{Int,N}) where {T,N} = begin
     end
     (k < 1) && throw(BoundsError(u, k))
     (k > length(u)) && throw(BoundsError(u, k))
-    return _parray_get(u._tree, _PTREE_KEY_T(k) + u._i0, u._default)
+    return _parray_get(u._tree, HASH_T(k) + u._i0, u._default)
 end
 Base.setindex!(u::PArray{T,N}, v, k::Int) where {T,N} = error(
     "setindex!: object of type $(typeof(u)) is immutable; see setindex()")
@@ -318,7 +310,7 @@ setindex(u::PArray{T,N}, v::S, k::Vararg{Idx,N}) where {T,N,S,Idx<:Integer} = be
     n = length(u)
     (k > n + 1) && throw(BoundsError(u,k))
     (N == 1) && (k > n) && return push(u, v)
-    ii = u._i0 + _PTREE_KEY_T(k)
+    ii = u._i0 + HASH_T(k)
     t = (_eqdefault(u._default, v) ? delete(u._tree, ii)
                                    : setindex(u._tree, v, ii))
     return t === u._tree ? u : PArray{T,N}(u._i0, u._index, t, u._default)
@@ -342,7 +334,7 @@ push(u::PVector{T}, x::S) where {T,S} = begin
     if _eqdefault(u._default, x)
         tree = u._tree
     else
-        ii   = u._i0 + _PTREE_KEY_T(n + 1)
+        ii   = u._i0 + HASH_T(n + 1)
         tree = setindex(u._tree, x, ii)
     end
     index = _lindex(n+1)
@@ -361,7 +353,7 @@ end
 pop(u::PVector{T}) where {T} = begin
     n = length(u)
     (n == 0) && throw(ArgumentError("PArray must be non-empty"))
-    ii = u._i0 + _PTREE_KEY_T(n)
+    ii = u._i0 + HASH_T(n)
     tree = delete(u._tree, ii)
     return PVector{T}(u._i0, _lindex(n-1), tree, u._default)
 end

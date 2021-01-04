@@ -8,57 +8,34 @@
 # We construct PDicts in an unfortunaetly complex way in order to reduce code
 # duplication. The three kinds of persistent sets are very similar, just using
 # different equality tests, so we can keep most of the code the same.
-"""
-    AbstractPDict{K,V}
-
-AbstractPDict is a subtype of AbstractDict that is extended only by persistent
-dictionary types such as PDict and LazyDict.
-"""
-abstract type AbstractPDict{K,V} <: AbstractDict{K,V} end
-const PDictLeaf{K,V} = PList{Pair{K,V}} where {K,V}
-macro _pdict_code(name::Symbol, eqfn, hashfn)
+macro _pdict_code(name::Symbol, eqfn, hashfn, lindict)
     eq = gensym()
     h = gensym()
-    n = gensym("[private] length")
-    tree = gensym("[private] tree")
-    empt = gensym("[private] emptylist")
     return quote
         begin
             local $eq = $eqfn
             local $h = $hashfn
             struct $name{K,V} <: AbstractPDict{K,V}
-                $n::Int
-                $tree::PTree{PDictLeaf{K,V}}
-                $empt::PDictLeaf{K,V}
-                function $name{K,V}() where {K,V}
-                    return new(0, PTree{PDictLeaf{K,V}}(), PDictLeaf{K,V}())
-                end
-                function $name{K,V}(d::$name{K,V}) where {K,V}
-                    return d
-                end
-                function $name{K,V}(d::AbstractDict) where {K,V}
-                    return reduce(push, d, init=new(0, PTree{PDictLeaf{K,V}}(),
-                                                    PDictLeaf{K,V}()))
-                end
-                function $name{K,V}(ps::Pair...) where {K,V}
-                    return reduce(push, ps, init=new(0, PTree{PDictLeaf{K,V}}(),
-                                                     PDictLeaf{K,V}()))
-                end
-                function $name{K,V}(ps::Tuple...) where {K,V}
-                    return reduce(push, ps, init=new(0, PTree{PDictLeaf{K,V}}(),
-                                                     PDictLeaf{K,V}()))
-                end
-                function $name{K,V}(itr) where {K,V}
-                    return reduce(push, itr, init=new(0, PTree{PDictLeaf{K,V}}(),
-                                                      PDictLeaf{K,V}()))
-                end
-                function $name{K,V}(n::Int, t::PTree{PDictLeaf{K,V}}) where {K,V}
-                    return new(n, t, PDictLeaf{K,V}())
-                end
-                function $name{K,V}(n::Int, t::PTree{PDictLeaf{K,V}},
-                                    l::PDictLeaf{K,V}) where {K,V}
-                    return new(n, t, l)
-                end
+                count::Int
+                root::PTree{$lindict{K,V}}
+            end
+            function $name{K,V}() where {K,V}
+                return $name{K,V}(0, PTree{$lindict{K,V}}())
+            end
+            function $name{K,V}(d::$name{K,V}) where {K,V}
+                return d
+            end
+            function $name{K,V}(d::AbstractDict) where {K,V}
+                return reduce(push, d, init=$name{K,V}())
+            end
+            function $name{K,V}(ps::Pair...) where {K,V}
+                return reduce(push, ps, init=$name{K,V}())
+            end
+            function $name{K,V}(ps::Tuple...) where {K,V}
+                return reduce(push, ps, init=$name{K,V}())
+            end
+            function $name{K,V}(itr) where {K,V}
+                return reduce(push, itr, init=$name{K,V}())
             end
             # Document the equal/hash types.
             equalfn(::Type{T}) where {T <: $name} = $eq
@@ -87,119 +64,80 @@ macro _pdict_code(name::Symbol, eqfn, hashfn)
             end
             # Base methods.
             Base.empty(s::$name{K,V}, ::Type{J}=K, ::Type{U}=V) where {K,V,J,U} = $name{J,U}()
-            Base.length(s::$name) = s.$n
+            Base.length(s::$name) = getfield(s, :count)
             Base.IteratorEltype(::Type{$name{K,V}}) where {K,V} = Base.HasEltype()
             Base.eltype(::Type{$name{K,V}}) where {K,V} = Pair{K,V}
             Base.eltype(::$name{K,V}) where {K,V} = Pair{K,V}
             Base.IteratorSize(::Type{$name{K,V}}) where {K,V} = Base.HasLength()
             Base.iterate(u::$name{K,V}) where {K,V} = begin
-                (u.$n == 0) && return nothing
-                (lst,titer) = iterate(u.$tree)
-                lst = lst[2]
-                (el,liter) = iterate(lst)
-                return (el,(lst,liter,titer))
+                x = itervals(getfield(u, :root))
+                (x === nothing) && return nothing
+                (rootel,rootii) = x
+                (el,reliter) = iterate(rootel)
+                return (el,(rootii,reliter,length(rootel)))
             end
-            Base.iterate(u::$name{K,V}, tup) where {K,V} = begin
-                (lst,liter,titer) = tup
-                if liter !== nothing
-                    (el,liter) = iterate(lst, liter)
-                    return (el,(lst,liter,titer))
+            Base.iterate(u::$name{K,V}, tup::Tuple{HASH_T,Int,Int}) where {K,V} = begin
+                (rootii, reliter, rellen) = tup
+                root = getfield(u, :root)
+                if reliter < rellen
+                    # There are more in that node:
+                    rootel = get(root, rootii, nothing)::$lindict{K,V}
+                    (el,reliter) = iterate(rootel, reliter)
+                    return (el,(rootii, reliter, rellen))
                 end
-                q = iterate(u.$tree, titer)
-                (q === nothing) && return q
-                (lst,titer) = q
-                lst = lst[2]
-                (el,liter) = iterate(lst)
-                return (el,(lst,liter,titer))
+                x = itervals(root, rootii)
+                (x === nothing) && return nothing
+                (rootel,rootii) = x
+                (el,reliter) = iterate(rootel)
+                return (el,(rootii,reliter,length(rootel)))
             end
             Base.get(u::$name{K,V}, k, df) where {K,V} = begin
-                hh = $h(k)
-                uu = get(u.$tree, hh, u.$empt)::PDictLeaf{K,V}
-                (length(uu) == 0) && return df
-                for (kk,vv) in uu
-                    $eq(k, kk) && return vv
-                end
-                return df
+                ld = get(getfield(u, :root), $h(k), nothing)
+                return (ld === nothing ? df : get(ld, k, df))
             end
-            Base.in(kv::Pair, u::$name{K,V}, eqfn::Function) where {K,V} = begin
-                k = kv.first
-                v = kv.second
-                hh = $h(k)
-                uu = get(u.$tree, hh, u.$empt)::PDictLeaf{K,V}
-                (length(uu) == 0) && return false
-                for (kk,vv) in uu
-                    eqfn(k, kk) && return eqfn(v, vv)
-                end
-                return false
+            Base.in(kv::Pair, u::$name{K,V}, eqfn::F) where {K,V,F<:Function} = begin
+                ld = get(getfield(u, :root), $h(kv[1]), nothing)
+                return (ld === nothing ? false : in(kv, ld, eqfn))
             end
-            Base.in(kv::Pair, u::$name{K,V}, ::typeof(===)) where {K,V} = begin
-                k = kv.first
-                v = kv.second
-                hh = $h(k)
-                uu = get(u.$tree, hh, u.$empt)::PDictLeaf{K,V}
-                (length(uu) == 0) && return false
-                for (kk,vv) in uu
-                    (k === kk) && return (v === vv)
-                end
-                return false
-            end
-            Base.in(kv::Pair, u::$name{K,V}, ::typeof(isequiv)) where {K,V} = begin
-                k = kv.first
-                v = kv.second
-                hh = $h(k)
-                #uu = get(u.$tree, hh, u.$empt)::PDictLeaf{K,V}
-                #(length(uu) == 0) && return false
-                uu = get(u.$tree, hh, u.$empt)::PDictLeaf{K,V}
-                (length(uu) == 0) && return false
-                for (kk,vv) in uu
-                    isequiv(k, kk) && return isequiv(v, vv)
-                end
-                return false
-            end
-            Base.in(kv::Pair, u::$name{K,V}, ::typeof(isequal)) where {K,V} = begin
-                k = kv.first
-                v = kv.second
-                hh = $h(k)
-                uu = get(u.$tree, hh, u.$empt)::PDictLeaf{K,V}
-                (length(uu) == 0) && return false
-                for (kk,vv) in uu
-                    isequal(k, kk) && return isequal(v, vv)
-                end
-                return false
-            end
-            Base.in(x::Pair, u::$name{K,V}) where {K,V} = in(x, u, $eq)
+            Base.in(x::Pair, u::$name{K,V}) where {K,V} = in(x, u, (==))
             # And the Air methods.
-            Air.push(u::$name{K,V}, x::Pair) where {K,V} = begin
-                hh = $h(x.first)
-                uu = get(u.$tree, hh, u.$empt)::PDictLeaf{K,V}
-                in(x, uu, $eq) && return u
-                vv = delete(uu, x.first, (kv,k) -> $eq(kv.first, k))
-                n = u.$n
-                (uu === vv) || (n -= 1)
-                vv = pushfirst(vv, x)
-                tr = setindex(u.$tree, vv, hh)
-                return $name{K,V}(n + 1, tr, u.$empt)
+            Air.push(u::$name{K,V}, x::Pair) where {K,V} =
+                setindex(u, x.second, x.first)
+            Air.setindex(u::$name{K,V}, v, k) where {K,V} = begin
+                hh = $h(k)
+                root = getfield(u, :root)
+                ld0 = get(root, hh, nothing)
+                if ld0 === nothing
+                    return $name{K,V}(
+                        getfield(u, :count) + 1,
+                        setindex(root, $lindict{K,V}(Pair{K,V}(k,v)), hh))
+                else
+                    ld1 = setindex(ld0, v, k)
+                    (ld1 === ld0) && return u
+                    n = getfield(u, :count) + length(ld1) - length(ld0)
+                    return $name{K,V}(n, setindex(root, ld1, hh))
+                end
             end
-            Air.setindex(u::$name{K,V}, v, k) where {K,V} = push(u, k => v)
             Air.delete(u::$name{K,V}, x::J) where {K,V,J} = begin
                 hh = $h(x)
-                uu = get(u.$tree, hh, u.$empt)::PDictLeaf{K,V}
-                (length(uu) === 0) && return u
-                vv = delete(uu, x, (kv,k) -> $eq(kv.first, k))
-                (uu === vv) && return u
-                if length(vv) == 0
-                    return $name{K,V}(u.$n - 1, delete(u.$tree, hh), u.$empt)
+                root = getfield(u, :root)
+                ld0 = get(root, hh, nothing)
+                (ld0 === nothing) && return u
+                ld1 = delete(ld0, x)
+                (ld0 === ld1) && return u
+                if length(ld1) == 0
+                    return $name{K,V}(getfield(u, :count) - 1, delete(root, hh))
                 else
-                    return $name{K,V}(u.$n - 1, setindex(u.$tree, vv, hh), u.$empt)
+                    return $name{K,V}(getfield(u, :count) - 1, setindex(root, ld1, hh))
                 end
             end
         end
     end |> esc
 end
     
-@_pdict_code PDict isequiv equivhash
-@_pdict_code PIdDict (===) objectid
-@_pdict_code PEqualDict isequal hash
+(@_pdict_code PDict isequiv equivhash PLinearDict)
+(@_pdict_code PIdDict (===) objectid PIdLinearDict)
+(@_pdict_code PEqualDict isequal hash PEqualLinearDict)
 
 mutability(::Type{PDict}) = Immutable()
 mutability(::Type{PDict{K,V}}) where {K,V} = Immutable()
@@ -449,38 +387,3 @@ woutmeta(Q::WithMetaData, t::T, args...) where {T} = begin
     return withmetadata(Q, t, md)
 end
 
-# IdDict has a special kind of isequals.
-Base.isequal(l::Base.IdDict{K,V}, r::PIdDict{J,U}) where {K,V,J,U} = begin
-    (l === r) && return true
-    (length(l) == length(r)) || return false
-    for pair in l
-        in(pair, r, isequal) || return false
-    end
-    return true
-end
-Base.isequal(l::PIdDict{J,U}, r::Base.IdDict{K,V}) where {K,V,J,U} = Base.isequal(r, l)
-
-# We should define an isequiv function for abstract dicts; this should work
-# equally well on PSets or normal sets.
-isequiv(s::DS, t::DT) where {DS <: AbstractPDict, DT <: AbstractPDict} = begin
-    (length(t) == length(s)) || return false
-    for (k,v) in s
-        tt = get(t, k, t)
-        (tt === t) && return false
-        isequiv(tt, v) || return false
-    end
-    (equalfn(DS) === equalfn(DT)) && return true
-    for (k,v) in t
-        ss = get(s, k, s)
-        (ss === s) && return false
-        isequiv(ss, v) || return false
-    end
-    return true
-end
-equivhash(u::DD) where {K,V,DD<:AbstractPDict{K,V}} = begin
-    h = length(u)
-    for (k,v) in u
-        h += equivhash(k) ⊻ equivhash(v)
-    end
-    return h
-end

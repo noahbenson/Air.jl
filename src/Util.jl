@@ -348,13 +348,9 @@ iscolltype(::CollectionUnknown, ::Type{T}) where {T} =
 Yields true if x is a collection, according to the Air type system, and false
 otherwise. Collections in Air are anything that in Julia implements a HasLength
 or HasShape{N>0} returrn value from `IteratorSize()` with the exception of 
-`String`s and `Symbol`s, which are considered singleton items.
-
-Objects whose collection status are for some reason unknown are considered to
-be non-collections. Collections in Air are anything that in Julia implements a
-`HasLength` or `HasShape{N}` for `N > 0` returrn value from `IteratorSize()` 
-with the exception of `String`s and `Symbol`s, which are considered singleton
-items.
+`String`s and `Symbol`s, which are considered singleton items. Objects whose
+collection status are for some reason unknown are considered to be
+ non-collections.
 """
 iscoll(x::T) where {T} = iscolltype(T)
 """

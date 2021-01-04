@@ -1,10 +1,20 @@
 using Air
 using Test
 using Random.Random
+import Base.IdSet
+import Base.delete!
 
 struct TestType
     a::Int
     b::Symbol
+end
+
+make_idset(u::Vector{T}) where {T} = begin
+    s = IdSet{T}()
+    for x in u
+        push!(s, x)
+    end
+    return s
 end
 
 @testset "Air.jl" begin
@@ -49,84 +59,97 @@ end
         @testset "PDict" begin
             intels = [gensym() => x for x in 1:2000]
             fltels = [k => Float64(v) for (k,v) in intels]
-            a = Dict(intels...)
-            b = Dict(fltels...)
-            p = PDict(a)
-            q = PDict(b)
-            @test a == b
-            @test p == q
-            @test a == p
-            @test a == q
-            @test b == p
-            @test b == q
-            @test !isequiv(a, b)
-            @test !isequiv(a, p)
-            @test !isequiv(a, q)
-            @test !isequiv(b, p)
-            @test !isequiv(b, q)
-            @test isequiv(p, q)
-            @test !(a === b)
-            @test !(a === p)
-            @test !(a === q)
-            @test !(b === p)
-            @test !(b === q)
-            @test !(p === q)
-            @test hash(a) == hash(b)
-            @test hash(p) == hash(q)
-            @test hash(a) == hash(p)
-            @test hash(a) == hash(q)
-            @test hash(b) == hash(p)
-            @test hash(b) == hash(q)
-            @test equivhash(a) != equivhash(b)
-            @test equivhash(p) == equivhash(q)
-            @test equivhash(a) != equivhash(p)
-            @test equivhash(a) != equivhash(q)
-            @test equivhash(b) != equivhash(p)
-            @test equivhash(b) != equivhash(q)
+            for (DT,PDT) in ((Dict,      PEqualDict),
+                             (EquivDict, PDict),
+                             (IdDict,    PIdDict))
+                a = DT(intels...)
+                b = DT(fltels...)
+                p = PDT(a)
+                q = PDT(b)
+                @test a == b
+                @test a == p
+                @test a == q
+                @test b == p
+                @test b == q
+                @test isequiv(p, q)
+                @test !isequiv(a, b)
+                @test !isequiv(a, p)
+                @test !isequiv(a, q)
+                @test !isequiv(b, p)
+                @test !isequiv(b, q)
+                @test !(a === b)
+                @test !(a === p)
+                @test !(a === q)
+                @test !(b === p)
+                @test !(b === q)
+                @test !(p === q)
+                @test hash(a) == hash(b)
+                @test hash(p) == hash(q)
+                if DT === Dict
+                    @test hash(a) == hash(p)
+                    @test hash(a) == hash(q)
+                    @test hash(b) == hash(p)
+                    @test hash(b) == hash(q)
+                end
+                @test equivhash(a) != equivhash(b)
+                @test equivhash(p) == equivhash(q)
+                @test equivhash(a) != equivhash(p)
+                @test equivhash(a) != equivhash(q)
+                @test equivhash(b) != equivhash(p)
+                @test equivhash(b) != equivhash(q)
+            end
         end
         @testset "PSet" begin
             intels = collect(1:1000)
             fltels = [Float64(v) for v in intels]
-            a = Set(intels)
-            b = Set(fltels)
-            p = PSet(a)
-            q = PSet(b)
-            @test a == b
-            @test p == q
-            @test a == p
-            @test a == q
-            @test b == p
-            @test b == q
-            @test !isequiv(a, b)
-            @test !isequiv(a, p)
-            @test !isequiv(a, q)
-            @test !isequiv(b, p)
-            @test !isequiv(b, q)
-            @test isequiv(p, q)
-            @test !(a === b)
-            @test !(a === p)
-            @test !(a === q)
-            @test !(b === p)
-            @test !(b === q)
-            @test !(p === q)
-            @test hash(a) == hash(b)
-            @test hash(p) == hash(q)
-            @test hash(a) == hash(p)
-            @test hash(a) == hash(q)
-            @test hash(b) == hash(p)
-            @test hash(b) == hash(q)
-            @test equivhash(a) != equivhash(b)
-            @test equivhash(p) == equivhash(q)
-            @test equivhash(a) != equivhash(p)
-            @test equivhash(a) != equivhash(q)
-            @test equivhash(b) != equivhash(p)
-            @test equivhash(b) != equivhash(q)
+            for (ST,PST) in ((Set,        PEqualSet),
+                             (EquivSet,   PSet),
+                             (IdSet,      PIdSet))
+                if ST === IdSet
+                    a = make_idset(intels)
+                    b = make_idset(fltels)
+                else
+                    a = ST(intels)
+                    b = ST(fltels)
+                end
+                p = PST(a)
+                q = PST(b)
+                @test a == p
+                @test b == q
+                @test (a == b) == (p == q)
+                @test !isequiv(a, b)
+                @test !isequiv(a, p)
+                @test !isequiv(a, q)
+                @test !isequiv(b, p)
+                @test !isequiv(b, q)
+                @test isequiv(p, q) == (ST != IdSet)
+                @test !(a === b)
+                @test !(a === p)
+                @test !(a === q)
+                @test !(b === p)
+                @test !(b === q)
+                @test !(p === q)
+                @test hash(a) == hash(b)
+                @test hash(p) == hash(q)
+                if ST === Set
+                    @test hash(a) == hash(p)
+                    @test hash(a) == hash(q)
+                    @test hash(b) == hash(p)
+                    @test hash(b) == hash(q)
+                end
+                @test equivhash(a) != equivhash(b)
+                @test equivhash(p) == equivhash(q)
+                @test equivhash(a) != equivhash(p)
+                @test equivhash(a) != equivhash(q)
+                @test equivhash(b) != equivhash(p)
+                @test equivhash(b) != equivhash(q)
+            end
         end
         @testset "PWDict" begin
             intels = [gensym() => (x,rand(Float64)) for x in 1:2000]
             fltels = [k => (Float64(v),w) for (k,(v,w)) in intels]
-            p = PWDict(intels...)
-            q = PWDict(fltels...)
+            p = PWDict{Symbol,Int,Float64}(intels...)
+            q = PWDict{Symbol,Float64,Float64}(fltels...)
             @test p == q
             @test isequiv(p, q)
             @test !(p === q)
@@ -135,8 +158,8 @@ end
         end
         @testset "PWSet" begin
             intels = [gensym() => rand(Float64) for x in 1:2000]
-            p = PSet(intels)
-            q = PSet(reverse(intels))
+            p = PWSet{Symbol,Float64}(intels)
+            q = PWSet{Symbol,Float64}(reverse(intels))
             @test p == q
             @test isequiv(p, q)
             @test !(p === q)
@@ -192,7 +215,7 @@ end
             @test p[5,8] == a[5,8]
             @test p[:,4] == a[:,4]
             @test p[9,:] == a[9,:]
-            p1 = setindex(p, -5, 15, 8)
+            p1 = Air.setindex(p, -5, 15, 8)
             @test p1 != a
             @test p1[:,4] == a[:,4]
             @test p1[9,:] == a[9,:]
@@ -208,7 +231,7 @@ end
             @test p[:,4,1] == a[:,4,1]
             @test p[9,:,3] == a[9,:,3]
             @test p[:,2,4] == a[:,2,4]
-            p1 = setindex(p, -5, 15, 8, 5)
+            p1 = Air.setindex(p, -5, 15, 8, 5)
             @test p1 != a
             @test p1[9,:,:] == a[9,:,:]
             @test p1[:,3,:] == a[:,3,:]
@@ -243,7 +266,7 @@ end
         numops = 100
         numits = 10
         for it in 1:numits
-            mut = Set{Real}()
+            mut = EquivSet{Real}()
             imm = Air.PSet{Real}()
             ops = [:push, :pop, :get]
             for ii in 1:numops
@@ -268,7 +291,11 @@ end
         let syms = [:a, :b, :c, :d, :e, :f, :g, :h, :i, :j], n = 100
             @testset "PIdSet" begin
                 compare_test(Air.PIdSet{Symbol}(), Base.IdSet{Symbol}(), syms, n)
-                compare_test(Air.PIdSet{Symbol}([:b, :d, :e]), Base.IdSet{Symbol}([:b, :d, :e]), syms, n)
+                idset = Base.IdSet{Symbol}()
+                for k in [:b, :d, :e]
+                    push!(idset, k)
+                end
+                compare_test(Air.PIdSet{Symbol}([:b, :d, :e]), idset, syms, n)
             end
             @testset "PSet" begin
                 compare_test(Air.PSet{Symbol}(), Air.EquivSet{Symbol}(), syms, n)
