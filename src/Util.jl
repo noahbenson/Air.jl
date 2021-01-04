@@ -80,6 +80,7 @@ mutable struct Delay{T} <: Base.Ref{T}
 end
 Delay{T}(f::Function) where {T} = Delay{T}(_DelayPending(ReentrantLock(), f))
 Delay(f::Function) = Delay{Any}(f)
+Delay{T}(t::T) where {T} = Delay{T}(_ValueRealized{T}(t))
 """
     @delay expression
 
