@@ -77,10 +77,14 @@ it is requested. They act like Refs in that you access a delay `d` via `d[]`.
 """
 mutable struct Delay{T} <: Base.Ref{T}
     _val::Union{_DelayPending, _ValueRealized{T}}
+    function Delay{T}(f::Function) where {T}
+        return new{T}(_DelayPending(ReentrantLock(), f))
+    end
+    function Delay{T}(t::T) where {T}
+        return new{T}(_ValueRealized{T}(t))
+    end
 end
-Delay{T}(f::Function) where {T} = Delay{T}(_DelayPending(ReentrantLock(), f))
 Delay(f::Function) = Delay{Any}(f)
-Delay{T}(t::T) where {T} = Delay{T}(_ValueRealized{T}(t))
 """
     @delay expression
 
