@@ -18,16 +18,17 @@ Noah C. Benson &lt;<nben@uw.edu>&gt;
 
 Air is a Julia library that aims to take advantage of Julia's builtin immutable
 paradigms to provide a set of functional utilities. Air is currently heavily
-under development and will be changing drastically in the foreseeable future.
+under development and will be changing substantially in the near future.
 Inspiration for Air's design is derived largely from paradigms in Clojure and
 Scala.
 
 
 ### Plans
 
-Note that many of the core components for Air already working (if
-not-yet-optimized) implementations. Several more are currently undergoing
-testing.
+Note that many of the core components for Air already working
+implementations. Several more are currently undergoing testing. In particular,
+the existing persistent data structures are fairly well tested and have a
+performance comparable to or better than their clojure counterparts.
 
 * Completed plans
   * Persistent data structures:
@@ -40,8 +41,8 @@ testing.
       their (relative) weights in the dictionary.
     * `PWSet`, a weighted persistent set type, like `PWDict` but just objects
       with weights instead of key-value pairs with weights.
-* Plans that are implemented but require testing
     * `LazyDict`, a persistent lazy dictionary type.
+* Plans that are implemented but require testing
   * Multi-threading utilities, inspired by Clojure
     * Thread-safe `Delay` and `Promise` types.
     * Thread-local `Var` type.
@@ -62,14 +63,9 @@ testing.
     arguments shouldn't need to be duplicated in multiple places; rather a
     simple macro should make it easy for common parameters to occur in both
     places and be documented identically in both.
-  * Trransient types
-    * `PDict` should be O(1)-time convertable into the transient `TDict`
-      type that can be updated without copying memory and that can be 
-      converted into a persistent equivalent very quickly.
-    * `PArray` and `TArray` should have a similar relationship.
   * `ChannelSourceKernel` type that creates a source kernel that pops values
     from a channel.
-  * Better query/build/update API tools?
+  * Better query/build/update API tools for the data structures?
 
 
 ## License
