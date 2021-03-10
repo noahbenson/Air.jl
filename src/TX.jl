@@ -1,6 +1,7 @@
 ################################################################################
 # TX.jl
-# Transactions, references, and agents.
+# Functional multi-threading tools built around atomic transactions.
+
 
 import DataStructures
 
@@ -44,35 +45,40 @@ abstract type TransactionalRef{T} <: ReentrantRef{T} end
 
 A Var object represents a task-local piece of data with a default value. You
 can access a var with `var[]` and you can set it with `var[] = newval`. However,
-the new assignment will always be task-local only.
-
-Filter functions may be attached to a Var object. When a Var `v` with a filter
-function `f` is set to a new value `q`, the value that is stored in `v` is
-instead `f(q)`.
+the new assignment will always be task-local only. Because of this, Vars are
+safe to access and update in a multi-threaded program.
 
 All fields of a Var should be considered strictly private.
 """
 mutable struct Var{T} <: ReentrantRef{T}
-    _mutex::ReentrantLock
-    _values::PTree{T}
-    _initval::T
+    mutex::ReentrantLock
+    values::PTree{T}
+    initval::T
     function Var{T}(initval::S) where {T, S}
         return new{T}(ReentrantLock(), PTree{T}(), initval)
     end
 end
 Var(initval::T) where {T} = Var{T}(initval)
-Base.getindex(v::Var{T}) where {T} = get(v._values,
+Base.getindex(v::Var{T}) where {T} = get(getfield(v, :values),
                                          objectid(current_task()),
-                                         v._initval)
+                                         getfield(v, :initval))
+Base.propertynames(::Var) = (:initial_value,)
+Base.getproperty(u::Var{T}, sym) where {T} = begin
+    if sym == :initial_value
+        return getfield(u, :initval)
+    else
+        throw(ArgumentError("Unknown Var property $sym"))
+    end
+end
 # Helper function for cleaning up tasks from vars.
 _var_task_cleanup(var::Var{T}, t::Task) where {T} = begin
     h = objectid(task)
-    mux = v._mutex
+    mux = getfield(var, :mutex)
     lock(mux)
     try
-        vals0 = v._values
+        vals0 = getfield(var, :values)
         vals = delete(vals0, h)
-        (vals === vals0) || (v._values = vals)
+        (vals === vals0) || setfield!(var, :values, vals)
     finally
         unlock(mux)
     end
@@ -81,30 +87,30 @@ end
 Base.setindex!(v::Var{T}, x::S) where {T,S} = begin
     task = current_task()
     h = objectid(task)
-    mux = v._mutex
+    mux = getfield(v, :mutex)
     lock(mux)
     try
-        vals = v._values
+        vals = getfield(v, :values)
         x0 = get(vals, h, vals)
         if x0 === vals
-            (x === v._initval) && return x
+            (x === getfield(v, :initval)) && return x
             finalizer(t -> _var_task_cleanup(v, t), task)
             vals = setindex(vals, x, h)
         elseif x0 == x
             return x
-        elseif x0 === v._initval
+        elseif x0 === getfield(v, :initval)
             vals = delete(vals, h)
         else
             vals = setindex(vals, x, h)
         end
-        (v._values === vals) || (v._values = vals)
+        (getfield(v, :values) === vals) || setfield!(v, :values, vals)
     finally
         unlock(mux)
     end
     return x
 end
 Base.show(io::IO, ::MIME"text/plain", d::Var{T}) where {T} = begin
-    print(io, "$(typeof(d))(@$(objectid(d)), init=$(d._initval))")
+    print(io, "$(typeof(d))(@$(objectid(d)), init=$(getfield(d, :initval)))")
 end
 """
     @var
@@ -138,7 +144,7 @@ end
 
 An ActorException object is thrown whenever one attempts to obtain the value
 of or send a function to an actor that is in an error state. An error state
-occurs when an unhandles exception is raised while an actor is processing a
+occurs when an unhandled exception is raised while an actor is processing a
 sent function. In such a case the `actorerror()` and `restart()` functions may
 be used. The `actorerror()` function yields an ActorException object in which
 the exception that was raised is stored as `error`, the value of the actor when
@@ -153,7 +159,7 @@ struct ActorException{T} <: Exception
     args::Tuple
 end
 Base.show(io::IO, ::MIME"text/plain", a::ActorException{T}) where {T} = begin
-    print(io, "ActorException{$T}($(typeof(a.error)), $(value), ...)): $(a[]))")
+    print(io, "ActorException{$T}($(typeof(a.error)), $(value), ...)")
 end
 
 """
@@ -169,13 +175,13 @@ end
 """
     Actor{T}
 
-An agent is an object that represents an worker-thread to which tasks can be
+An actor is an object that represents an worker-thread to which tasks can be
 scheduled. Any scheduled function is guaranteed to be evaluated at some point in
 the future in some other thread, and the return value of that function will
-become the new value held by the agent. Each function, when it is run, is passed
-the agent's value as their its argument.
+become the new value held by the actor. Each function, when it is run, is passed
+the actor's value as one of its argument.
 
-Like with Refs, you can access an agent's current value using `agent[]`. Within
+Like with Refs, you can access an actor's current value using `actor[]`. Within
 a transaction, this will be guaranteed to remain fixed for the duration of the
 transaction; outside of a transaction, this may change at arbitrary times.
 
@@ -224,7 +230,9 @@ Base.setindex!(a::Actor{T}, args...) where {T} = error(
 # Changing the _value anywhere else can result in undefined behavior. The same
 # is true for the _task field.
 _actor_main(a::Actor{T}) where {T} = begin
-    q = a._queue
+    q = a._msgs
+    msg = nothing
+    args = nothing
     try
         # For starters, lock the condition!
         lock(a._cond)
@@ -234,9 +242,9 @@ _actor_main(a::Actor{T}) where {T} = begin
             try
                 # See if there's anything waiting in the queue; if not we
                 # should wait on a signal.
-                isempty(q) || wait(a._cond)
+                isempty(q) && wait(a._cond)
                 # (If the queue is empty now, then somethign has gone wrong.)
-                msg = dequeue!(q)
+                msg = DataStructures.dequeue!(q)
             finally
                 unlock(a._cond)
             end
@@ -566,8 +574,8 @@ current_tx() = _current_tx[]
 
 const TX_MAX_ATTEMPTS = 2^14
 
-_tx_lock(u::Volatile{T}) where {T} = lock(u._mutex)
-_tx_unlock(u::Volatile{T}) where {T} = unlock(u._mutex)
+_tx_lock(u::Volatile{T}) where {T} = lock(getfield(u, :_mutex))
+_tx_unlock(u::Volatile{T}) where {T} = unlock(getfield(u, :_mutex))
 _tx_lock(u::Actor{T}) where {T} = lock(u._cond)
 _tx_unlock(u::Actor{T}) where {T} = unlock(u._cond)
 _tx_lock(u::Source{T,K}) where {T,K} = lock(u._cond)
@@ -928,8 +936,7 @@ may be processed in the interim.
 """
 send(args...) = begin
     for (ii,arg) in enumerate(args)
-        isa(arg, Actor) || continue
-        return _send(arg, ii, args, current_tx())
+        isa(arg, Actor) && return _send(arg, ii, args, current_tx())
     end
     error("send() must be passed at least one Actor object")
 end

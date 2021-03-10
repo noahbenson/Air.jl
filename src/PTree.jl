@@ -203,7 +203,9 @@ PTree is a persistent tree/array hybrid that maps arbitrary unsigned integers
 (type HASH_T) to values. It can efficiently be used for arrays or for
 hash-maps, and supports efficient lookup, association, and dissociation.
 
-`PTree{T}()` yields an empty tree.
+All fields of a PTree should be considered strictly private, as modification
+of the fields may result in a kernel crash. The properties of a PTree are both
+immutable and safe to inpect.
 """
 struct PTree{T} <: AbstractDict{HASH_T, T}
     id::HASH_T
@@ -367,12 +369,12 @@ PTree{T}(a::AbstractArray{1,S}) where {T,S} = begin
         ch = Vector{T}(undef, PTREE_TWIG_NCHILD)
         if nn == PTREE_TWIG_NCHILD
             for kk in 1:PTREE_TWIG_NCHILD
-                @inbounds ch[kk] = (@inbounds u[kk + kk0])
+                @inbounds ch[kk] = u[kk + kk0]
             end
             nodes[ii] = PTree{T}(nid, bits, Int(PTREE_TWIG_NCHILD), ch)
         else
             for kk in 1:nn
-                @inbounds ch[kk] = (@inbounds u[kk + kk0])
+                @inbounds ch[kk] = u[kk + kk0]
             end
             nodes[ii] = PTree{T}(nid, lowmask(nn, PTREE_BITS_T), Int(nn), ch)
         end
@@ -508,10 +510,10 @@ getpair(u::PTree{T}, k::HASH_T) where {T} = begin
         #if isa(getfield(u, :cells), Vector{T})
         if ptree_depth(id) == PTREE_TWIG_DEPTH
             qq = getfield(u, :cells)::Vector{T}
-            return k => qq[idx] #(@inbounds q[idx])
+            return k => (@inbounds qq[idx])
         else
             q = getfield(u, :cells)::Vector{PTree{T}}
-            u = q[idx] #(@inbounds q[idx])
+            u = (@inbounds q[idx])
         end
         id = getfield(u, :id)
     end
@@ -532,10 +534,10 @@ Base.get(u::PTree{T}, k::HASH_T, df) where {T} = begin
         #if isa(getfield(u, :cells), Vector{T})
         if ptree_depth(id) == PTREE_TWIG_DEPTH
             qq = getfield(u, :cells)::Vector{T}
-            return qq[idx] #(@inbounds q[idx])
+            return (@inbounds qq[idx])
         else
             q = getfield(u, :cells)::Vector{PTree{T}}
-            u = q[idx] #(@inbounds q[idx])
+            u = (@inbounds q[idx])
         end
         id = getfield(u, :id)
     end
@@ -554,10 +556,10 @@ Base.in(kv::Pair{HASH_T,T}, u::PTree{T}, f::F) where {T,F<:Function} = begin
         #if isa(getfield(u, :cells), Vector{T})
         if ptree_depth(id) == PTREE_TWIG_DEPTH
             qq = getfield(u, :cells)::Vector{T}
-            return f(kv[2], qq[idx]) == true #(@inbounds q[idx])
+            return f(kv[2], (@inbounds qq[idx])) == true
         else
             q = getfield(u, :cells)::Vector{PTree{T}}
-            u = q[idx] #(@inbounds q[idx])
+            u = (@inbounds q[idx])
         end
         id = getfield(u, :id)
     end
@@ -641,7 +643,7 @@ macro _ptree_iterate_gencode(rtype::Symbol)
         if nextbitno < PTREE_BITS_BITCOUNT
             k = ptree_id(id, nextbitno)
             idx = count_ones(bits & mask) + 1
-            v = leaves[idx] # (@inbounds leaves[idx])
+            v = (@inbounds leaves[idx])
             return ($rexpr, k)
         end
         # If we reach here, we did not find a next leaf.
@@ -688,7 +690,7 @@ macro _ptree_iterate_gencode(rtype::Symbol)
             d = ptree_depth(id)
             while d < PTREE_TWIG_DEPTH
                 cells = getfield(u, :cells)::Vector{PTree{T}}
-                u = cells[1] # @inbounds cells[1]
+                u = (@inbounds cells[1])
                 id = getfield(u, :id)
                 d = ptree_depth(id)
             end
@@ -696,7 +698,7 @@ macro _ptree_iterate_gencode(rtype::Symbol)
             bits = getfield(u, :bits)
             nextbitno = trailing_zeros(bits)
             k = ptree_cellkey(id, nextbitno)
-            v = leaves[1] # @inbounds leaves[1]
+            v = (@inbounds leaves[1])
             return ($rexpr, k)
         end
     end |> esc

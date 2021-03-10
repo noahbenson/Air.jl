@@ -120,13 +120,13 @@ macro _ldict_code(name::Symbol, eqfn, hashfn)
     end |> esc
 end
     
-@_ldict_code LazyDict isequiv equivhash
+@_ldict_code LazyDict isequal hash
 @_ldict_code LazyIdDict (===) objectid
-@_ldict_code LazyEqualDict isequal hash
+@_ldict_code LazyEquivDict isequiv equivhash
 
 mutability(::Type{LazyDict}) = Immutable
 mutability(::Type{LazyDict{K,V}}) where {K,V} = Immutable
 mutability(::Type{LazyIdDict}) = Immutable
 mutability(::Type{LazyIdDict{K,V}}) where {K,V} = Immutable
-mutability(::Type{LazyEqualDict}) = Immutable
-mutability(::Type{LazyEqualDict{K,V}}) where {K,V} = Immutable
+mutability(::Type{LazyEquivDict}) = Immutable
+mutability(::Type{LazyEquivDict{K,V}}) where {K,V} = Immutable

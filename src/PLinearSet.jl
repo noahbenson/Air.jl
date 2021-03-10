@@ -141,13 +141,13 @@ macro _plinset_code(name::Symbol, eqfn, hashfn)
     end |> esc
 end
     
-@_plinset_code PLinearSet isequiv equivhash
+@_plinset_code PLinearSet isequal hash
 @_plinset_code PIdLinearSet (===) objectid
-@_plinset_code PEqualLinearSet isequal hash
+@_plinset_code PEquivLinearSet isequiv equivhash
 
 mutability(::Type{PLinearSet}) = Immutable()
 mutability(::Type{PLinearSet{T}}) where {T} = Immutable()
 mutability(::Type{PIdLinearSet}) = Immutable()
 mutability(::Type{PIdLinearSet{T}}) where {T} = Immutable()
-mutability(::Type{PEqualLinearSet}) = Immutable()
-mutability(::Type{PEqualLinearSet{T}}) where {T} = Immutable()
+mutability(::Type{PEquivLinearSet}) = Immutable()
+mutability(::Type{PEquivLinearSet{T}}) where {T} = Immutable()

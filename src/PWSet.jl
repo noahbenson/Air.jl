@@ -129,18 +129,18 @@ end
     
 @_pwset_code PWSet PDict
 @_pwset_code PWIdSet PIdDict
-@_pwset_code PWEqualSet PEqualDict
+@_pwset_code PWEquivSet PEquivDict
 
 Base.empty(s::PWSet{T,W}, ::Type{S}=T, ::Type{X}=W) where {T,W,S,X} = PWSet{S,X}()
-Base.empty(s::PWEqualSet{T,W}, ::Type{S}=T, ::Type{X}=W) where {T,W,S,X} = PWIdSet{S,X}()
-Base.empty(s::PWIdSet{T,W}, ::Type{S}=T, ::Type{X}=W) where {T,W,S,X} = PWEqualSet{S,X}()
+Base.empty(s::PWIdSet{T,W}, ::Type{S}=T, ::Type{X}=W) where {T,W,S,X} = PWIdSet{S,X}()
+Base.empty(s::PWEquivSet{T,W}, ::Type{S}=T, ::Type{X}=W) where {T,W,S,X} = PWEquivSet{S,X}()
 
 mutability(::Type{PWSet}) = Immutable()
 mutability(::Type{PWSet{T}}) where {T} = Immutable()
 mutability(::Type{PWIdSet}) = Immutable()
 mutability(::Type{PWIdSet{T}}) where {T} = Immutable()
-mutability(::Type{PWEqualSet}) = Immutable()
-mutability(::Type{PWEqualSet{T}}) where {T} = Immutable()
+mutability(::Type{PWEquivSet}) = Immutable()
+mutability(::Type{PWEquivSet{T}}) where {T} = Immutable()
 
 isequiv(s::ST, t::AbstractSet) where {T,ST <: AbstractPWSet{T}} = false
 isequiv(s::AbstractSet, t::ST) where {T,ST <: AbstractPWSet{T}} = false

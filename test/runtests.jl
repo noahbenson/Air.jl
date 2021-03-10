@@ -60,8 +60,8 @@ end
         @testset "PDict" begin
             intels = [gensym() => x for x in 1:2000]
             fltels = [k => Float64(v) for (k,v) in intels]
-            for (DT,PDT) in ((Dict,      PEqualDict),
-                             (EquivDict, PDict),
+            for (DT,PDT) in ((Dict,      PDict),
+                             (EquivDict, PEquivDict),
                              (IdDict,    PIdDict))
                 a = DT(intels...)
                 b = DT(fltels...)
@@ -103,8 +103,8 @@ end
         @testset "PSet" begin
             intels = collect(1:1000)
             fltels = [Float64(v) for v in intels]
-            for (ST,PST) in ((Set,        PEqualSet),
-                             (EquivSet,   PSet),
+            for (ST,PST) in ((Set,        PSet),
+                             (EquivSet,   PEquivSet),
                              (IdSet,      PIdSet))
                 if ST === IdSet
                     a = make_idset(intels)
@@ -267,7 +267,7 @@ end
         numops = 100
         numits = 10
         for it in 1:numits
-            mut = EquivSet{Real}()
+            mut = Set{Real}()
             imm = Air.PSet{Real}()
             ops = [:push, :pop, :get]
             for ii in 1:numops
@@ -298,13 +298,13 @@ end
                 end
                 compare_test(Air.PIdSet{Symbol}([:b, :d, :e]), idset, syms, n)
             end
-            @testset "PSet" begin
-                compare_test(Air.PSet{Symbol}(), Air.EquivSet{Symbol}(), syms, n)
-                compare_test(Air.PSet{Symbol}([:b, :d, :e]), Air.EquivSet{Symbol}([:b, :d, :e]), syms, n)
+            @testset "PEquivSet" begin
+                compare_test(Air.PEquivSet{Symbol}(), Air.EquivSet{Symbol}(), syms, n)
+                compare_test(Air.PEquivSet{Symbol}([:b, :d, :e]), Air.EquivSet{Symbol}([:b, :d, :e]), syms, n)
             end
-            @testset "PEqualSet" begin
-                compare_test(Air.PEqualSet{Symbol}(), Set{Symbol}(), syms, n)
-                compare_test(Air.PEqualSet{Symbol}([:b, :d, :e]), Set{Symbol}([:b, :d, :e]), syms, n)
+            @testset "PSet" begin
+                compare_test(Air.PSet{Symbol}(), Set{Symbol}(), syms, n)
+                compare_test(Air.PSet{Symbol}([:b, :d, :e]), Set{Symbol}([:b, :d, :e]), syms, n)
             end
         end
     end
@@ -348,19 +348,19 @@ end
                          Base.IdDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
                          syms, nums, n)
         end
-        @testset "PDict" begin
-            compare_test(Air.PDict{Symbol,Real}(),
+        @testset "PEquivDict" begin
+            compare_test(Air.PEquivDict{Symbol,Real}(),
                          Air.EquivDict{Symbol,Real}(),
                          syms, nums, n)
-            compare_test(Air.PDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
+            compare_test(Air.PEquivDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
                          Air.EquivDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
                          syms, nums, n)
         end
-        @testset "PEqualDict" begin
-            compare_test(Air.PEqualDict{Symbol,Real}(),
+        @testset "PDict" begin
+            compare_test(Air.PDict{Symbol,Real}(),
                          Base.Dict{Symbol,Real}(),
                          syms, nums, n)
-            compare_test(Air.PEqualDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
+            compare_test(Air.PDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
                          Base.Dict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
                          syms, nums, n)
         end
@@ -401,38 +401,38 @@ end
             @test (d[:b], d[:a]) == (0, 1)
             @test (d[:a], d[:b]) == (1, 0)
         end
-        @testset "LazyDict" begin
-            compare_test(Air.LazyDict{Symbol,Real}(),
+        @testset "LazyEquivDict" begin
+            compare_test(Air.LazyEquivDict{Symbol,Real}(),
                          Air.EquivDict{Symbol,Real}(),
                          syms, nums, n)
-            compare_test(Air.LazyDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
+            compare_test(Air.LazyEquivDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
                          Air.EquivDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
                          syms, nums, n)
-            d = Air.LazyDict{Symbol,Int}(:a => Delay{Int}(delayfn1),
-                                         :b => Delay{Int}(delayfn2))
+            d = Air.LazyEquivDict{Symbol,Int}(:a => Delay{Int}(delayfn1),
+                                              :b => Delay{Int}(delayfn2))
             fnval = 0
             @test (d[:a], d[:b]) == (1, 2)
             @test (d[:b], d[:a]) == (2, 1)
-            d = Air.LazyDict{Symbol,Int}(:a => Delay{Int}(delayfn1),
-                                         :b => Delay{Int}(delayfn2))
+            d = Air.LazyEquivDict{Symbol,Int}(:a => Delay{Int}(delayfn1),
+                                              :b => Delay{Int}(delayfn2))
             fnval = 0
             @test (d[:b], d[:a]) == (0, 1)
             @test (d[:a], d[:b]) == (1, 0)
         end
-        @testset "LazyEqualDict" begin
-            compare_test(Air.LazyEqualDict{Symbol,Real}(),
+        @testset "LazyDict" begin
+            compare_test(Air.LazyDict{Symbol,Real}(),
                          Base.Dict{Symbol,Real}(),
                          syms, nums, n)
-            compare_test(Air.LazyEqualDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
+            compare_test(Air.LazyDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
                          Base.Dict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
                          syms, nums, n)
-            d = Air.LazyEqualDict{Symbol,Int}(:a => Delay{Int}(delayfn1),
-                                              :b => Delay{Int}(delayfn2))
+            d = Air.LazyDict{Symbol,Int}(:a => Delay{Int}(delayfn1),
+                                         :b => Delay{Int}(delayfn2))
             fnval = 0
             @test (d[:a], d[:b]) == (1, 2)
             @test (d[:b], d[:a]) == (2, 1)
-            d = Air.LazyEqualDict{Symbol,Int}(:a => Delay{Int}(delayfn1),
-                                              :b => Delay{Int}(delayfn2))
+            d = Air.LazyDict{Symbol,Int}(:a => Delay{Int}(delayfn1),
+                                         :b => Delay{Int}(delayfn2))
             fnval = 0
             @test (d[:b], d[:a]) == (0, 1)
             @test (d[:a], d[:b]) == (1, 0)

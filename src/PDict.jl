@@ -135,16 +135,16 @@ macro _pdict_code(name::Symbol, eqfn, hashfn, lindict)
     end |> esc
 end
     
-(@_pdict_code PDict isequiv equivhash PLinearDict)
+(@_pdict_code PEquivDict isequiv equivhash PEquivLinearDict)
 (@_pdict_code PIdDict (===) objectid PIdLinearDict)
-(@_pdict_code PEqualDict isequal hash PEqualLinearDict)
+(@_pdict_code PDict isequal hash PLinearDict)
 
 mutability(::Type{PDict}) = Immutable()
 mutability(::Type{PDict{K,V}}) where {K,V} = Immutable()
 mutability(::Type{PIdDict}) = Immutable()
 mutability(::Type{PIdDict{K,V}}) where {K,V} = Immutable()
-mutability(::Type{PEqualDict}) = Immutable()
-mutability(::Type{PEqualDict{K,V}}) where {K,V} = Immutable()
+mutability(::Type{PEquivDict}) = Immutable()
+mutability(::Type{PEquivDict{K,V}}) where {K,V} = Immutable()
 
 
 ################################################################################
@@ -346,7 +346,6 @@ withmeta(::WoutMetaData, t::T, args...; kw...) where {T} =
 _buildmeta(md0::AbstractSimpleDict{V}, args...; kw...) where {V} =
     simpleflat(V, md0, args...; kw...)
 withmeta(Q::WithMetaData, t::T, args...; kw...) where {T} = begin
-    #TODO: Optimize this so that if md0 is a PDict, it uses TDict?
     # Get the meta-data that we start with
     md0 = metadata(Q, t)
     # Process the arguments
@@ -375,7 +374,6 @@ _trimmeta(md0::AbstractSimpleDict{V}, args...) where {V} = begin
     return md0
 end
 woutmeta(Q::WithMetaData, t::T, args...) where {T} = begin
-    #TODO: Optimize this so that if md0 is a PDict, it uses TDict?
     # Get the meta-data that we start with
     md0 = metadata(Q, t)
     # Process the arguments

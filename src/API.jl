@@ -1350,4 +1350,3 @@ function Base.:(==)(
     end
     return true
 end
-# We also want to declare an equivhash version for sets and dictionaries.

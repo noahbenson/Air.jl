@@ -102,14 +102,14 @@ macro _pset_code(name::Symbol, eqfn, hashfn, linset)
     end |> esc
 end
     
-@_pset_code PSet isequiv equivhash PLinearSet
+@_pset_code PSet isequal hash PLinearSet
 @_pset_code PIdSet (===) objectid PIdLinearSet
-@_pset_code PEqualSet isequal hash PEqualLinearSet
+@_pset_code PEquivSet isequiv equivhash PEquivLinearSet
 
 mutability(::Type{PSet}) = Immutable()
 mutability(::Type{PSet{T}}) where {T} = Immutable()
 mutability(::Type{PIdSet}) = Immutable()
 mutability(::Type{PIdSet{T}}) where {T} = Immutable()
-mutability(::Type{PEqualSet}) = Immutable()
-mutability(::Type{PEqualSet{T}}) where {T} = Immutable()
+mutability(::Type{PEquivSet}) = Immutable()
+mutability(::Type{PEquivSet{T}}) where {T} = Immutable()
 

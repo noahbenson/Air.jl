@@ -42,22 +42,22 @@ macro memoize(assgn::Expr)
     sLock = gensym()
     sTmp  = gensym()
     quote
-        $sLock = ReentrantLock()
-        $sDict = Dict{Tuple, Any}()
-        $lhs = begin
-            lock($sLock)
-            $sTmp = get!($sDict, $argtup) do; $expr end
-            unlock($sLock)
-            return $sTmp
+        let $sLock = ReentrantLock(), $sDict = Dict{Tuple, Any}()
+            global $lhs = begin
+                lock($sLock)
+                $sTmp = get!($sDict, $argtup) do; $expr end
+                unlock($sLock)
+                return $sTmp
+            end
+            global function forget(::typeof($fsym))
+                global $sDict
+                $sTmp = $sDict
+                $sDict = Dict{Tuple, Any}()
+                return $sTmp
+            end
+            global Base.keys(::typeof($fsym)) = keys($sDict)
+            $fsym
         end
-        function forget(::typeof($fsym))
-            global $sDict
-            $sTmp = $sDict
-            $sDict = Dict{Tuple, Any}()
-            return $sTmp
-        end
-        Base.keys(::typeof($fsym)) = keys($sDict)
-        $fsym
     end |> esc
 end
 
@@ -66,9 +66,6 @@ struct _DelayPending
     _mux::ReentrantLock
     _fn::Function
 end
-struct _ValueRealized{T}
-    _val::T
-end
 """
     Delay{T}
 
@@ -76,12 +73,12 @@ Delay objects can be used to lazily calculate a single value the first time
 it is requested. They act like Refs in that you access a delay `d` via `d[]`.
 """
 mutable struct Delay{T} <: Base.Ref{T}
-    _val::Union{_DelayPending, _ValueRealized{T}}
+    _val::Union{_DelayPending, Some{T}}
     function Delay{T}(f::Function) where {T}
         return new{T}(_DelayPending(ReentrantLock(), f))
     end
     function Delay{T}(t::T) where {T}
-        return new{T}(_ValueRealized{T}(t))
+        return new{T}(Some{T}(t))
     end
 end
 Delay(f::Function) = Delay{Any}(f)
@@ -140,20 +137,20 @@ Base.getindex(d::Delay{T}) where {T} = begin
         lock(v._mux)
         try
             if d._val === v
-                u = v._fn()
-                d._val = _ValueRealized{T}(u)
+                u = (v._fn())::T
+                d._val = Some{T}(u)
             else
-                u = d._val._val
+                u = ((d._val)::Some{T}).value
             end
             return u
         finally
             unlock(v._mux)
         end
     else
-        return v._val
+        return v.value
     end
 end
-Base.isready(d::Delay{T}) where {T} = isa(d._val, _ValueRealized{T})
+Base.isready(d::Delay{T}) where {T} = isa(d._val, Some{T})
 Base.setindex!(d::Delay{T}, x...) where {T} = throw(ArgumentError("setindex!: Delays are immutable"))
 Base.isequal(a::Delay{T}, b::Delay{S}) where {T,S} = (a === b) || isequal(a[], b[])
 isequiv(a::Delay{T}, b::Delay{S}) where {T,S} = (a === b) || isequiv(a[], b[])
@@ -161,8 +158,8 @@ Base.hash(d::Delay{T}) where {T} = 0x26c850a2957fa577 + hash(d[])
 equivhash(d::Delay{T}) where {T} = 0x26c850a2957fa577 + equivhash(d[])
 Base.show(io::IO, ::MIME"text/plain", d::Delay{T}) where {T} = begin
     v = d._val
-    if isa(v, _ValueRealized)
-        print(io, "$(typeof(d))($(v._val))")
+    if isa(v, Some)
+        print(io, "$(typeof(d))($(v.value))")
     else
         print(io, "$(typeof(d))(<...>)")
     end
@@ -180,7 +177,7 @@ via `p[]` for promise `p`. In both cases, the running thread is suspended until
 a value is delivered.
 """
 mutable struct Promise{T}
-    _val::Union{Threads.Condition, _ValueRealized{T}}
+    _val::Union{Threads.Condition, Some{T}}
 end
 Promise{T}() where {T} = Promise{T}(Threads.Condition())
 Promise() = Promise{Any}()
@@ -195,12 +192,12 @@ take(d::Promise{T}) where {T} = begin
         lock(v)
         try
             (d._val === v) && wait(v)
-            return d._val._val
+            return ((d._val)::Some{T}).value
         finally
             unlock(v)
         end
     else
-        return v._val
+        return v.value
     end
 end
 Base.getindex(d::Promise{T}) where {T} = take(d)
@@ -211,9 +208,9 @@ Base.put!(d::Promise{T}, x) where {T} = begin
         try
             (d._val === v) || throw(
                 ArgumentError("given promise is already fulfilled"))
-            d._val = _ValueRealized{T}(x)
+            d._val = Some{T}(x)
             notify(v, all=true)
-            return x
+            return d._val.value
         finally
             unlock(v)
         end
@@ -221,15 +218,15 @@ Base.put!(d::Promise{T}, x) where {T} = begin
         throw(ArgumentError("given promise is already fulfilled"))
     end
 end
-isready(d::Promise{T}) where {T} = isa(d._val, _ValueRealized{T})
+isready(d::Promise{T}) where {T} = isa(d._val, Some{T})
 Base.isequal(a::Promise{T}, b::Promise{S}) where {T,S} = (a === b) || isequal(a[], b[])
 isequiv(a::Promise{T}, b::Promise{S}) where {T,S} = (a === b) || isequiv(a[], b[])
 Base.hash(d::Promise{T}) where {T} = 0x767127451c1e402a + hash(d[])
 equivhash(d::Promise{T}) where {T} = 0x767127451c1e402a + equivhash(d[])
 Base.show(io::IO, ::MIME"text/plain", d::Promise{T}) where {T} = begin
     v = d._val
-    if isa(v, _ValueRealized)
-        print(io, "$(typeof(d))($(v._val))")
+    if isa(v, Some)
+        print(io, "$(typeof(d))($(v.value))")
     else
         print(io, "$(typeof(d))(<...>)")
     end

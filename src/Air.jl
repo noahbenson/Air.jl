@@ -20,7 +20,7 @@ include("PTrie.jl")
 # Exports; sorted by file:
 #      PArray exports:
 export PList, PSet, PDict, PArray, PVector, PMatrix, LazyDict,
-    PEqualSet, PEqualDict, PIdSet, PIdDict,
+    PEquivSet, PEquivDict, PIdSet, PIdDict,
     AbstractPDict, AbstractPArray, PLinearSet, PLinearDict, assoc,
     push, pop, pushfirst, popfirst, delete, #, insert, setindex
     Mutability, Immutable, Mutable, mutability, isimmtype,

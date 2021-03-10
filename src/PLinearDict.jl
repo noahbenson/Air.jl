@@ -164,13 +164,13 @@ macro _plindict_code(name::Symbol, eqfn, hashfn)
     end |> esc
 end
     
-@_plindict_code PLinearDict isequiv equivhash
+@_plindict_code PLinearDict isequal hash
 @_plindict_code PIdLinearDict (===) objectid
-@_plindict_code PEqualLinearDict isequal hash
+@_plindict_code PEquivLinearDict isequiv equivhash
 
 mutability(::Type{PLinearDict}) = Immutable()
 mutability(::Type{PLinearDict{K,V}}) where {K,V} = Immutable()
 mutability(::Type{PIdLinearDict}) = Immutable()
 mutability(::Type{PIdLinearDict{K,V}}) where {K,V} = Immutable()
-mutability(::Type{PEqualLinearDict}) = Immutable()
-mutability(::Type{PEqualLinearDict{K,V}}) where {K,V} = Immutable()
+mutability(::Type{PEquivLinearDict}) = Immutable()
+mutability(::Type{PEquivLinearDict{K,V}}) where {K,V} = Immutable()
