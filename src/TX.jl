@@ -72,7 +72,7 @@ Base.getproperty(u::Var{T}, sym) where {T} = begin
 end
 # Helper function for cleaning up tasks from vars.
 _var_task_cleanup(var::Var{T}, t::Task) where {T} = begin
-    h = objectid(task)
+    h = objectid(t)
     mux = getfield(var, :mutex)
     lock(mux)
     try
@@ -96,9 +96,9 @@ Base.setindex!(v::Var{T}, x::S) where {T,S} = begin
             (x === getfield(v, :initval)) && return x
             finalizer(t -> _var_task_cleanup(v, t), task)
             vals = setindex(vals, x, h)
-        elseif x0 == x
+        elseif x0 === x
             return x
-        elseif x0 === getfield(v, :initval)
+        elseif x === getfield(v, :initval)
             vals = delete(vals, h)
         else
             vals = setindex(vals, x, h)

@@ -13,4 +13,5 @@ import Base.isready
     include("LazyDict.jl")
     include("PWSet.jl")
     include("PWDict.jl")
+    include("TX.jl")
 end
