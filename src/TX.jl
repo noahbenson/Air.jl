@@ -233,6 +233,7 @@ _actor_main(a::Actor{T}) where {T} = begin
     q = a._msgs
     msg = nothing
     args = nothing
+    rval = nothing
     try
         # For starters, lock the condition!
         lock(a._cond)
@@ -254,8 +255,10 @@ _actor_main(a::Actor{T}) where {T} = begin
                 f = a._value
                 args = msg.args[2:end]
             else
+                args = msg.args
+                n = msg.argno
                 f = args[1]
-                args = (args[1:argno-1]..., a._value, args[argno+1:end])
+                args = (args[2:n-1]..., a._value, args[n+1:end]...)
             end
             try
                 rval = f(args...)
