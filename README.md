@@ -25,10 +25,12 @@ Scala.
 
 ### Plans
 
-Note that many of the core components for Air already working
+Note that many of the core components for Air already have working
 implementations. Several more are currently undergoing testing. In particular,
 the existing persistent data structures are fairly well tested and have a
-performance comparable to or better than their clojure counterparts.
+performance comparable to their clojure counterparts. Additionally, initial
+tests of the thread-safe transaction system using the `@tx` transaction block
+macro, `Actor`s and `Volatile`s are promising (though more testing is neeeded).
 
 * Completed plans
   * Persistent data structures:
@@ -42,15 +44,18 @@ performance comparable to or better than their clojure counterparts.
     * `PWSet`, a weighted persistent set type, like `PWDict` but just objects
       with weights instead of key-value pairs with weights.
     * `LazyDict`, a persistent lazy dictionary type.
-* Plans that are implemented but require testing
+* Plans with incomplete testing:
   * Multi-threading utilities, inspired by Clojure
-    * Thread-safe `Delay` and `Promise` types.
+    * Thread-safe `Delay` type.
     * Thread-local `Var` type.
     * A `Volatile` type that operates with the `@tx` macro to ensure
       that all updates to references within a synchronized block are performed
       atomically.
     * An `Actor` type for sending asynchronous jobs to independent threads which
       also respects the atomic requirements of transactional `tx` blocks.
+* Plans that are implemented but require testing
+  * Multi-threading utilities, inspired by Clojure
+    * Thread-safe `Promise` types.
     * A `Source` type for safely reading from inputs such as sockets or files
       while respecting the syncronization of transactional `tx` blocks.
 * Plans that are not yet implemented
