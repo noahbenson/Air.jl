@@ -28,5 +28,4 @@ jobs:
       #after_success: skip
 script:
   #- julia -e 'using Pkg; Pkg.clone(pwd());'
-  #- travis_wait julia --code-coverage -e 'using Pkg; Pkg.test("Air");'
-  - JULIA_PKGDIR="$PWD" travis_wait julia --code-coverage test/runtests.jl
+  - travis_wait julia --code-coverage -e 'using Pkg; Pkg.test("Air");'
