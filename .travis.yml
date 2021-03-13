@@ -29,4 +29,4 @@ jobs:
 script:
   #- julia -e 'using Pkg; Pkg.clone(pwd());'
   #- travis_wait julia --code-coverage -e 'using Pkg; Pkg.test("Air");'
-  - travis_wait julia --code-coverage test/runtests.jl
+  - JULIA_PKGDIR="$PWD" travis_wait julia --code-coverage test/runtests.jl
