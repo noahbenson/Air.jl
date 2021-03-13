@@ -37,12 +37,15 @@ macro, `Actor`s and `Volatile`s are promising (though more testing is neeeded).
     * `PArray`, a persistent array type that mimics Julia's native `Array`
     * `PDict`, a persistent dictionary type that mimics Julia's native `Dict`
     * `PSet`, a persistent set type.
-    * `PWDict`, a persistent weighted dictionary type that trackss an ordering
-      (descending by weight) of the elements using a persistent heap and allows
-      pairs to be sampled (using `rand(pwdict)`) with probabilities equal to
-      their (relative) weights in the dictionary.
-    * `PWSet`, a weighted persistent set type, like `PWDict` but just objects
-      with weights instead of key-value pairs with weights.
+    * `PWSet`, a weighted persistent set type. Each element of a `PWSet` has a
+      weight, and the sete itself acts both as a piority queue (`first(pwset)`
+      always yields the element with the highest weight in `O(1)` time) and as
+      a distribution (`rand(pwset)` yields a random element of the set where the
+      probability of an element being chosen is equal to its weight divided by
+      the total weight of the elements in the set.
+    * `PWDict`, a persistent weighted dictionary type is like the `PWSet` type,
+      but insted of elements with weights, the dictionary contains key-valye
+      pairs with weights.
     * `LazyDict`, a persistent lazy dictionary type.
 * Plans with incomplete testing:
   * Multi-threading utilities, inspired by Clojure
