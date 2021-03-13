@@ -13,7 +13,8 @@ matrix:
 notifications:
   email: false
 after_success:
-  - julia -e 'using Pkg; Pkg.add("Coverage"); using Coverage; Codecov.submit(process_folder())'
+  - julia -e 'using Pkg; cd(Pkg.dir("Air.jl")); Pkg.add("Coverage"); using Coverage; Codecov.submit(Codecov.process_folder())'
+  #- julia -e 'using Pkg; Pkg.add("Coverage"); using Coverage; Codecov.submit(process_folder())'
   #- julia -e 'using Pkg; Pkg.add("Coverage"); using Coverage; Coveralls.submit(process_folder())'
 jobs:
   include:
@@ -27,4 +28,5 @@ jobs:
       #after_success: skip
 script:
   #- julia -e 'using Pkg; Pkg.clone(pwd());'
-  - travis_wait julia --code-coverage -e 'using Pkg; Pkg.test("Air");'
+  #- travis_wait julia --code-coverage -e 'using Pkg; Pkg.test("Air");'
+  - travis_wait julia --code-coverage test/runtests.jl
