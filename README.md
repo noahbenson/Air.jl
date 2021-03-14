@@ -6,7 +6,7 @@
 
 # Air ##########################################################################
 
-Functional collections and utilities for Julia as light as air.
+Functional collections and utilities for Julia that are as light as air.
 
 
 ## Author ######################################################################
@@ -80,7 +80,7 @@ macro, `Actor`s and `Volatile`s are promising (though more testing is neeeded).
 
 MIT License
 
-Copyright (c) 2019 Noah C. Benson
+Copyright (c) 2019-2021 Noah C. Benson
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -13,19 +13,20 @@ matrix:
 notifications:
   email: false
 after_success:
-  - julia -e 'using Pkg; cd(Pkg.dir("Air.jl")); Pkg.add("Coverage"); using Coverage; Codecov.submit(Codecov.process_folder())'
-  #- julia -e 'using Pkg; Pkg.add("Coverage"); using Coverage; Codecov.submit(process_folder())'
-  #- julia -e 'using Pkg; Pkg.add("Coverage"); using Coverage; Coveralls.submit(process_folder())'
+  #- julia -e 'using Pkg; cd(Pkg.dir("Air.jl")); Pkg.add("Coverage"); using Coverage; Codecov.submit(Codecov.process_folder())'
+  - julia -e make.jl codecov
 jobs:
   include:
     - stage: Documentation
-      julia: 1.2
-      script: julia --project=docs -e '
-          using Pkg;
-          Pkg.develop(PackageSpec(path=pwd()));
-          Pkg.instantiate();
-          include("docs/make.jl");'
+      julia: 1.5
+      script: julia --project=docs make.jl docs
+      #script: julia --project=docs -e '
+      #    using Pkg;
+      #    Pkg.develop(PackageSpec(path=pwd()));
+      #    Pkg.instantiate();
+      #    include("docs/make.jl");'
       #after_success: skip
 script:
   #- julia -e 'using Pkg; Pkg.clone(pwd());'
-  - travis_wait julia --code-coverage -e 'using Pkg; Pkg.test("Air");'
+  #- travis_wait julia --code-coverage -e 'using Pkg; Pkg.test("Air");'
+  - travis_wait julia --code-coverage make.jl test
