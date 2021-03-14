@@ -7,6 +7,7 @@ deps/deps.jl
 /dev/
 /docs/build/
 /docs/site/
+/build/
 .ipynb_checkpoints/
 
 # IPython Notebooks, in general, shouldn't be committed.
