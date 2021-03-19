@@ -5,12 +5,11 @@ import Pkg
 (pwd() == @__DIR__) || cd(@__DIR__)
 
 push!(LOAD_PATH, pwd())
-air_package = Pkg.PackageSpec(path=pwd())
-Pkg.develop(air_package)
+#air_package = Pkg.PackageSpec(path=pwd())
+#Pkg.develop(air_package)
 Pkg.instantiate()
 
 using Air
-
 #Pkg.activate(@__DIR__)
 
 
@@ -26,7 +25,7 @@ else
 end
 for j in jobs
     if j == :test
-        Pkg.test("Air")
+        Pkg.test("Air", coverage=true)
         Pkg.add("Documenter")
         import Documenter
         Documenter.doctest(Air)
