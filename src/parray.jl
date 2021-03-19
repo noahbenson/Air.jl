@@ -48,10 +48,12 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest
+```jldoctest; filter=r"0-element (PArray{Any,1}|PVector{Any})"
 julia> PArray()
 0-element PArray{Any,1}
+```
 
+```jldoctest; filter=r"[23]-element (PArray{Int64,1}|PVector{Int64})"
 julia> u = PArray{Int,1}([1,2])
 2-element PArray{Int64,1}:
  1
@@ -161,7 +163,7 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest
+```jldoctest; filter=r"4-element (PArray{Int64,1}|PVector{Int64}):"
 julia> u = PVector{Int}(0, (4,))
 4-element PArray{Int64,1}:
  0
@@ -216,7 +218,7 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest
+```jldoctest; filter=r"4-element (PArray{Int64,1}|PVector{Int64}):"
 julia> u = PVector{Int}([0,1,2,3])
 4-element PArray{Int64,1}:
  0
@@ -268,7 +270,7 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest
+```jldoctest; filter=r"4-element (PArray{Int64,1}|PVector{Int64}):"
 julia> u = PVector([0,10,20,30])
 4-element PArray{Int64,1}:
   0
@@ -330,7 +332,7 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest
+```jldoctest; filter=r"4-element (PArray{Int64,1}|PVector{Int64}):"
 julia> u = PVector([0,10,20,30])
 4-element PArray{Int64,1}:
   0

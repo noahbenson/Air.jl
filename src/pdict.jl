@@ -337,16 +337,20 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest
+```jldoctest; filter=r"PDict{Any, ?Any}"
 julia> PDict()
 PDict{Any,Any}()
+```
 
+```jldoctest; filter=r"PDict{Symbol, ?Real} with 3 entries:"
 julia> PDict(:a => 1, :b => 2, :c => 12.8)
 PDict{Symbol,Real} with 3 entries:
   :c => 12.8
   :a => 1
   :b => 2
+```
 
+```jldoctest; filter=r"PDict{Symbol, ?Float64} with [34] entries:"
 julia> d = PDict{Symbol,Float64}(:a => 1, :b => 2, :c => 12.8)
 PDict{Symbol,Float64} with 3 entries:
   :c => 12.8
@@ -389,16 +393,19 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest
+```jldoctest; filter=r"PIdDict{Any, ?Any}\\(\\)"
 julia> PIdDict()
 PIdDict{Any,Any}()
 
+```jldoctest; filter=r"PIdDict{Symbol, ?Real} with 3 entries:"
 julia> PIdDict(:a => 1, :b => 2, :c => 12.8)
 PIdDict{Symbol,Real} with 3 entries:
   :c => 12.8
   :a => 1
   :b => 2
+```
 
+```jldoctest; filter=r"PIdDict{Symbol, ?Float64} with [34] entries:"
 julia> d = PIdDict{Symbol,Float64}(:a => 1, :b => 2, :c => 12.8)
 PIdDict{Symbol,Float64} with 3 entries:
   :c => 12.8
