@@ -379,7 +379,7 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest; filter=r"5-element (Array{Symbol,1},Vector{Symbol}):"
+```jldoctest; filter=r"5-element (Array{Symbol,1}|Vector{Symbol}):"
 julia> pushfirst((:a,:b,:c,:d), :e)
 (:e, :a, :b, :c, :d)
 
@@ -521,7 +521,7 @@ julia> length(u)
 4
 ```
 
-```jldoctest; filter=r"5-element (BitArray{1}|BitVector):"
+```jldoctest; filter=r"5-element Bit.+:"
 julia> b = BitArray([0,0,0,0]); insert(b, 2, 1)
 5-element BitArray{1}:
  0
@@ -680,7 +680,7 @@ julia> s1 = Set([:a,:b,:c,:d]); s2 = delete(s1, :d); (:d in s1, :d in s2)
 (true, false)
 ```
 
-```jldoctest; filter=r"4-element (BitArray{1}|BitVector):"
+```jldoctest; filter=r"4-element Bit.+:"
 julia> b = BitArray([0,0,0,1,0]); delete(b, 4)
 4-element BitArray{1}:
  0
