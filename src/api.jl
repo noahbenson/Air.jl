@@ -284,7 +284,9 @@ julia> s = Set([:a, :b, :c]); pop(s, :c)
 
 julia> :c in s
 true
+```
 
+```jldoctest; filter=r"\\(3, Dict\\(:a => 1, ?:b => 2\\)\\)"
 julia> d = Dict(:a => 1, :b => 2, :c => 3); pop(d, :c)
 (3, Dict(:a => 1,:b => 2))
 
@@ -367,7 +369,7 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest
+```jldoctest; filter=r"5-element (Array{Symbol,1},Vector{Symbol}):"
 julia> pushfirst((:a,:b,:c,:d), :e)
 (:e, :a, :b, :c, :d)
 
@@ -494,7 +496,9 @@ end
 ```jldoctest
 julia> insert((:a,:b,:c,:d), 2, :x)
 (:a, :x, :b, :c, :d)
+```
 
+```jldoctest; filter=r"5-element (Array{Symbol,1}|Vector{Symbol}):"
 julia> u = [:a,:b,:c,:d]; insert(u, 1, :x)
 5-element Array{Symbol,1}:
  :x
@@ -505,7 +509,9 @@ julia> u = [:a,:b,:c,:d]; insert(u, 1, :x)
 
 julia> length(u)
 4
+```
 
+```jldoctest; filter=r"5-element (BitArray{1}|Vector{Bool}|Array{Bool,1}):"
 julia> b = BitArray([0,0,0,0]); insert(b, 2, 1)
 5-element BitArray{1}:
  0
