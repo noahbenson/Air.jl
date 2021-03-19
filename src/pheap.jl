@@ -1,12 +1,12 @@
 ################################################################################
 # PHeap.jl
-# The Persistent heap (priority queue) type and related types such as THeap (the
-# transient heap type).
+#
+# The Persistent heap (priority queue) type.
 #
 # @author Noah C. Benson
 #
 # MIT License
-# Copyright (c) 2020 Noah C. Benson
+# Copyright (c) 2020-2021 Noah C. Benson
 
 import Random
 
@@ -16,14 +16,20 @@ import Random
 """
     PHeap{T,W,F}
 
-A PHeap object is a priority queue to which objects can be pushed and given a
-particular weight. PHeaps can then be iterated, popped, and the first element
-may be obtained in a priority-weighted order.
+A `PHeap` object is a priority queue to which objects can be `push`ed and given
+a particular weight. `PHeap`s can then be `iterate`d in weighted order, `pop`ped
+in weighted order, and the `first`  element may be obtained in weighted order.
+Additionally, a random sample may be drawn from a heap, which uses the
+distribution implied by the relative weights of the items in the heap.
 
-PHeap objects may be initialized with a single argument of type <:Function, in
-which case this function is used to compare the weights for ordering. By default
-this is > such that high weights are retrieved first by the first() function and
-removed first by the pop() function.
+`PHeap` objects may be initialized with a single argument of type
+`F <: Function`, in which case this function is used to compare the weights for
+ordering. By default this is `>` such that high weights are retrieved first by
+the `first()` function and removed first by the `pop()` function. Note, however,
+that the relative weights are still used by the `rand` function regardless of
+the ordering function, so negative values cannot be used.
+
+See also: [`PWSet`](@ref), [`PWDict`](@ref), [`pop`](@ref), [`first`](@ref).
 """
 struct PHeap{T,W<:Number,F<:Function,D<:AbstractPDict{T,Int}}
     _heap::PVector{Tuple{T,W,W}} # value, weight, total subtree weight
@@ -174,7 +180,7 @@ push(p::PHeap{T,W,F,D}, tw::Tuple{S,X}) where {T,W,F,D,S,X<:Number} = begin
         ii = length(heap)
         index = setindex(index, ii, t)
     end
-    (heap, index) = _pheap_fixw(heap, index, cmp, ii, w)
+    (heap, index) = _pheap_fixw(heap, index, cmp, ii, W(w))
     (p._heap === heap && p._index === index) && return p
     return PHeap{T,W,F,D}(heap, index, cmp)
 end
@@ -187,6 +193,30 @@ end
 Sets the weight of the value x in the given persistent heap or persistent
 weighted collection object h to be w and yields the new updated version of h.
 If x is not already in the object h, then an error is thrown.
+
+See also: [`getweight`](@ref), [`PWDict`](@ref), [`PWSet`](@ref).
+
+# Examples
+
+```@meta
+DocTestSetup = quote
+    using Air
+end
+```
+
+```jldoctest
+julia> d = PWSet{Symbol}(:a => 1.0, :b => 2.0, :c => 3.0)
+PWSet{Symbol,Float64} with 3 elements:
+  :c
+  :b
+  :a
+
+julia> setweight(d, :a, 4.0)
+PWSet{Symbol,Float64} with 3 elements:
+  :a
+  :c
+  :b
+```
 """
 setweight(p::PHeap{T,W,F,D}, t::S, w::X) where {T,W,F,D,S,X<:Number} = begin
     (w <= 0) && throw(ArgumentError("Weights must be positive"))
@@ -204,6 +234,27 @@ persistent weighted collection h. If h is a weighted dictionary, then x
 should be the key.
 
 If the key or object x is not found in the collection h, then 0 is returned.
+
+See also: [`setweight`](@ref), [`PWDict`](@ref), [`PWSet`](@ref).
+
+# Examples
+
+```@meta
+DocTestSetup = quote
+    using Air
+end
+```
+
+```jldoctest
+julia> d = PWSet{Symbol}(:a => 1.0, :b => 2.0, :c => 3.0)
+PWSet{Symbol,Float64} with 3 elements:
+  :c
+  :b
+  :a
+
+julia> getweight(d, :a)
+1.0
+```
 """
 getweight(h::PHeap{T,W,F,D}, t::S) where {T,W,F,D,S} = begin
     ii = get(h._index, t, 0)
@@ -283,24 +334,6 @@ Base.isequal(a::PHeap, b::PHeap) = begin
     end
     return true
 end
-isequiv(a::PHeap, b::PHeap) = begin
-    (length(a) == length(b)) || return false
-    while length(a) > 0
-        f = first(a)
-        isequiv(f, first(b)) || return false
-        (getweight(a, f) == getweight(b, f)) || return false
-        a = pop(a)
-        b = pop(b)
-    end
-    return true
-end
-equivhash(a::PHeap{T,W,F,D}) where {T,W,F,D}  = begin
-    h = 0x13 * UInt(length(a))
-    for (t,w,tot) in a._heap
-        h += equivhash(t) ⊻ equivhash(w)
-    end
-    return h
-end
 Base.hash(a::PHeap{T,W,F,D}) where {T,W,F,D}  = begin
     h = 0x11 * UInt(length(a))
     for (t,w,tot) in a._heap
@@ -308,3 +341,6 @@ Base.hash(a::PHeap{T,W,F,D}) where {T,W,F,D}  = begin
     end
     return h
 end
+
+# Export the relevant symbols (PHeap is considered internal).
+export getweight, setweight

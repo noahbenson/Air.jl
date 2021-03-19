@@ -26,11 +26,13 @@ end
 for j in jobs
     if j == :test
         Pkg.test("Air")
+        Pkg.add("Documenter")
+        import Documenter
+        Documenter.doctest(Air)
     elseif j == :codecov
         Pkg.add("Coverage")
         using Coverage
         Codecov.submit(Codecov.process_folder())
-        Pkg.rm("Coverage")
     elseif j == :docs
         Pkg.add("Documenter")
         Pkg.instantiate()

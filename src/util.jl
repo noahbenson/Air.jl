@@ -1,65 +1,13 @@
 ################################################################################
-# Util.jl
-# Utilities for Air that don't depend on other components of Air.
-# by Noah C. Benson
-
-# #memoize #####################################################################
-# First, this is a helper functionthat makes sure than a function-arg
-# declaration has a name.
-_memoize_fixarg(arg::Expr) = (arg.head == :(::) && length(arg.args) == 1
-                              ? Expr(:(::), gensym(), arg.args[1])
-                              : arg)
-# Now the memoize macro itself.
-"""
-    @memoize name(args...) = expr
-    @memoize name(args...) where {...} = expr
-
-@memoize is a macro for declaring that the function declaration that follows                                                                                                                               should be memoized in a private dictionary and any pre-calculated value should                                                                                                                             be returned from that dictionary instead of being recalculated.
-"""
-macro memoize(assgn::Expr)
-    (assgn.head == :(=)) || throw(
-        ArgumentError("memconst must be given an assignment expression"))
-    # Parse the assignment statement.
-    lhs  = assgn.args[1]
-    expr = assgn.args[2]
-    if lhs.head == :call
-        fsym = lhs.args[1]
-        args = [_memoize_fixarg(a) for a in lhs.args[2:end]]
-        lhs = Expr(:call, fsym, args...)
-    elseif lhs.head == :where
-        fsig = lhs.args[1]
-        fsym = fsig.args[1]
-        args = [_memoize_fixarg(a) for a in fsig.args[2:end]]
-        fsig = Expr(:call, fsym, args...)
-        lhs = Expr(:where, fsig, lhs.args[2:end]...)
-    else
-        throw(ArgumentError("memconst assignment LHS must be a call or where expression"))
-    end
-    # Make an expression for the tuple of arguments.
-    argtup = Expr(:tuple, args...)
-    # Symbols we will need in the generated code.
-    sDict = gensym()
-    sLock = gensym()
-    sTmp  = gensym()
-    quote
-        let $sLock = ReentrantLock(), $sDict = Dict{Tuple, Any}()
-            global $lhs = begin
-                lock($sLock)
-                $sTmp = get!($sDict, $argtup) do; $expr end
-                unlock($sLock)
-                return $sTmp
-            end
-            global function forget(::typeof($fsym))
-                global $sDict
-                $sTmp = $sDict
-                $sDict = Dict{Tuple, Any}()
-                return $sTmp
-            end
-            global Base.keys(::typeof($fsym)) = keys($sDict)
-            $fsym
-        end
-    end |> esc
-end
+# util.jl
+#
+# Utilities used in the Air library that don't depend on other components of
+# Air.
+#
+# @author Noah C. Benson
+#
+# MIT License
+# Copyright (c) 2020-2021 Noah C. Benson
 
 # #Delay #######################################################################
 struct _DelayPending
@@ -69,23 +17,63 @@ end
 """
     Delay{T}
 
-Delay objects can be used to lazily calculate a single value the first time
-it is requested. They act like Refs in that you access a delay `d` via `d[]`.
+`Delay` objects can be used to lazily calculate a single value the first time
+it is requested. They act like `Ref`s in that you access a delay `d` via `d[]`.
+`Delay` objects are thread-safe and are functionally immutable.
+
+See also: [`@delay`](@ref), [`LazyDict`](@ref)
+
+# Examples
+
+```@meta
+DocTestSetup = quote
+    using Air
+end
+```
+
+```jldoctest
+julia> # Create a Delay with a long run time.
+       d = Delay{Int64}(() -> (println("Running."); sleep(2); 10))
+Delay{Int64}(<...>)
+
+julia> # Start a few threads, each of which attempt to read it. The function
+       # will only run once.
+       for th in [(Threads.@spawn d[]) for _ in 1:5]; wait(th) end
+Running.
+
+julia> # Ensure that it produced the correct value and doesn't run again.
+       d[]
+10
+```
 """
 mutable struct Delay{T} <: Base.Ref{T}
     _val::Union{_DelayPending, Some{T}}
+    function Delay{T}(t) where {T}
+        return new{T}(Some{T}(t))
+    end
+    # We want it to be possible to share a delayed value.
+    function Delay{T}(d::Delay) where {T}
+        dval = d._val
+        if isa(dval, _DelayPending)
+            return new{T}(_DelayPending(ReentrantLock(), () -> d[]))
+        else
+            return new{T}(Some{T}(dval.value))
+        end
+    end
+    function Delay{T}(d::Delay{T}) where {T}
+        return d
+    end
     function Delay{T}(f::Function) where {T}
         return new{T}(_DelayPending(ReentrantLock(), f))
     end
-    function Delay{T}(t::T) where {T}
-        return new{T}(Some{T}(t))
-    end
 end
+Delay(t) = Delay{typeof(t)}(t)
+Delay(d::Delay) = d
 Delay(f::Function) = Delay{Any}(f)
 """
     @delay expression
 
-Yields a Delay object that matches the given expression. The expression may be
+Yields a `Delay` object that matches the given expression. The expression may be
 one of the following:
  1. A function of no arguments, such as `() -> 10`; in this case the delay is made
     from this function (i.e., the RHS is the `->` expression that is delayed).
@@ -94,6 +82,46 @@ one of the following:
  3. An expression, which is treated as equivalent to `() -> expression`.
 Optionally, the expression or LHS may be tagged with a type T. In this case, a
 `Delay{T}` object is yielded instead of a `Delay{Any}`.
+
+See also: [`Delay`](@ref), [`LazyDict`](@ref)
+
+# Examples
+
+```@meta
+DocTestSetup = quote
+    using Air
+end
+```
+
+```jldoctest
+julia> # Create a Delay with a long run time.
+       d = (@delay (println("Running."); sleep(2); 10)::Int64)
+Delay{Int64}(<...>)
+
+julia> # Start a few threads, each of which attempt to read it. The function will
+       # only run once.
+       for th in [(Threads.@spawn d[]) for _ in 1:5]; wait(th) end
+Running.
+
+julia> # Ensure that it produced the correct value and doesn't run again.
+       d[]
+10
+
+julia> # The display now shows the realized value also.
+       d
+Delay{Int64}(10)
+
+julia> # Create a Delay with a locally-bound symbol.
+       d2 = (@delay (d) -> (d[] / 20.0)::Float64)
+Delay{Float64}(<...>)
+
+julia> # We can rebind d without affecting d2.
+       d = 10
+10
+
+julia> d2[]
+0.5
+```
 """
 macro delay(e::Expr)
     # First, parse the expression-- is it a function or an expression?
@@ -112,6 +140,7 @@ macro delay(e::Expr)
         T = :Any
     end
     # If there are symbols, convert them over to expressions
+    isa(syms, Symbol) && (syms = :(($syms,)))
     if isa(syms, Expr)
         syms = [
             ( isa(sym, Symbol) ? :($sym = $sym)
@@ -126,10 +155,6 @@ macro delay(e::Expr)
         return esc(:(let $(syms...); Air.Delay{$T}(() -> $expr) end))
     end
 end
-# Delays are immutable as long as the functions are pure; they are intended for use
-# this way, so we declare them immutable.
-mutability(::Type{Delay}) = Immutable
-mutability(::Type{Delay{T}}) where {T} = Immutable
 # Some base functions.
 Base.getindex(d::Delay{T}) where {T} = begin
     v = d._val
@@ -153,9 +178,7 @@ end
 Base.isready(d::Delay{T}) where {T} = isa(d._val, Some{T})
 Base.setindex!(d::Delay{T}, x...) where {T} = throw(ArgumentError("setindex!: Delays are immutable"))
 Base.isequal(a::Delay{T}, b::Delay{S}) where {T,S} = (a === b) || isequal(a[], b[])
-isequiv(a::Delay{T}, b::Delay{S}) where {T,S} = (a === b) || isequiv(a[], b[])
 Base.hash(d::Delay{T}) where {T} = 0x26c850a2957fa577 + hash(d[])
-equivhash(d::Delay{T}) where {T} = 0x26c850a2957fa577 + equivhash(d[])
 Base.show(io::IO, ::MIME"text/plain", d::Delay{T}) where {T} = begin
     v = d._val
     if isa(v, Some)
@@ -164,28 +187,216 @@ Base.show(io::IO, ::MIME"text/plain", d::Delay{T}) where {T} = begin
         print(io, "$(typeof(d))(<...>)")
     end
 end
+export Delay, @delay
+
+# #memoize #####################################################################
+# First, this is a helper functionthat makes sure than a function-arg
+# declaration has a name.
+_memoize_fixarg(arg::Expr) = (arg.head == :(::) && length(arg.args) == 1
+                              ? Expr(:(::), gensym(), arg.args[1])
+                              : arg)
+# Now the memoize macro itself.
+"""
+    @memoize name(args...) = expr
+    @memoize name(args...) where {...} = expr
+
+`@memoize` is a macro for declaring that the function declaration that follows
+should be memoized in a private dictionary and any pre-calculated value should
+be returned from that dictionary instead of being recalculated. All memoization
+is thread-safe: `expr` is only ever evaluated by one thread at a time, and is
+only ever evaluated once per unique set of arguments.
+
+Note that arguments are memoized according to equality, so the use of mutable
+arguments can result in undefined behavior of those arguments are later changed.
+
+# Examples
+
+```@meta
+DocTestSetup = quote
+    using Air
+end
+```
+
+```jldoctest
+julia> @memoize fib(n::Int) = begin
+           println("Calculating fib(\$n)...")
+           if n < 1
+               return 0
+           elseif n == 1
+               return 1
+           else
+               return fib(n-1) + fib(n - 2)
+           end
+       end::Int
+fib (generic function with 1 method)
+
+julia> fib(5)
+Calculating fib(5)...
+Calculating fib(4)...
+Calculating fib(3)...
+Calculating fib(2)...
+Calculating fib(1)...
+Calculating fib(0)...
+5
+
+julia> fib(6)
+Calculating fib(6)...
+8
+```
+"""
+macro memoize(assgn::Expr)
+    (assgn.head == :(=)) || throw(
+        ArgumentError("memconst must be given an assignment expression"))
+    # Parse the assignment statement.
+    lhs  = assgn.args[1]
+    expr = assgn.args[2]
+    if lhs.head == :call
+        fsym = lhs.args[1]
+        args = [_memoize_fixarg(a) for a in lhs.args[2:end]]
+        lhs = Expr(:call, fsym, args...)
+    elseif lhs.head == :where
+        fsig = lhs.args[1]
+        fsym = fsig.args[1]
+        args = [_memoize_fixarg(a) for a in fsig.args[2:end]]
+        fsig = Expr(:call, fsym, args...)
+        lhs = Expr(:where, fsig, lhs.args[2:end]...)
+    else
+        ArgumentError(
+            "memconst assignment LHS must be a call or where expression"
+        ) |> throw
+    end
+    # See if the expr is tagged; if so, we have a particular type we can use in
+    # the memoization dict.
+    MT = expr.head === :(::) ? expr.head : :Any
+    # Make an expression for the tuple of arguments.
+    argtup = Expr(:tuple, args...)
+    # Symbols we will need in the generated code.
+    s_cache = gensym("cache")
+    s_delay = gensym("delay")
+    s_lock = gensym("lock")
+    s_tmp  = gensym("tmp")
+    s_val  = gensym("val")
+    quote
+        let $s_lock  = ReentrantLock(),
+            $s_cache = Dict{Tuple, $MT}(),
+            $s_delay = Dict{Tuple, Delay{$MT}}(),
+            $s_tmp, $s_val
+            global $lhs = begin
+                lock($s_lock)
+                try
+                    $s_tmp = get($s_cache, $argtup, $s_cache)
+                    if $s_tmp === $s_cache
+                        $s_tmp = get!(() -> Delay{$MT}(() -> $expr),
+                                      $s_delay, $argtup)
+                    else
+                        return $s_tmp
+                    end
+                finally
+                    unlock($s_lock)
+                end
+                # If we get here, we've created or grabbed a delay for the
+                # arguments; go ahead and wait on it (outside of the lock so
+                # that we don't prevent other argument tuples from computing at
+                # the same time).
+                $s_val = $s_tmp[]
+                # Now, re-grab the lock and update the dictionaries.
+                lock($s_lock)
+                try
+                    # Possibly another thread updated things before we got to it.
+                    $s_tmp = get($s_cache, $argtup, $s_cache)
+                    if $s_tmp === $s_cache
+                        # We're the first task to finish the calculation and/or 
+                        # the first to grab the lock. Fix the cache.
+                        $s_cache[$argtup] = $s_val
+                        delete!($s_delay, $argtup)
+                        return $s_val
+                    else
+                        return $s_tmp
+                    end
+                finally
+                    unlock($s_lock)
+                end
+            end
+            $fsym
+        end
+    end |> esc
+end
+export @memoize
 
 # #Promise #####################################################################
 """
     Promise{T}
 
 Promise objects represent placeholders for values that may or may not have been
-delivered yet. This is effectively a Channel object that can only be put! to
-a single time and all take calls on the promise will return that value. Promise
-values can be accessed via the `take()` function (not the `take!()` function) or
-via `p[]` for promise `p`. In both cases, the running thread is suspended until
-a value is delivered.
+delivered yet. This is effectively a `Channel` object that can only be `put!` to
+a single time and all `take` calls on the promise will return that value.
+Promise values can be accessed via the `take()` function (not the `take!()`
+function) or via `p[]` for promise `p`. In both cases, the running thread is
+suspended until a value is delivered.
+
+# Examples
+
+```@meta
+DocTestSetup = quote
+    using Air
+end
+```
+
+```jldoctest
+julia> p = Promise{Symbol}()
+Promise{Symbol}(<...>)
+
+julia> isready(p)
+false
+
+julia> put!(p, :value)
+:value
+
+julia> isready(p)
+true
+
+julia> take(p)
+:value
+
+julia> p[]
+:value
+```
 """
 mutable struct Promise{T}
     _val::Union{Threads.Condition, Some{T}}
 end
 Promise{T}() where {T} = Promise{T}(Threads.Condition())
 Promise() = Promise{Any}()
-# Promises are immutable as long as the functions are pure; they are intended
-# for use this way, so we declare them immutable.
-mutability(::Type{Promise}) = Immutable
-mutability(::Type{Promise{T}}) where {T} = Immutable
 # Some base functions.
+"""
+    take(promise)
+
+Yields the value delivered to the given `Promise` object after suspending the
+current thread to wait for the value if necessary.
+
+See also [`Promise`](@ref), [`put!`](@ref).
+
+
+```@meta
+DocTestSetup = quote
+    using Air
+end
+```
+
+```jldoctest
+julia> p = Promise()
+Promise{Any}(<...>)
+
+julia> put!(p, :done)
+:done
+
+julia> p
+Promise{Any}(:done)
+
+julia> take(p)
+:done
+```
+"""
 take(d::Promise{T}) where {T} = begin
     v = d._val
     if isa(v, Threads.Condition)
@@ -218,19 +429,20 @@ Base.put!(d::Promise{T}, x) where {T} = begin
         throw(ArgumentError("given promise is already fulfilled"))
     end
 end
-isready(d::Promise{T}) where {T} = isa(d._val, Some{T})
+Base.isready(d::Promise{T}) where {T} = isa(d._val, Some{T})
 Base.isequal(a::Promise{T}, b::Promise{S}) where {T,S} = (a === b) || isequal(a[], b[])
-isequiv(a::Promise{T}, b::Promise{S}) where {T,S} = (a === b) || isequiv(a[], b[])
 Base.hash(d::Promise{T}) where {T} = 0x767127451c1e402a + hash(d[])
-equivhash(d::Promise{T}) where {T} = 0x767127451c1e402a + equivhash(d[])
 Base.show(io::IO, ::MIME"text/plain", d::Promise{T}) where {T} = begin
     v = d._val
     if isa(v, Some)
-        print(io, "$(typeof(d))($(v.value))")
+        print(io, "$(typeof(d))(")
+        show(io, v.value)
+        print(io, ")")
     else
         print(io, "$(typeof(d))(<...>)")
     end
 end
+export Promise, take
 
 # #lockall #####################################################################
 _lockall(locks::Vector{T}) where {T} = begin
@@ -256,192 +468,80 @@ _lockall(f::Function, locks::Vector{T}) where {T} = begin
     _lockall(locks)
     # Now we can run the function
     try
-        result = f()
+        return f()
     finally
         for l in locks
             unlock(l)
         end
     end
-    return result
 end
 """
     lockall(f, l1, l2, ...)
 
-Locks all of the lockable objects l1, l2, etc. then runs f, unlocks the objects,
-and returns the return value of f.
+Locks all of the lockable objects `l1`, `l2`, etc. then runs `f`, unlocks the
+objects, and returns the return value of `f()`.
+
+See also: [`ReentrantLock`](@ref)
+
+# Examples
+
+```@meta
+DocTestSetup = quote
+    using Air
+end
+```
+
+```jldoctest
+julia> (r1, r2, r3) = [ReentrantLock() for _ in 1:3]
+       lockall(r1, r2, r3) do; :success end
+:success
+
+julia> lockall([r1, r2, r3]) do; :success end
+:success
+
+julia> lockall((r1, r2, r3)) do; :success end
+:success
+```
 """
+function lockall end
 lockall(f::Function, locks::Vector{T}) where {T,N} = _lockall(f, copy(locks))
 lockall(f::Function, locks::NTuple{N,T}) where {T,N} = _lockall(f, [locks...])
 lockall(f::Function, locks::Vararg{T,N}) where {T,N} = _lockall(f, [locks...])
+export lockall
 
-
-# ==============================================================================
-# Array tools
-
-"""
-    CollectionType
-
-CollectionType(T) should yield the CollectionType trait for the type T. The
-yielded value will be of abstract type CollectionType: one of the objects
-IsCollection(), NonCollection(), or CollectionUnknown(). The last case may
-indicate that whether an item is interpreted as a collection depends on the
-object specifically; in this case, the function iscoll() should be overloaded
-for objects of that type.
-"""
-abstract type CollectionType end
-"""
-    IsCollection
-
-IsCollection is a subtype of CollectionType that is returned from 
-`CollectionType(T)` to indicate that type `T` is always a collection.
-
-Note that `String` and `Symbol` are considered iterable collections by the
-Julia core libraries, but this interface considers both to be non-collections.
-"""
-struct IsCollection <: CollectionType end
-"""
-    NonCollection
-
-NonCollection is a subtype of CollectionType that is returned from 
-`CollectionType(T)` to indicate that type `T` is never a collection.
-
-Note that `String` and `Symbol` are considered iterable collections by the
-Julia core libraries, but this interface considers both to be non-collections.
-"""
-struct NonCollection <: CollectionType end
-"""
-    CollectionUnknown
-
-CollectionUnknown is a subtype of CollectionType that is returned from 
-`CollectionType(T)` to indicate that type `T` may or may not be a collection
-depending on the state of the object, thus `iscoll` should be used to determine
-if it is a collection.
-"""
-struct CollectionUnknown <: CollectionType end
-# Implement the collection types
-CollectionType(::Type{T}) where {T} = CollectionType(Base.IteratorSize(T), T)
-CollectionType(::Base.HasShape{N}, ::Type{T}) where {N,T} = 
-    (N > 0 ? IsCollection() : NonCollection())
-CollectionType(::Base.IsInfinite, ::Type{T}) where {N,T} = IsCollection()
-CollectionType(::Base.SizeUnknown, ::Type{T}) where {N,T} = CollectionUnknown()
-# HasLength is the weird one: stucts have HasLength defined by default, but
-# we don't want to treat them as collections. So instead, we treat HasLength
-# as a single and manually define the acceptable types that implement only
-# HasLength but are in fact 
-CollectionType(::Base.HasLength, ::Type{T}) where {T} = NonCollection()
-CollectionType(::Type{T}) where {T <: AbstractArray} = IsCollection()
-CollectionType(::Type{T}) where {T <: AbstractSet} = IsCollection()
-CollectionType(::Type{T}) where {T <: AbstractDict} = IsCollection()
-"""
-    iscolltype(T)
-
-Yields true if T is a collection type, according to the Air type system. See
-also `iscoll()`.
-"""
-iscolltype(x) = false
-iscolltype(::Type{T}) where {T} = iscolltype(CollectionType(T), T)
-iscolltype(::IsCollection, T) = true
-iscolltype(::NonCollection, T) = false
-iscolltype(::CollectionUnknown, ::Type{T}) where {T} =
-    error("type $T did not overload iscolltype")
-"""
-    iscoll(x)
-
-Yields true if x is a collection, according to the Air type system, and false
-otherwise. Collections in Air are anything that in Julia implements a HasLength
-or HasShape{N>0} returrn value from `IteratorSize()` with the exception of 
-`String`s and `Symbol`s, which are considered singleton items. Objects whose
-collection status are for some reason unknown are considered to be
- non-collections.
-"""
-iscoll(x::T) where {T} = iscolltype(T)
-"""
-    issingletype()
-
-Yields true if the given object is a singleton type, according to the Air type
-system, and false otherwise. The issingle(x) function is equivalent to
-!iscolltype(x).
-"""
-issingletype(T) = !iscolltype(T)
-"""
-    issingle()
-
-Yields true if the object is a singleton, according to the Air type system, and
-false otherwise. The issingle(x) function is equivalent to !iscoll(x).
-"""
-issingle(x) = !iscoll(x)
-
-# This code not yet fully developed; possibbly not really worth it to fix.
-#"""
-#    isflat(x)
-#
-#Yields true if x is as flat as it can be and false if a flattened version would
-#be flatter than the current object x.
-#"""
-#isflat(x::T) where {T} = true
-#isflat(x::Q) where {T, N, Q <: AbstractArray{T,N}} = begin
-#    (N > 1) && return false
-#    (length(x) == 0) && return true
-#    issingletype(T) && return true
-#    error("not yet implemented")
-#end
-#"""
-#    flateltype(T::Type)
-#
-#Yields the element type that would result from `flat(x)` where x is of type `T`.
-#"""
-#flateltype(::Type{T}) where {T} = _flateltype(CollectionType(T), T)
-#_flateltype(::NonCollection, ::Type{T}) where {T} = T
-#_flateltype(c::IsCollection, ::Type{T}) where {T} =
-#    _flateltype(c, Base.IteratorEltype(T), T)
-#_flateltype(c::IsCollection, ::Base.HasEltype, ::Type{T}) where {T} =
-#    _flateltype(elttype(T))
-#_flateltype(c::IsCollection, ::Base.EltypeUnknown, ::Type{T}) where {T} = T
-#"""
-#    flatlength(x)
-#
-#Yields the length of the Array object that would be yielded by `flat(x)`.
-#"""
-#flatlength(x::T) where {T} = _flatlength(CollectionType(T), x)
-#_flatlength(::NonCollection, x::T) where {T} = 1
-#_flatlength(c::IsCollection, x::T) where {T} =
-#    _flatlength(c, flateltype(T), x)
-#_flatlength(::IsCollection, ::Base.HasEltype
-#
-#    """
-#    arraywrite!(dst::Array, src::AbstractArray, i0::Int=1)
-#
-#Writes the contents of the entire given source array `src` into the destination
-#array `dst`, with the first element of `dst` overwritten being `dst[i0]`.
-#Yields the number of array elements of `dst` that were written.
-#"""
-#function arraywrite!(dst::Array{T,N}, src::AA, i0::Int=1) where {
-#    T,N,S,M,
-#    AA<:AbstractArray{S,M}}
-#    m = length(sc)
-#    dst[i0:i0+m] = src[:]
-#    return m
-#end
-#function arraywrite!(dst::Array{T,N}, src::AA, i0::Int=1) where {
-#    T,N,S,M,
-#    AA<:AbstractArray{T,M}}
-#    m = length(sc)
-#    dst[i0:i0+m] = src[:]
-#    return m
-#end
-#function arraywrite!(dst::Array{T,N}, src::AA, i0::Int=1) where {
-#    T,N,S,M,R,L,
-#    SubAA<:AbstractArray{R,L},
-#    AA<:AbstractArray{SubAA,M}}
-#    ii = i0
-#    for aa in src
-#        ii += arraywrite!(dst, aa, ii)
-#    end
-#    return ii - i0
-#end
-#arrayjoin(itr, shape::NTuple{N,Int}, ::Type{T}=Any) where {T,N} = begin
-#    out = PArray{T}(undef, shape)
-#    arraywrite!(out, itr)
-#    return out
-#end
-#arrayjoin(itr::AA)
+# #_to_pairs ###################################################################
+# A utility function for turning a list of pairs/tuples into a list of pairs.
+_to_pairs(kvs) = begin
+    if length(kvs) == 0
+        K = Any
+        V = Any
+        if Base.IteratorEltype(kvs) isa Base.HasEltype
+            ET = Base.eltype(itr)
+            if isa(ET, DataType)
+                if ET <: Pair
+                    K = ET.parameters[1]
+                    V = ET.parameters[2]
+                elseif ET <: Tuple && length(ET.parameters) == 2
+                    K = ET.parameters[1]
+                    V = ET.parameters[2]
+                end
+            end
+        end
+        return Pair{K,V}[]
+    else
+        ks = []
+        vs = []
+        for kv in kvs
+            if kv isa Pair || (kv isa Tuple && length(kv) == 2)
+                push!(ks, kv[1])
+                push!(vs, kv[2])
+            else
+                msg = "EquivDict: arg must be iterator of tuples or pairs"
+                throw(ArgumentError(msg))
+            end
+        end
+        K = typejoin(map(typeof, ks)...)
+        V = typejoin(map(typeof, vs)...)
+        return Pair{K,V}[Pair{K,V}(k,v) for (k,v) in zip(ks,vs)]
+    end
+end

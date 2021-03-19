@@ -37,24 +37,6 @@
         @test (d[:b], d[:a]) == (0, 1)
         @test (d[:a], d[:b]) == (1, 0)
     end
-    @testset "LazyEquivDict" begin
-        compare_test(Air.LazyEquivDict{Symbol,Real}(),
-                     Air.EquivDict{Symbol,Real}(),
-                     syms, nums, n)
-        compare_test(Air.LazyEquivDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
-                     Air.EquivDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
-                     syms, nums, n)
-        d = Air.LazyEquivDict{Symbol,Int}(:a => Delay{Int}(delayfn1),
-                                          :b => Delay{Int}(delayfn2))
-        fnval = 0
-        @test (d[:a], d[:b]) == (1, 2)
-        @test (d[:b], d[:a]) == (2, 1)
-        d = Air.LazyEquivDict{Symbol,Int}(:a => Delay{Int}(delayfn1),
-                                          :b => Delay{Int}(delayfn2))
-        fnval = 0
-        @test (d[:b], d[:a]) == (0, 1)
-        @test (d[:a], d[:b]) == (1, 0)
-    end
     @testset "LazyDict" begin
         compare_test(Air.LazyDict{Symbol,Real}(),
                      Base.Dict{Symbol,Real}(),

@@ -55,10 +55,6 @@ end
             end
             compare_test(Air.PIdSet{Symbol}([:b, :d, :e]), idset, syms, n)
         end
-        @testset "PEquivSet" begin
-            compare_test(Air.PEquivSet{Symbol}(), Air.EquivSet{Symbol}(), syms, n)
-            compare_test(Air.PEquivSet{Symbol}([:b, :d, :e]), Air.EquivSet{Symbol}([:b, :d, :e]), syms, n)
-        end
         @testset "PSet" begin
             compare_test(Air.PSet{Symbol}(), Set{Symbol}(), syms, n)
             compare_test(Air.PSet{Symbol}([:b, :d, :e]), Set{Symbol}([:b, :d, :e]), syms, n)

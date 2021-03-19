@@ -6,12 +6,12 @@ import Base.delete!
 import Base.isready
 
 @testset "Air.jl" begin
-    include("API.jl")
-    include("PArray.jl")
-    include("PSet.jl")
-    include("PDict.jl")
-    include("LazyDict.jl")
-    include("PWSet.jl")
-    include("PWDict.jl")
+    include("api.jl")
+    include("parray.jl")
+    include("pset.jl")
+    include("pdict.jl")
+    include("lazydict.jl")
+    include("pwset.jl")
+    include("pwdict.jl")
     include("TX.jl")
 end

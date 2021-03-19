@@ -44,7 +44,6 @@
         a = Array(reshape(1:200, (20,10)))
         p = PArray(a)
         @test p == a
-        @test !isequiv(p, a)
         @test p[5,8] == a[5,8]
         @test p[:,4] == a[:,4]
         @test p[9,:] == a[9,:]
@@ -59,7 +58,6 @@
         a = Array(reshape(1:1000, (20,10,5)))
         p = PArray(a)
         @test p == a
-        @test !isequiv(p, a)
         @test p[5,8,2] == a[5,8,2]
         @test p[:,4,1] == a[:,4,1]
         @test p[9,:,3] == a[9,:,3]

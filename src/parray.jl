@@ -1,7 +1,6 @@
 ################################################################################
-# PArrray.jl
-# The Persistent Array type and related types such as TArray (the transient
-# array type).
+# parray.jl
+# The Persistent Array type, composed using the PTree type.
 #
 # @author Noah C. Benson
 #
@@ -40,6 +39,30 @@ PArrays can create duplicates of themselves with finite edits in log-time.
 PArrays have a similar interface as Arrays, but instead of the functions
 `push!`, `pop!`, and `setindex!`, PArrays use `push`, `pop`, and `setindex`.
 PArrays also have efficient implementations of `pushfirst` and `popfirst`.
+
+# Examples
+
+```@meta
+DocTestSetup = quote
+    using Air
+end
+```
+
+```jldoctest
+julia> PArray()
+0-element PArray{Any,1}
+
+julia> u = PArray{Int,1}([1,2])
+2-element PArray{Int64,1}:
+ 1
+ 2
+
+julia> push(u, 3)
+3-element PArray{Int64,1}:
+ 1
+ 2
+ 3
+```
 """
 struct PArray{T,N} <: AbstractPArray{T,N}
     # The initial element of the list; the tree is basically an enormous
@@ -52,22 +75,22 @@ struct PArray{T,N} <: AbstractPArray{T,N}
     # The default value, if any (for sparse arrays).
     _default::Union{Nothing, Tuple{T}}
 end
-mutability(::Type{PArray}) = Immutable()
-mutability(::Type{PArray{T,N}}) where {T,N} = Immutable()
 
 
 # ==============================================================================
 # PArray Constructors
 
-PArray{T,N}(default::S, size::NTuple{N,<:Integer}) where {T,N,S} = begin
-    default = isa(default, UndefInitializer) ? nothing : Tuple{T}(default)
+PArray{T,N}(default, size::NTuple{N,<:Integer}) where {T,N} = begin
+    default = Tuple{T}(default)
     return PArray{T,N}(0x0, LinearIndices(size), PTree{T}(), default)
 end
+PArray{T,N}(::UndefInitializer, size::NTuple{N,<:Integer}) where {T,N} =
+    return PArray{T,N}(0x0, LinearIndices(size), PTree{T}(), nothing)
 PArray{T,N}(default::S, size::Vararg{<:Integer,N}) where {T,N,S} = begin
-    return PArray{T,N}(dflt, NTuple{N,Int}(size))
+    return PArray{T,N}(default, NTuple{N,Int}(size))
 end
-PArray{T,N}(dflt::S, size::Vector{<:Integer}) where {T,N,S} = begin
-    return PArray{T,N}(dflt, NTuple{N,Int}(size))
+PArray{T,N}(default::S, size::Vector{<:Integer}) where {T,N,S} = begin
+    return PArray{T,N}(default, NTuple{N,Int}(size))
 end
 PArray(default::T, size::NTuple{N,<:Integer}) where {T,N} = PArray{T,N}(default, size)
 PArray(default::T, size::Vararg{<:Integer,N}) where {T,N} = begin
@@ -77,61 +100,46 @@ PArray(default::T, size::Vector{<:Integer}) where {T,N} = begin
     return PArray{T,N}(default, NTuple{N,Int}(size))
 end
 PArray{T,N}(a::AbstractArray{S,N}) where {T,N,S} = begin
-    # #TODO: rewrite using TArray or TTree
-    tree = PTree{T}()
-    k = HASH_T(0x0)
-    for x in a
-        k += 0x1
-        tree = setindex(tree, x, k)
-    end
-    return PArray{T,N}(0x0, _lindex(size(a)...), tree, nothing)
+    tree = PTree{T}(a)
+    return PArray{T,N}(HASH_T(0x0), _lindex(size(a)...), tree, nothing)
 end
 PArray{T,N}(p::PArray{T,N}) where {T,N} = p
 PArray{T,N}() where {T,N} = PArray{T,N}(undef, (0, [1 for _ in 2:N]...))
 PArray(a::AbstractArray{T,N}) where {T,N} = PArray{T,N}(a)
 PArray(p::PArray{T,N}) where {T,N} = p
 PArray() = PArray{Any,1}()
-# #TODO: psparse() method for making PArrays similar to SparseArrays.sparse().
 
 
 # ==============================================================================
 # PArray aliases
 
-# Declare some aliases of PArray; this is most efficient using a macro to
-# generate the basic code block.
-macro _declare_parray_alias(name::Symbol, d::Int)
-    sname = String(name)
-    docstr = ["    $(sname){T}",
-              "",
-              "$(sname){T} is an alias for PArray{T,$(d)}"]
-    docstr = join(docstr, "\n")
-    docstr = join(["\n", docstr, "\n"])
-    return quote
-        $docstr
-        const $(name){T} = PArray{T,$(d)} where {T}
-        function $(name)(a::AbstractArray{T,$(d)}) where {T}
-            return PArray{T,$(d)}(a)
-        end
-        function $(name)(a::PArray{T,$(d)}) where {T}
-            return a
-        end
-        function $(name)()
-            return PArray{Any,$(d)}()
-        end
-    end |> esc
-end
+"""
+    PVector{T}
 
-@_declare_parray_alias P1Tensor 1
-@_declare_parray_alias P2Tensor 2
-@_declare_parray_alias P3Tensor 3
-@_declare_parray_alias P4Tensor 4
-@_declare_parray_alias P5Tensor 5
-@_declare_parray_alias P6Tensor 6
-#@_declare_parray_alias PVector 1
-#@_declare_parray_alias PMatrix 2
+An alias for `PArray{T,1}`, representing a persistent vector.
+"""
 const PVector{T} = PArray{T,1} where {T}
-const PMatrix{T} = PArray{T,2} where {T}
+PVector(default::T, len::II) where {T,II<:Integer} = PArray{T,1}(default, (len,))
+PVector(default::T, len::Tuple{II}) where {T,II<:Integer} =
+    PArray{T,1}(default, len)
+PVector(a::AbstractArray{T,1}) where {T} = PArray{T,1}(a)
+PVector(p::PArray{T,1}) where {T,N} = p
+PVector() = PArray{Any,1}()
 
+"""
+    PMatrix{T}
+
+An alias for `PArray{T,2}`, representing a persistent matrix.
+"""
+const PMatrix{T} = PArray{T,2} where {T}
+PMatrix(args...) = PArray{Any,2}(args...)
+PMatrix(default::T, rs::II, cs::JJ) where {T,II<:Integer,JJ<:Integer} =
+    PArray{T,1}(default, (rs,cs))
+PMatrix(default::T, sz::Tuple{<:Integer,<:Integer}) where {T} =
+    PArray{T,1}(default, len)
+PMatrix(a::AbstractArray{T,2}) where {T} = PArray{T,1}(a)
+PMatrix(p::PArray{T,2}) where {T,N} = p
+PMatrix() = PArray{Any,2}()
 
 # ==============================================================================
 # SparseArrays methods.
@@ -144,6 +152,36 @@ of the number that are zero. This is different from the sparse-array library
 only in that persistent arrays support arbitrary default values instead of
 supporting only the value zero. Thus this counts explicit values instead of
 non-zero values.
+
+# Examples
+
+```@meta
+DocTestSetup = quote
+    using Air, SparseArrays
+end
+```
+
+```jldoctest
+julia> u = PVector{Int}(0, (4,))
+4-element PArray{Int64,1}:
+ 0
+ 0
+ 0
+ 0
+
+julia> v = setindex(u, 2, 3)
+4-element PArray{Int64,1}:
+ 0
+ 0
+ 2
+ 0
+
+julia> nnz(v)
+1
+
+julia> nnz(u)
+0
+```
 """
 SparseArrays.nnz(u::PArray{T,N}) where {T,N} = length(u._tree)
 _dropzeros(p::PTree{T}, ::Nothing) where {T} = p
@@ -154,15 +192,51 @@ _dropzeros(p::PTree{T}, df::Tuple{T}) where {T} = begin
             p = delete(p, k)
         end
     end
+
     return p
 end
 """
     dropzeros(p::PArray)
 
-Drops explicit values of the given array p that are equal to the array's default
-value. This differs from the SparseArrays implementation of dropzeros() only in
-that PArrays allow arbitrary default values, while SparseArrays allows only the
-default value of zero.
+Drops explicit values of the given array `p` that are equal to the array's
+default value. This differs from the SparseArrays implementation of dropzeros()
+only in that `PArray`s allow arbitrary default values, while `SparseArray`s
+allow only the default value of zero.
+
+Note that under most circumstances, a `PArrray` will not encode explicit zeros,
+so this function typically returns the object `p` untouched.
+
+See also: [`nnz`](@ref), [`findnz`](@ref), [`PArray`](@ref).
+
+# Examples
+
+```@meta
+DocTestSetup = quote
+    using Air, SparseArrays
+end
+```
+
+```jldoctest
+julia> u = PVector{Int}([0,1,2,3])
+4-element PArray{Int64,1}:
+ 0
+ 1
+ 2
+ 3
+
+julia> dropzeros(u) === u
+true
+
+julia> v = setindex(u, 0, 3)
+4-element PArray{Int64,1}:
+ 0
+ 1
+ 0
+ 3
+
+julia> dropzeros(v) === v
+true
+```
 """
 SparseArrays.dropzeros(p::PArray{T,N}) where {T,N} = begin
     t = _dropzeros(p._tree, p._default)
@@ -174,43 +248,118 @@ SparseArrays.dropzeros!(p::PArray{T,N}) where {T,N} = error(
 """
     findnz(p::PArray)
 
-Yields the explicitly set elements of the given persistent array p. This method
-is identical to the typical SparseArrays implementation of findnz() except that
-it respects the arbitrary default-value that persistent arrays are allowed to
-have rather than assuming that this value is a zero, as is done in the
-SparseArrays library.
+Yields the explicitly set elements of the given persistent array `p`. This
+method is identical to the typical SparseArrays implementation of findnz()
+except that it respects the arbitrary default-value that persistent arrays are
+allowed to have rather than assuming that this value is a zero, as is done in
+the `SparseArray`s library.
+
+Note that under most circumstances, a `PArray` will not encode explicit zeros,
+so this function typically returns indices and values for all values that aren't
+equal to the default value of the array `p` (which is zero by default).
+
+See also: [`nnz`](@ref), [`PArray`](@ref).
+
+# Examples
+
+```@meta
+DocTestSetup = quote
+    using Air, SparseArrays
+end
+```
+
+```jldoctest
+julia> u = PVector([0,10,20,30])
+4-element PArray{Int64,1}:
+  0
+ 10
+ 20
+ 30
+
+julia> findnz(u)
+([1, 2, 3, 4], [0, 10, 20, 30])
+
+julia> u = setindex(PVector(0.0, 4), 20, 2)
+4-element PArray{Float64,1}:
+  0.0
+ 20.0
+  0.0
+  0.0
+
+julia> findnz(u)
+([2], [20.0])
+```
 """
 SparseArrays.findnz(p::PArray{T,N}) where {T,N} = begin
     sz = size(p._index)
     ndims = length(sz)
-    n = nnz(p)
+    n = SparseArrays.nnz(p)
     iilists = [Vector{Int}(undef, n) for _ in 1:N]
     vals = Vector{T}(undef, n)
-    cis = CartesianIndices(Tuple([p._size[k] for k in p._dimorder]...))
+    cis = CartesianIndices(size(p))
     for (elno,(k,v)) in enumerate(p._tree)
-        ci = cis[Int(k) + 1]               
-        for (iilist,oo) in zip(iilists,ci)
+        ci = cis[Int(k - p._i0) + 1]
+        for (iilist,oo) in zip(iilists,Tuple(ci))
             iilist[elno] = oo
         end
         vals[elno] = v
     end
-    return Tuple(iilists) + (vals,)
+    return (iilists..., vals)
 end
 """
     nonzeros(p::PArray)
 
-Yields the explicitly set values of the given persistent array p. This method
-is identical to the typical SparseArrays implementation of nonzeros() except
+Yields the explicitly set values of the given persistent array `p`. This method
+is identical to the typical `SparseArrays` implementation of `nonzeros()` for 
+its sparse array classes except that it returns a persistent array of values and
 that it respects the arbitrary default-value that persistent arrays are allowed
 to have rather than assuming that this value is a zero, as is done in the
-SparseArrays library.
-"""
-SparseArrays.nonzeros(p::PArray{T,N}) where {T,N} = T[v for (k,v) in p._tree]
-"""
-    issparse(p::PArray)
+`SparseArrays` library.
 
-Yields true, as PArrays are implicitly sparse.
+Note that because `PArray`s don't typically store values equal to their default
+value explicitly, this will typically yield a vector of every non-default value
+in the array.
+
+See also: [`findnz`](@ref), [`nnz`](@ref), [`PArray`](@ref).
+
+# Examples
+
+```@meta
+DocTestSetup = quote
+    using Air, SparseArrays
+end
+```
+
+```jldoctest
+julia> u = PVector([0,10,20,30])
+4-element PArray{Int64,1}:
+  0
+ 10
+ 20
+ 30
+
+julia> nonzeros(u)
+4-element PArray{Int64,1}:
+  0
+ 10
+ 20
+ 30
+
+julia> u = setindex(PVector(0.0, 4), 20, 2)
+4-element PArray{Float64,1}:
+  0.0
+ 20.0
+  0.0
+  0.0
+
+julia> nonzeros(u)
+1-element PArray{Float64,1}:
+ 20.0
+```
 """
+SparseArrays.nonzeros(p::PArray{T,N}) where {T,N} =
+    PVector{T}(T[v for (k,v) in p._tree])
+# PArrays are always considered sparse.
 SparseArrays.issparse(::PArray) = true
 
 
@@ -253,7 +402,7 @@ Base.getindex(u::PArray{T,N}, k::Vararg{Int,N}) where {T,N} = begin
     end
     (k < 1) && throw(BoundsError(u, k))
     (k > length(u)) && throw(BoundsError(u, k))
-    return _parray_get(u._tree, HASH_T(k) + u._i0, u._default)
+    return _parray_get(u._tree, HASH_T(k - 1) + u._i0, u._default)
 end
 Base.setindex!(u::PArray{T,N}, v, k::Int) where {T,N} = error(
     "setindex!: object of type $(typeof(u)) is immutable; see setindex()")
@@ -276,7 +425,6 @@ _lindex(u::Vararg{Int,N}) where {N} = LinearIndices{N,NTuple{N,Base.OneTo{Int}}}
     ((Base.OneTo{Int}.(u))...,))
 Base.permutedims(u::PArray{T,N}, dims::NTuple{N,Int}) where {T,N} = begin
     # This is actually pretty easy, code-wise:
-    # #TODO: use TArray here
     v = PVector{T}(0x0, LinearIndices(()), PTree{T}(), u._default)
     for k in permutedims(u._index, dims)
         v = push(v, u[k])
@@ -310,7 +458,7 @@ setindex(u::PArray{T,N}, v::S, k::Vararg{Idx,N}) where {T,N,S,Idx<:Integer} = be
     n = length(u)
     (k > n + 1) && throw(BoundsError(u,k))
     (N == 1) && (k > n) && return push(u, v)
-    ii = u._i0 + HASH_T(k)
+    ii = u._i0 + HASH_T(k - 1)
     t = (_eqdefault(u._default, v) ? delete(u._tree, ii)
                                    : setindex(u._tree, v, ii))
     return t === u._tree ? u : PArray{T,N}(u._i0, u._index, t, u._default)
@@ -321,7 +469,6 @@ setindex(u::PArray{T,N}, v::S, ii...) where {T,N,S} = begin
     if isa(pp, Pair)
         return setindex(u, pp[2], pp[1])
     else
-        # #TODO: Use TArray for this
         for (k,v) in pp
             u = setindex(u, v, k)
         end
@@ -334,7 +481,7 @@ push(u::PVector{T}, x::S) where {T,S} = begin
     if _eqdefault(u._default, x)
         tree = u._tree
     else
-        ii   = u._i0 + HASH_T(n + 1)
+        ii   = u._i0 + HASH_T(n + 1 - 1)
         tree = setindex(u._tree, x, ii)
     end
     index = _lindex(n+1)
@@ -345,7 +492,7 @@ pushfirst(u::PVector{T}, x::S) where {T,S} = begin
     if _eqdefault(u._default, x)
         tree = u._tree
     else
-        tree = setindex(u._tree, x, u._i0)
+        tree = setindex(u._tree, x, u._i0 - 0x1)
     end
     index = _lindex(n+1)
     return PVector{T}(u._i0 - 0x1, index, tree, u._default)
@@ -353,33 +500,15 @@ end
 pop(u::PVector{T}) where {T} = begin
     n = length(u)
     (n == 0) && throw(ArgumentError("PArray must be non-empty"))
-    ii = u._i0 + HASH_T(n)
+    ii = u._i0 + HASH_T(n - 1)
     tree = delete(u._tree, ii)
     return PVector{T}(u._i0, _lindex(n-1), tree, u._default)
 end
 popfirst(u::PVector{T}) where {T} = begin
     n = length(u)
     (n == 0) && throw(ArgumentError("PArray must be non-empty"))
-    tree = delete(u._tree, u._i0 + 0x1)
+    tree = delete(u._tree, u._i0)
     return PVector{T}(u._i0 + 0x1, _lindex(n-1), tree, u._default)
 end
-isequiv(u::AS, v::AT) where {
-    S,T,N,
-    AS <: AbstractPArray{S,N},
-    AT <: AbstractPArray{T,N}
-} = begin
-    (u === v) && return true
-    (size(u) == size(v)) || return false
-    for (a,b) in zip(u, v)
-        isequiv(a, b) || return false
-    end
-    return true
-end
-equivhash(u::AA) where {T,N,AA<:AbstractPArray{T,N}} = begin
-    h = equivhash(size(u))
-    for x in u
-        h *= 0x1f
-        h += equivhash(x)
-    end
-    return h
-end
+
+export PArray, PVector

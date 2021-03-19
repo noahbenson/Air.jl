@@ -39,14 +39,6 @@ end
                      Base.IdDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
                      syms, nums, n)
     end
-    @testset "PEquivDict" begin
-        compare_test(Air.PEquivDict{Symbol,Real}(),
-                     Air.EquivDict{Symbol,Real}(),
-                     syms, nums, n)
-        compare_test(Air.PEquivDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
-                     Air.EquivDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
-                     syms, nums, n)
-    end
     @testset "PDict" begin
         compare_test(Air.PDict{Symbol,Real}(),
                      Base.Dict{Symbol,Real}(),
