@@ -5,14 +5,14 @@ import Pkg
 (pwd() == @__DIR__) || cd(@__DIR__)
 
 push!(LOAD_PATH, pwd())
+air_package = Pkg.PackageSpec(path=pwd())
+Pkg.develop(air_package)
+Pkg.instantiate()
 
 using Air
 
 #Pkg.activate(@__DIR__)
 
-air_package = Pkg.PackageSpec(path=pwd())
-Pkg.develop(air_package)
-Pkg.instantiate()
 
 jobs = Symbol[]
 if length(ARGS) == 0
