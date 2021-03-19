@@ -174,16 +174,20 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest
+```jldoctest; filter=r"LazyDict{Any, ?Any}()"
 julia> LazyDict()
 LazyDict{Any,Any}()
+```
 
+```jldoctest; filter=r"LazyDict{Symbol, ?Real} with 3 entries:"
 julia> LazyDict(:a => 1, :b => 2, :c => 12.8)
 LazyDict{Symbol,Real} with 3 entries:
   :c => 12.8
   :a => 1
   :b => 2
+```
 
+```jldoctest; filter=r"LazyDict{Symbol, ?Float64} with 3 entries:"
 julia> d = LazyDict{Symbol,Float64}(:a => 1, :b => 2, :c => 12.8)
 LazyDict{Symbol,Float64} with 3 entries:
   :c => 12.8
@@ -220,16 +224,20 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest
+```jldoctest; filter=r"LazyIdDict{Any, ?Any}()"
 julia> LazyIdDict()
 LazyIdDict{Any,Any}()
+```
 
+```jldoctest; filter=r"LazyIdDict{Symbol, ?Real} with 3 entries:"
 julia> LazyIdDict(:a => 1, :b => 2, :c => 12.8)
 LazyIdDict{Symbol,Real} with 3 entries:
-  :c => 12.8
-  :a => 1
   :b => 2
+  :a => 1
+  :c => 12.8
+```
 
+```jldoctest; filter=r"LazyIdDict{Symbol, ?Float64} with 3 entries:"
 julia> d = LazyIdDict{Symbol,Float64}(:a => 1, :b => 2, :c => 12.8)
 LazyIdDict{Symbol,Float64} with 3 entries:
   :c => 12.8

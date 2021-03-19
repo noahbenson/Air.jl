@@ -154,7 +154,9 @@ end
 ```jldoctest
 julia> setindex((:a,:b,:e,:d), :c, 3)
 (:a, :b, :c, :d)
+```
 
+```jldoctest; filter=r"4-element (Array{Symbol,1}|Vector{Symbol}):"
 julia> u = [:a,:b,:e,:d]; v = setindex(u, :c, 3)
 4-element Array{Symbol,1}:
  :a
@@ -167,7 +169,9 @@ false
 
 julia> u[3]
 :e
+```
 
+```jldoctest; filter=[r"Dict{Any, ?Any} with 1 entry:", r"Dict{Any, ?Any}()"]
 julia> d1 = Dict(); setindex(d1, 10, :a)
 Dict{Any,Any} with 1 entry:
   :a => 10
@@ -203,10 +207,12 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest
+```jldoctest; filter=r"5-element (Array{Symbol,1}|Vector{Symbol}):"
 julia> push((:a,:b,:c,:d), :e)
 (:a, :b, :c, :d, :e)
+```
 
+```jldoctest; filter=r"5-element (Array{Symbol,1}|Vector{Symbol}):"
 julia> u = [:a,:b,:c,:d]; push(u, :e)
 5-element Array{Symbol,1}:
  :a
@@ -214,14 +220,18 @@ julia> u = [:a,:b,:c,:d]; push(u, :e)
  :c
  :d
  :e
+```
 
+```jldoctest
 julia> s = Set([:a, :b, :c]); push(s, :d)
 Set{Symbol} with 4 elements:
   :a
   :b
   :d
   :c
+```
 
+```jldoctest; filter=r"Dict{Symbol, ?Int64} with 4 entries:"
 julia> d = Dict(:a => 1, :b => 2); push(d, :c => 3, :d => 4)
 Dict{Symbol,Int64} with 4 entries:
   :a => 1
@@ -511,7 +521,7 @@ julia> length(u)
 4
 ```
 
-```jldoctest; filter=r"5-element (BitArray{1}|Vector{Bool}|Array{Bool,1}):"
+```jldoctest; filter=r"5-element (BitArray{1}|BitVector):"
 julia> b = BitArray([0,0,0,0]); insert(b, 2, 1)
 5-element BitArray{1}:
  0
@@ -655,18 +665,24 @@ end
 ```jldoctest
 julia> delete((:a,:b,:c,:d), 2)
 (:a, :c, :d)
+```
 
+```jldoctest; filter=r"3-element (Array{Symbol,1}|Vector{Symbol}):"
 julia> u = [:a,:b,:c,:d]; delete(u, 1)
 3-element Array{Symbol,1}:
  :b
  :c
  :d
+```
 
+```jldoctest
 julia> s1 = Set([:a,:b,:c,:d]); s2 = delete(s1, :d); (:d in s1, :d in s2)
 (true, false)
+```
 
+```jldoctest; filter=r"4-element (BitArray{1}|BitVector):"
 julia> b = BitArray([0,0,0,1,0]); delete(b, 4)
-4-element Array{Bool,1}:
+4-element BitArray{1}:
  0
  0
  0
@@ -680,9 +696,10 @@ delete(d::AbstractDict{K,V}, k::J) where {K,V,J} = delete!(copy(d), k)
 delete(d::AbstractSet{V}, k::U) where {V,U} = delete!(copy(d), k)
 delete(u::AbstractVector{T}, k::K) where {T,K<:Integer} = begin
     n = length(u)
+    V = typeof(u)
     (n == 0 || k < 0 || k > n) && throw(
         ArgumentError("delete: $k is out of range for Vector of length $n"))
-    out = Vector{T}(undef, n - 1)
+    out = V(undef, n - 1)
     (k > 1) && copyto!(out, 1, u, 1, k - 1)
     (k < n) && copyto!(out, k, u, k + 1, n - k)
     return out

@@ -280,7 +280,9 @@ julia> u = PVector([0,10,20,30])
 
 julia> findnz(u)
 ([1, 2, 3, 4], [0, 10, 20, 30])
+```
 
+```jldoctest; filter=r"4-element (PArray{Float64,1}|PVector{Float64}):"
 julia> u = setindex(PVector(0.0, 4), 20, 2)
 4-element PArray{Float64,1}:
   0.0
@@ -346,7 +348,9 @@ julia> nonzeros(u)
  10
  20
  30
+```
 
+```jldoctest; filter=r"[14]-element (PArray{Float64,1}|PVector{Float64}):"
 julia> u = setindex(PVector(0.0, 4), 20, 2)
 4-element PArray{Float64,1}:
   0.0

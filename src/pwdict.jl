@@ -202,7 +202,7 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest
+```jldoctest; filter=r"PWDict{Symbol, ?Int64, ?Float64} with 3 entries:"
 julia> PWDict{Symbol,Int}(:a => (1,0.1), :b => (2, 0.2), :c => (3, 0.3))
 PWDict{Symbol,Int64,Float64} with 3 entries:
   :c => 3
@@ -233,7 +233,7 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest
+```jldoctest; filter=r"PWIdDict{Symbol, ?Int64, ?Float64} with 3 entries:"
 julia> PWIdDict{Symbol,Int}(:a => (1,0.1), :b => (2, 0.2), :c => (3, 0.3))
 PWIdDict{Symbol,Int64,Float64} with 3 entries:
   :c => 3

@@ -204,7 +204,7 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest
+```jldoctest; filter=r"PWSet{Symbol, ?Float64} with 3 elements:"
 julia> d = PWSet{Symbol}(:a => 1.0, :b => 2.0, :c => 3.0)
 PWSet{Symbol,Float64} with 3 elements:
   :c
@@ -245,7 +245,7 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest
+```jldoctest; filter=r"PWSet{Symbol, ?Float64} with 3 elements:"
 julia> d = PWSet{Symbol}(:a => 1.0, :b => 2.0, :c => 3.0)
 PWSet{Symbol,Float64} with 3 elements:
   :c
