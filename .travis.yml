@@ -6,15 +6,15 @@ os:
 julia:
   - 1.5
   - nightly
-matrix:
-  allow_failures:
-    - julia: nightly
-  fast_finish: true
+#matrix:
+#  allow_failures:
+#    - julia: nightly
+#  fast_finish: true
 notifications:
   email: false
-after_success:
-  - julia make.jl codecov
 jobs:
+  allow_failures:
+    - julia: nightly
   include:
     - stage: Documentation
       julia: 1.5
@@ -25,7 +25,8 @@ jobs:
       #    Pkg.instantiate();
       #    include("docs/make.jl");'
       after_success: skip
+  fast_finish: true
 script:
-  #- julia -e 'using Pkg; Pkg.clone(pwd());'
-  #- travis_wait julia --code-coverage -e 'using Pkg; Pkg.test("Air");'
   - travis_wait julia --code-coverage make.jl test
+after_success:
+  - julia make.jl codecov
