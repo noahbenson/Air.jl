@@ -12,6 +12,7 @@ using Air
 
 air_package = Pkg.PackageSpec(path=pwd())
 Pkg.develop(air_package)
+Pkg.instantiate()
 
 jobs = Symbol[]
 if length(ARGS) == 0
