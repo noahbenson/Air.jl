@@ -29,7 +29,7 @@ the `first()` function and removed first by the `pop()` function. Note, however,
 that the relative weights are still used by the `rand` function regardless of
 the ordering function, so negative values cannot be used.
 
-See also: [`PWSet`](@ref), [`PWDict`](@ref), [`pop`](@ref), [`first`](@ref).
+See also: [`PWSet`](@ref), [`PWDict`](@ref), [`pop`](@ref), `Base.first`.
 """
 struct PHeap{T,W<:Number,F<:Function,D<:AbstractPDict{T,Int}}
     _heap::PVector{Tuple{T,W,W}} # value, weight, total subtree weight

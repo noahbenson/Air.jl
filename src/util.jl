@@ -374,7 +374,7 @@ Promise() = Promise{Any}()
 Yields the value delivered to the given `Promise` object after suspending the
 current thread to wait for the value if necessary.
 
-See also [`Promise`](@ref), [`put!`](@ref).
+See also [`Promise`](@ref), `Base.put!`.
 
 
 ```@meta
@@ -481,7 +481,7 @@ end
 Locks all of the lockable objects `l1`, `l2`, etc. then runs `f`, unlocks the
 objects, and returns the return value of `f()`.
 
-See also: [`ReentrantLock`](@ref)
+See also: `Threads.ReentrantLock`
 
 # Examples
 

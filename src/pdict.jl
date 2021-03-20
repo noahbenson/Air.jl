@@ -326,7 +326,7 @@ standard dictionary functions, such as `setindex` in place of `setindex!`,
 performed in `O(log n)` time, and minimal data duplication is performed in 
 update operations.
 
-See also: [`PIdDict`](@ref), [`Dict`](@ref), [`push`](@ref), [`pop`](@ref),
+See also: [`PIdDict`](@ref), `Dict`, [`push`](@ref), [`pop`](@ref),
 [`setindex`](@ref), [`delete`](@ref), [`insert`](@ref), [`getpair`](@ref).
 
 # Examples
@@ -382,7 +382,7 @@ standard dictionary functions, such as `setindex` in place of `setindex!`,
 performed in `O(log n)` time, and minimal data duplication is performed in 
 update operations.
 
-See also: [`PDict`](@ref), [`IdDict`](@ref), [`push`](@ref), [`pop`](@ref),
+See also: [`PDict`](@ref), `Base.IdDict`, [`push`](@ref), [`pop`](@ref),
 [`setindex`](@ref), [`delete`](@ref), [`insert`](@ref), [`getpair`](@ref).
 
 # Examples

@@ -208,7 +208,7 @@ allow only the default value of zero.
 Note that under most circumstances, a `PArrray` will not encode explicit zeros,
 so this function typically returns the object `p` untouched.
 
-See also: [`nnz`](@ref), [`findnz`](@ref), [`PArray`](@ref).
+See also: `SparseArrays.nnz`, `SparseArrays.findnz`, [`PArray`](@ref).
 
 # Examples
 
@@ -260,7 +260,7 @@ Note that under most circumstances, a `PArray` will not encode explicit zeros,
 so this function typically returns indices and values for all values that aren't
 equal to the default value of the array `p` (which is zero by default).
 
-See also: [`nnz`](@ref), [`PArray`](@ref).
+See also: `SparseArrays.nnz`, [`PArray`](@ref).
 
 # Examples
 
@@ -324,7 +324,7 @@ Note that because `PArray`s don't typically store values equal to their default
 value explicitly, this will typically yield a vector of every non-default value
 in the array.
 
-See also: [`findnz`](@ref), [`nnz`](@ref), [`PArray`](@ref).
+See also: `SparseArrays.findnz`, `SparseArrays.nnz`, [`PArray`](@ref).
 
 # Examples
 

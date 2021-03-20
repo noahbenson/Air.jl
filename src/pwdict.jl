@@ -18,7 +18,7 @@
 AbstractPWDict is a subtype of AbstractPDict that is overloaded by classes that
 represent weighted persistent dictionaries.
 
-See also: [`AbstractPDict`](@ef), [`PWDict`](@ref), [`AbstractPWSet`](@ef).
+See also: [`AbstractPDict`](@ref), [`PWDict`](@ref), [`AbstractPWSet`](@ref).
 """
 abstract type AbstractPWDict{K,V,W<:Number} <: AbstractPDict{K,V} end
 

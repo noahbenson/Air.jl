@@ -274,7 +274,7 @@ A persistent set type that uses an array hash-mapped trie structure to allow for
 efficient updating of the set using the persistent operations defined by Air
 such as `setindex`, `push`, and `delete`.
 
-See also: [`Set`](@ref), [`PIdSet`](@ref).
+See also: `Set`, [`PIdSet`](@ref).
 
 # Examples
 
@@ -305,7 +305,7 @@ A persistent identity-based set type that uses an array hash-mapped trie
 structure to allow for efficient updating of the set using the persistent
 operations defined by Air such as `push`, and `delete`.
 
-See also: [`Set`](@ref), [`PIdSet`](@ref).
+See also: `Set`, [`PIdSet`](@ref).
 
 # Examples
 

@@ -141,7 +141,7 @@ Note that setindex() *always* returns a copy of the argument `coll` or fails.
 For Air's persistent collections these operations are efficient, but for the
 mutable counterparts, they are typically `O(n)`.
 
-See also: [`setindex!`](@ref), [`push`](@ref).
+See also: `Base.setindex!`, [`push`](@ref).
 
 # Examples
 
@@ -197,7 +197,7 @@ function that never modifies the object `coll`. For persistent collections in
 the Air library, this operation is efficient, but for most mutable objects, it
 is `O(n)`.
 
-See also: [`push!`](@ref), [`pop`](@ref), [`setindex!`](@ref).
+See also: `Base.push!`, [`pop`](@ref), `Base.setindex!`.
 
 # Examples
 
@@ -269,7 +269,8 @@ yields `(val, rest)` where `val` is the value associated with `key` in `coll`
 and `rest` is the remainder of the collection without `key`. If the `key` is not
 in `coll`, then `default` is yielded or an error is thrown.
 
-See also: [`pop!`](@ref), [`push`](@ref), [`popat`](@ref), [`delete`](@ref).
+See also: `Base.pop!`, [`push`](@ref), [`popat`](@ref),
+[`delete`](@ref).
 
 # Examples
 
@@ -368,7 +369,7 @@ prepended. This function is essentially a persistent equivalent of the
 collections in the Air library, this operation is efficient, but for most
 mutable objects, it is `O(n)`.
 
-See also: [`pushfirst!`](@ref), [`popfirst`](@ref), [`setindex!`](@ref),
+See also: `Base.pushfirst!`, [`popfirst`](@ref), `Base.setindex!`,
 [`push`](@ref).
 
 # Examples
@@ -413,7 +414,7 @@ This is basically a persistent equivalent to the `popfirst!` function that never
 modifies the given `coll`. For persistent collections in Air, these operations
 are efficient, but for most mutable types, it is `O(n)`.
 
-See also: [`popfirst!`](@ref), [`pushfirst`](@ref), [`popat`](@ref),
+See also: `Base.popfirst!`, [`pushfirst`](@ref), [`popat`](@ref),
 [`delete`](@ref).
 
 # Examples
@@ -451,7 +452,8 @@ collection `coll` and `rest` is a duplicate of all but the `k`th element of
 never modifies the given `coll`. For persistent collections in Air, these
 operations are efficient, but for most mutable types, it is `O(n)`.
 
-See also: [`popat!`](@ref), [`pop`](@ref), [`popfirst`](@ref), [`delete`](@ref).
+See also: `Base.popat!`, [`pop`](@ref), [`popfirst`](@ref),
+[`delete`](@ref).
 
 # Examples
 
@@ -493,7 +495,7 @@ at the given index. Roughly equivalent to insert!(copy(arr), idx, va): the
 persistent collections defined in Air, this operation is efficient, but for most
 mutable objects, this is `O(n)`.
 
-See also: [`insert!`](@ref), [`push`](@ref), [`delete`](@ref).
+See also: `Base.insert!`, [`push`](@ref), [`delete`](@ref).
 
 # Examples
 
@@ -652,7 +654,7 @@ and sets, and it always yields a copy of the collection without modifying its
 aguments. For the persistent collections defined in Air, this is efficient, but
 for most mutable objects, this is `O(n)`.
 
-See also: [`delete!`](@ref), [`insert`](@ref), [`pop`](@ref).
+See also: `Base.delete!`, [`insert`](@ref), [`pop`](@ref).
 
 # Examples
 
@@ -799,7 +801,7 @@ export delete
 If the key `k` is found in the dictionary `d`, yields the pair (`k => d[k]`);
 otherwise yields `missing`.
 
-See also: [`get`](@ref), [`getindex`](@ref).
+See also: `Base.get`, `Base.getindex`.
 
 # Examples
 

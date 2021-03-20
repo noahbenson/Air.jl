@@ -163,7 +163,7 @@ value in the dict that is a `Delay` object, the dictionary hides the delay and
 always returns the delay's value. This allows any value that has not yet been
 requested to be lazily unevaluated.
 
-See also: [`PDict`](@ref), [`Dict`](@ref), [`LazyIdDict`](@ref),
+See also: [`PDict`](@ref), `Base.Dict`, [`LazyIdDict`](@ref),
 [`Delay`](@ref), [`@delay`](@ref).
 
 # Examples
@@ -213,7 +213,7 @@ value in the dict that is a `Delay` object, the dictionary hides the delay and
 always returns the delay's value. This allows any value that has not yet been
 requested to be lazily unevaluated.
 
-See also: [`PIdDict`](@ref), [`IdDict`](@ref), [`LazyDict`](@ref),
+See also: [`PIdDict`](@ref), `Base.IdDict`, [`LazyDict`](@ref),
 [`Delay`](@ref), [`@delay`](@ref).
 
 # Examples
