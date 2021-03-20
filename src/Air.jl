@@ -56,7 +56,7 @@ PDict{Symbol,Int64} with 3 entries:
   :b => 2
 ```
 
-```jldoctest; filter=r"4-element (PArray{Int64,1}|PVector{Int64}):"
+```jldoctest; filter=r"4-element (PArray{Int64, ?1}|PVector{Int64}):"
 julia> @p[1, 2, 3, 4]
 4-element PArray{Int64,1}:
  1
@@ -65,7 +65,7 @@ julia> @p[1, 2, 3, 4]
  4
 ```
 
-```jldoctest
+```jldoctest; filter=r"2×2 PArray{Symbol, ?2}:"
 julia> @p[:q2 :q1; :q3 :q4]
 2×2 PArray{Symbol,2}:
  :q2  :q1
