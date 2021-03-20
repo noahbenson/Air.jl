@@ -22,11 +22,6 @@ jobs:
     - stage: Documentation
       julia: 1.5
       script: julia --project=docs make.jl docs
-      #script: julia --project=docs -e '
-      #    using Pkg;
-      #    Pkg.develop(PackageSpec(path=pwd()));
-      #    Pkg.instantiate();
-      #    include("docs/make.jl");'
       after_success: skip
   fast_finish: true
 script:
