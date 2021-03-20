@@ -4,13 +4,10 @@ import Pkg
 
 (pwd() == @__DIR__) || cd(@__DIR__)
 
-push!(LOAD_PATH, pwd())
-#air_package = Pkg.PackageSpec(path=pwd())
-#Pkg.develop(air_package)
+Pkg.activate(pwd())
 Pkg.instantiate()
 
 using Air
-#Pkg.activate(@__DIR__)
 
 
 jobs = Symbol[]
@@ -35,7 +32,6 @@ for j in jobs
         Codecov.submit(Codecov.process_folder())
     elseif j == :docs
         Pkg.add("Documenter")
-        Pkg.instantiate()
         include("docs/make.jl")
     else
         error("Unknown make command: $j")
