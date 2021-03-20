@@ -15,6 +15,9 @@ notifications:
 jobs:
   allow_failures:
     - julia: nightly
+      os: linux
+    - julia: nightly
+      os: osx
   include:
     - stage: Documentation
       julia: 1.5
