@@ -28,8 +28,8 @@ update in a multi-threaded program.
 All fields of a `Var` should be considered strictly private.
 
 See also: [`@var`](@ref), [`ReentrantRef`](@ref), [`vars`](@ref),
-[`withvars`](@ref), [`wrapvars`](@ref), `Threads.current_task`,
-`Threads.task_local_storage`.
+[`withvars`](@ref), [`wrapsetvars`](@ref), [`wrapwithvars`](@ref),
+ `Threads.current_task`, `Threads.task_local_storage`.
 
 # Examples
 
@@ -39,21 +39,21 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest; filter=r"Var{Symbol}\\(@0x[0-9abcdef]+: :start_sym; init=:start_sym\\)"
+```jldoctest; filter=r"Var{Symbol}\\(@[0-9a-zA-Z]+: :start_sym; init=:start_sym\\)"
 julia> v = Var{Symbol}(:start_sym)
-Var{Symbol}(@0x96dec93d3469f59d: :start_sym, init=:start_sym)
+Var{Symbol}(@JIm7aUS2sOl: :start_sym; init=:start_sym)
 
 julia> v[]
 :start_sym
 
-julia> v[] = :new_sym
+julia> withvars(v => :new_sym) do; v[] end
 :new_sym
 
-julia> fetch(Threads.@spawn v[])
+julia> withvars(v => :new_sym) do; fetch(Threads.@spawn v[]) end
 :start_sym
 
 julia> v[]
-:new_sym
+:start_sym
 ```
 """
 struct Var{T} <: TransactionalRef{T}
@@ -86,7 +86,7 @@ assigned value. The dictionary returned by `vars` may be later restored using
 the function `setvars`.
 
 See also: [`setvars`](@ref), [`withvars`](@ref), [`wrapwithvars`](@ref),
-[`setwithvars`](@ref), [`Var`](@ref).
+[`Var`](@ref).
 
 # Examples
 
@@ -101,15 +101,13 @@ julia> vars()
 IdDict{Var,Any}()
 ```
 
-```jldoctest; filter=[r"Var{Symbol}\\(@0x:[0-9a-f]+: :test; init=:test\\)",
-                      r"IdDict{Var, ?Any} with 1 entry:",
-                      r"  Var{Symbol}\\(@0x:[0-9a-f]+: :test\\) => :temp"],
+```jldoctest; filter=r"(Var{Symbol}\\(@[0-9a-zA-Z]+: :test; init=:test\\))|(IdDict{Var, ?Any} with 1 entry:)|(  Var{Symbol}\\(@[0-9a-zA-Z]+\\) => :temp)"
 julia> @var v = :test::Symbol
-Var{Symbol}(@0x65da916c5e25c9e8: :test; init=:test)
+Var{Symbol}(@h4G6oRR9s: :test; init=:test)
 
-juliia> withvars(v => :temp) do; vars() end
+julia> withvars(v => :temp) do; vars() end
 IdDict{Var,Any} with 1 entry:
-  Var{Symbol}(@0x65da916c5e25c9e8) => :temp
+  Var{Symbol}(@AaE16J5Pic8) => :temp
 ```
 """
 function vars end
@@ -133,9 +131,9 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest; filter=r"Var{Symbol}\\(@0x:[0-9a-f]+: :test; init=:test\\)"
+```jldoctest; filter=r"Var{Symbol}\\(@[0-9a-zA-Z]+: :initval; init=:initval\\)"
 julia> v = Var{Symbol}(:initval)
-Var{Symbol}(@0x65da916c5e25c9e8: :initval; init=:initval)
+Var{Symbol}(@cFgU9Kqe8: :initval; init=:initval)
 
 julia> v[]
 :initval
@@ -165,9 +163,9 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest; filter=r"Var{Symbol}\\(@0x:[0-9a-f]+: :test; init=:test\\)"
+```jldoctest; filter=r"Var{Symbol}\\(@[0-9a-zA-Z]+: :initval; init=:initval\\)"
 julia> v = Var{Symbol}(:initval)
-Var{Symbol}(@0x65da916c5e25c9e8: :initval; init=:initval)
+Var{Symbol}(@hxC65AWl: :initval; init=:initval)
 
 julia> v[]
 :initval
@@ -199,9 +197,9 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest; filter=r"Var{Int64}\\(@0x:[0-9a-f]+: 0; init=0\\)"
+```jldoctest; filter=r"Var{Int64}\\(@[0-9a-zA-Z]+: 0; init=0\\)"
 julia> v = Var{Int}(0)
-Var{Int64}(@0x65da916c5e25c9e8: 0; init=0)
+Var{Int64}(@JIm7aUS2sOl: 0; init=0)
 
 julia> v[]
 0
@@ -230,9 +228,9 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest; filter=r"Var{Int64}\\(@0x:[0-9a-f]+: 0; init=0\\)"
+```jldoctest; filter=r"Var{Int64}\\(@[0-9a-zA-Z]+: 0; init=0\\)"
 julia> v = Var{Int}(0)
-Var{Int64}(@0x65da916c5e25c9e8: 0; init=0)
+Var{Int64}(@F6ku5d8: 0; init=0)
 
 julia> v[]
 0
@@ -274,6 +272,8 @@ let tls_key = gensym("Air_var_bindings")
         end
         return setvars(f, b1)
     end
+    global setvars(f::Function, vs::AbstractDict{<:Var,<:Any}) =
+        setvars(f, VarsDict(vs))
     global setvars(f::Function, vs::VarsDict) = begin
         b0 = getbindings()
         task_local_storage(tls_key, vs)
@@ -338,7 +338,7 @@ let tls_key = gensym("Air_var_bindings")
 end
 Base.show(io::IO, ::MIME"text/plain", d::Var{T}) where {T} = begin
     print(io, "$(typeof(d))(@")
-    show(io, objectid(d))
+    print(io, string(objectid(d), base=62))
     print(io, ": ")
     show(io, d[])
     print(io, "; init=")
@@ -347,7 +347,7 @@ Base.show(io::IO, ::MIME"text/plain", d::Var{T}) where {T} = begin
 end
 Base.show(io::IO, d::Var{T}) where {T} = begin
     print(io, "$(typeof(d))(@")
-    show(io, objectid(d))
+    print(io, string(objectid(d), base=62))
     print(io, ")")
 end
 """
@@ -367,12 +367,12 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest; filter=r"Var{Symbol}\\(@0x[0-9abcdef]+, init=:start_sym\\)"
+```jldoctest; filter=r"Var{(Symbol|Any)}\\(@[0-9a-zA-Z]+: :start_sym; init=:start_sym\\)"
 julia> @var v = :start_sym
-Var{Symbol}(@0xb1cabd577cea8441: :start_sym, init=:start_sym)
+Var{Symbol}(@JIm7aUS2sOl: :start_sym; init=:start_sym)
 
 julia> @var u = :start_sym::Any
-Var{Any}(@0x96db24c5c70b3672: :start_sym, init=:start_sym)
+Var{Any}(@JIm7aUS2sOl: :start_sym; init=:start_sym)
 ```
 """
 macro var(expr::Expr)

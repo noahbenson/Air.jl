@@ -7,10 +7,6 @@
         vals = Int[]
         vols = Vector{Volatile{Int}}[]
         log = Actor{typeof(stdout)}(stdout)
-        printlog(log, args...) = begin
-            println(log, args...)
-            return log
-        end
         worker() = begin
             global vals
             global vols
@@ -29,12 +25,18 @@
                         b = up[k*2]
                         if a[] >= 0 && b[] >= 0
                             res[] = a[] + b[]
-                            send(printlog, log, "Layer $l, item $k complete $(objectid(current_task())).")
+                            send(log) do log
+                                println("Layer $l, item $k complete $(objectid(current_task())).")
+                                log
+                            end
                         end
                     end
                 end
             end
-            send(printlog, log, "Ending Woker $(objectid(current_task())).")
+            send(log) do log
+                println("Ending Woker $(objectid(current_task())).")
+                log
+            end
         end
         tx1_run(n::Int) = begin
             global vals

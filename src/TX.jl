@@ -22,8 +22,7 @@ import DataStructures
 """
     ActorMsg
 
-A message, queued for an `Actor` via a `send()` function call or a `@send`
-macro invocation.
+A message, queued for an `Actor` via the `send()` function.
 
 The `ActorMsg` struct is considered part of `Air`'s private/internal
 implementation details.
@@ -109,11 +108,12 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest; filter=r"Actor{Symbol}\\(@[0-9abcdef]+: :start_sym\\)"
+```jldoctest; filter=r"Actor{Symbol}\\(@[0-9a-zA-Z]+: :start_sym\\)"
 julia> a = Actor{Symbol}(:start_sym)
-Actor{Symbol}(@0x96db24c5c70b3672: :start_sym)
+Actor{Symbol}(@JIm7aUS2sOl: :start_sym)
 
 julia> send(a) do val; Symbol("new_\$(val)") end
+Actor{Symbol}(@JIm7aUS2sOl: :start_sym)
 
 julia> sleep(1); a[]
 :new_start_sym
@@ -144,7 +144,7 @@ Base.getproperty(a::Actor{T}, k::Symbol) where {T} = begin
 end
 Base.show(io::IO, ::MIME"text/plain", a::Actor{T}) where {T} = begin
     print(io, "Actor{$T}(@")
-    show(io, string(objectid(a), base=62))
+    print(io, string(objectid(a), base=62))
     print(io, ": ")
     s = getfield(a, :value)
     if isa(s, ActorException{T})
@@ -156,7 +156,7 @@ Base.show(io::IO, ::MIME"text/plain", a::Actor{T}) where {T} = begin
 end
 Base.show(io::IO, a::Actor{T}) where {T} = begin
     print(io, "Actor{$T}(@")
-    show(io, string(objectid(a), base=62))
+    print(io, string(objectid(a), base=62))
     print(io, ")")
 end
 Base.setindex!(a::Actor{T}, args...) where {T} = error(
@@ -423,9 +423,9 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest; filter=r"Volatile{Symbol}\\(@[0-9abcdef]+: :startval\\)"
+```jldoctest; filter=r"Volatile{Symbol}\\(@[0-9a-zA-Z]+: :startval\\)"
 julia> v = Volatile{Symbol}(:startval)
-Volatile{Symbol}(@0x96db24c5c70b3672: :startval)
+Volatile{Symbol}(@JIm7aUS2sOl: :startval)
 
 julia> @tx v[] = :newval
 :newval
@@ -467,7 +467,7 @@ Base.show(io::IO, ::MIME"text/plain", v::Volatile) = begin
     show(io, typeof(v))
     print(io, "(@")
     print(io, string(objectid(v), base=62))
-    print(io, " => ")
+    print(io, ": ")
     show(io, v[])
     print(io, ")")
 end
@@ -545,9 +545,9 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest; filter=r"FunctionSourceKernel{Any}\\(@[0-9abcdef]+\\)"
+```jldoctest; filter=r"FunctionSourceKernel{Any}\\(@[0-9a-zA-Z]+\\)"
 julia> s = FunctionSourceKernel(() -> rand(Int8))
-FunctionSourceKernel{Any}(@0x96db24c5c70b3672)
+FunctionSourceKernel{Any}(@JIm7aUS2sOl)
 
 julia> pop!(s)
 -47
@@ -560,6 +560,7 @@ struct FunctionSourceKernel{T} <: AbstractSourceKernel{T}
     fn::Function
 end
 export FunctionSourceKernel
+FunctionSourceKernel(f::Function) = FunctionSourceKernel{Any}(f)
 Base.pop!(f::FunctionSourceKernel{T}) where {T} = begin
     fn = getfield(f, :fn)
     return fn()::T
@@ -595,14 +596,14 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest; filter=r"Source{Any}\\(@[0-9abcdef]+\\)"
+```jldoctest; filter=r"Source{Any}\\(@[0-9a-zA-Z]+\\)"
 julia> s = Source(() -> rand(Int8))
-Source{Any}(@0x96db24c5c70b3672)
+Source{Any}(@JIm7aUS2sOl)
 
-julia> get(s)
+julia> receive(s)
 -47
 
-julia> get(s)
+julia> receive(s)
 126
 ```
 """
@@ -840,22 +841,6 @@ The `current_tx` constant is a `Var{T}` that stores the current task's running
 `Transaction`, or `nothing` if there is no transaction running.
 
 See also: [`currtx`](@ref)
-
-# Examples
-
-```@meta
-DocTestSetup = quote
-    using Air
-end
-```
-
-```jldoctest
-julia> current_tx[]
-nothing
-
-julia> @tx (current_tx[] === nothing)
-false
-```
 """
 @var current_tx = nothing::Union{Nothing, Transaction}
 
@@ -876,8 +861,8 @@ end
 ```
 
 ```jldoctest
-julia> currtx()
-nothing
+julia> currtx() === nothing
+true
 
 julia> @tx (currtx() === nothing)
 false
@@ -1329,6 +1314,9 @@ do something, that transaction will deadlock.
 """
 send(f::Function, a::Actor{T}) where {T} = actor_send(a, ActorMsg(f), currtx())
 export send
+"""
+
+"""
 
 """
     geterror(actor)
@@ -1336,7 +1324,7 @@ export send
 If the given `Actor` object is currently in an error state, then yields the
 `ActorException` object that describes the error. Otherwise, yields `nothing`.
 
-See also: [`Actor`](@ref), [`reset`](@ref), [`send`](@ref), [`@send`](@ref).
+See also: [`Actor`](@ref), [`reset`](@ref), [`send`](@ref)
 
 # Examples
 
@@ -1346,17 +1334,18 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest; filter=r"Actor{Symbol}\\(@[0-9abcdef]+: (:start_sym|--error--)\\)"
+```jldoctest; filter=r"Actor{Symbol}\\(@[0-9a-zA-Z]+: (:start_sym|--error--)\\)"
 julia> a = Actor{Symbol}(:start_sym)
-Actor{Symbol}(@0x96db24c5c70b3672: :start_sym)
+Actor{Symbol}(@JIm7aUS2sOl: :start_sym)
 
 julia> geterror(a) === nothing
 true
 
 julia> send(a) do val; error("test") end
+Actor{Symbol}(@JIm7aUS2sOl: :start_sym)
 
 julia> sleep(1); a
-Actor{Symbol}(@0x96db24c5c70b3672: --error--)
+Actor{Symbol}(@JIm7aUS2sOl: --error--)
 
 julia> geterror(a) isa ActorException
 true
