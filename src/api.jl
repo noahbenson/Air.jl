@@ -45,6 +45,39 @@ See also: [`PArray`](@ref), [`PVector`](@ref).
 """
 abstract type AbstractPArray{T,N} <: AbstractArray{T,N} end
 export AbstractPDict, AbstractPSet, AbstractPArray
+"""
+    ReentrantRef{T}
+
+A `ReentrantRef` is a type of ref object that is thread-safe. There are a few
+strategies for this, each of which are encoded in a different object type that
+inheits from `ReentrantRef`. These types are as follows.
+
+`Var`: `Var` objects act like `Ref` objects except that changes to them are
+exclusively task-local and must be performed in specific scoped expressions.
+However, the state of all `Var` objects for the current task can also be
+saved and restored at a later point.
+
+`Actor`: `Actor` objects obey the actor pattern; you can call
+`send(fn, actor, args...)` where `fn` is a function that is, in another thread
+at some point, called as `fn(actor[], args...)`. The new value of the actor
+after running `fn` is the return value of the call.
+
+`Volatile`: `Volatile` objects are `Ref`s that can be changed by any thread but
+that must be changed only within a synchronized transaction that ensures that
+all reads and writes of volatiles, as well as reads from and sends to actors,
+are atomic: either they all happen successfully, or none of them do.
+"""
+abstract type ReentrantRef{T} <: Ref{T} end
+export ReentrantRef
+"""
+    TransactionalRef{T}
+
+A `TransactionalRef` is a reentrant reference that additional participates in
+transactions. Transactional refs include `Actor`s and `Volatile`s.
+"""
+abstract type TransactionalRef{T} <: ReentrantRef{T} end
+export TransactionalRef
+
 
 # #equalfn and #hashfn #########################################################
 """
@@ -489,9 +522,9 @@ export popat
 """
     insert(coll, idx, val)
 
-Yields a copy of the given collection `coll` with the given value `cal inserted
-at the given index. Roughly equivalent to insert!(copy(arr), idx, va): the
-`insert` function neve modifies its arguments and always yields a copy. For the
+Yields a copy of the given collection `coll` with the given value `cal` inserted
+at the given index. Roughly equivalent to `insert!(copy(arr), idx, va)`: the
+`insert` function never modifies its arguments and always yields a copy. For the
 persistent collections defined in Air, this operation is efficient, but for most
 mutable objects, this is `O(n)`.
 
