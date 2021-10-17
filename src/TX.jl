@@ -1062,4 +1062,81 @@ geterror(a::Actor{T}) where {T} = begin
 end
 export geterror
 
-    
+"""
+    TxIO
+
+The `TxIO` type is a derivative of the `IO` class and is intended for handling
+output to streams across multiple threads in a thread-safe way. `TxIO` objects
+can be constructed from `IO` objects and can be printed/written to like normal
+`IO` objects. However, all output is performed in a separate asynchronous
+thread, and writes that occur during a transaction always occur only if the
+transaction succeeds.
+
+See also: [`Actor`](@ref), [`airout`](@ref)
+"""
+struct TxIO <: IO
+    io::IO
+    actor::Actor{IO}
+end
+TxIO(io::IO) = begin
+    iswritable(io) || error("TxIO works only with writable IO objects")
+    return TxIO(io, Actor{IO}(io))
+end
+export TxIO
+Base.isreadable(io::TxIO) = false
+Base.iswritable(io::TxIO) = true
+Base.eof(io::TxIO) = eof(io.io)
+Base.write(io::TxIO, x::UInt8) = send(io.actor) do io;
+    write(io, x)
+    return io
+end
+Base.write(io::TxIO, x::Char) = send(io.actor) do io;
+    write(io, x)
+    return io
+end
+Base.write(io::TxIO, x::Union{String,SubString{String}}) = send(io.actor) do io;
+    write(io, x)
+    return io
+end
+
+"""
+    AirOut
+
+The `AirOut` type is a derivative of the `IO` class and is intended for handling
+output to `stdout` across multiple threads in a thread-safe way. It is similar
+`TxIO` except that it only writes to `stdout` and is only really intended for
+use with the `airout` object.
+
+See also: [`Actor`](@ref), [`airout`](@ref), [`TxIO`](@ref)
+"""
+struct AirOut <: IO
+    actor::Actor{Nothing}
+    function AirOut()
+        return new(Actor{Nothing}(nothing))
+    end
+end
+Base.isreadable(io::AirOut) = false
+Base.iswritable(io::AirOut) = true
+Base.eof(io::AirOut) = eof(stdout)
+Base.write(io::AirOut, x::UInt8) = send(io.actor) do io;
+    write(stdout, x)
+    return io
+end
+Base.write(io::AirOut, x::Char) = send(io.actor) do io;
+    write(stdout, x)
+    return io
+end
+Base.write(io::AirOut, x::Union{String,SubString{String}}) = send(io.actor) do io;
+    write(stdout, x)
+    return io
+end
+
+"""
+    airout
+
+The `airout` object is a `AirOut` object that wraps the `stdout` object.
+
+See also: [`AirOut`](@ref)
+"""
+const airout = AirOut()
+export airout
