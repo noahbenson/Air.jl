@@ -127,6 +127,7 @@ PVector(default::T, len::Tuple{II}) where {T,II<:Integer} =
 PVector(a::AbstractArray{T,1}) where {T} = PArray{T,1}(a)
 PVector(p::PArray{T,1}) where {T,N} = p
 PVector() = PArray{Any,1}()
+export PVector
 
 """
     PMatrix{T}
@@ -136,12 +137,13 @@ An alias for `PArray{T,2}`, representing a persistent matrix.
 const PMatrix{T} = PArray{T,2} where {T}
 PMatrix(args...) = PArray{Any,2}(args...)
 PMatrix(default::T, rs::II, cs::JJ) where {T,II<:Integer,JJ<:Integer} =
-    PArray{T,1}(default, (rs,cs))
+    PArray{T,2}(default, (rs,cs))
 PMatrix(default::T, sz::Tuple{<:Integer,<:Integer}) where {T} =
-    PArray{T,1}(default, len)
-PMatrix(a::AbstractArray{T,2}) where {T} = PArray{T,1}(a)
+    PArray{T,2}(default, len)
+PMatrix(a::AbstractArray{T,2}) where {T} = PArray{T,2}(a)
 PMatrix(p::PArray{T,2}) where {T,N} = p
 PMatrix() = PArray{Any,2}()
+export PMatrix
 
 # ==============================================================================
 # SparseArrays methods.
