@@ -59,8 +59,6 @@ macro, `Actor`s and `Volatile`s are promising (though more testing is neeeded).
 * Plans that are implemented but require testing
   * Multi-threading utilities, inspired by Clojure
     * Thread-safe `Promise` types.
-    * A `Source` type for safely reading from inputs such as sockets or files
-      while respecting the syncronization of transactional `tx` blocks.
 * Plans that are not yet implemented
   * **Persistent Record Types.** Tool for defining data structures that
     support lazy reification of members.
@@ -71,8 +69,6 @@ macro, `Actor`s and `Volatile`s are promising (though more testing is neeeded).
     arguments shouldn't need to be duplicated in multiple places; rather a
     simple macro should make it easy for common parameters to occur in both
     places and be documented identically in both.
-  * `ChannelSourceKernel` type that creates a source kernel that pops values
-    from a channel.
   * Better query/build/update API tools for the data structures?
 
 
