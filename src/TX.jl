@@ -44,7 +44,7 @@ the send was run is stored in `value`, and the `args` and `argno` give the
 full contex of the `send` call (i.e., the fucntion followed by the arguments is
 `args` and the argument number that corresponds to the actor is `argno`).
 
-See also: [`Actor`](@ref), [`geterror`](@ref), [`reset`](@ref), [`send`](@ref).
+See also: [`Actor`](@ref), [`geterror`](@ref), [`reset`](@ref), [`send`](@ref)
 """
 struct ActorException{T} <: Exception
     error::Any
@@ -487,254 +487,6 @@ Base.getproperty(v::Volatile, p) = begin
 end
 
 
-# #Source ######################################################################
-"""
-    EOSException
-
-An end-of-source exception that indicates that a source has reached its limits
-and can no longer retrieve information. These are thrown by source kernels, for
-example when a socket closes or when the end-of-file is reached.
-"""
-struct EOSException <: Exception end
-export EOSException
-"""
-    AbtractSourceKernel{T}
-
-An `AbstractSourceKernel` is an object that can be sampled to produce the next
-sample for a source. Objects of types descending from `AbstractSourceKernel` are
-not responsible for maintaining the multi-threaaded state exchange implied by
-sources; rather, they represent function that will be called discretely when
-samples are needed.
-
-Source kernels use the `pop!` function to get values. Once popped, values cannot
-be reobtained. To indicate thee end of a source's ability to produce values,
-an EOFError can be thrown. Note that all exceptions raised by the source will
-percolate up to the thread that is reading the source.
-
-See also: [`FunctionSourceKernel`](@ref), [`Source`](@ref), `pop!`.
-"""
-abstract type AbstractSourceKernel{T} end
-export AbstractSourceKernel
-Base.pop!(k::AbstractSourceKernel) = error(
-    "type $(typeof(k)) <: AbstractSourceKernel{$T} must overloaded pop!")
-Base.show(io::IO, ::MIME"text/plain", s::AbstractSourceKernel) = begin
-    Base.show(io, typeof(s))
-    Base.print(io, "(@")
-    Base.show(io, objectid(s))
-    Base.print(io, ")")
-end
-Base.show(io::IO, s::AbstractSourceKernel) = begin
-    Base.show(io, typeof(s))
-    Base.print(io, "()")
-end
-"""
-    FunctionSourceKernel{T}
-
-A `FunctionSourceKernel{T}` object holds a function that is called every time a
-new source sample is needed. A function can throw an EOFError to indicate that
-it has passed the point at which it can continue to return samples.
-
-See also: [`AbstractSourceKernel`](@ref), [`Source`](@ref), `pop!`.
-
-# Examples
-
-```@meta
-DocTestSetup = quote
-    using Air, Random
-    Random.seed!(100);
-end
-```
-
-```jldoctest; filter=r"FunctionSourceKernel{Any}\\(@[0-9a-zA-Z]+\\)"
-julia> s = FunctionSourceKernel(() -> rand(Int8))
-FunctionSourceKernel{Any}(@JIm7aUS2sOl)
-
-julia> pop!(s)
--47
-
-julia> pop!(s)
-126
-```
-"""
-struct FunctionSourceKernel{T} <: AbstractSourceKernel{T}
-    fn::Function
-end
-export FunctionSourceKernel
-FunctionSourceKernel(f::Function) = FunctionSourceKernel{Any}(f)
-Base.pop!(f::FunctionSourceKernel{T}) where {T} = begin
-    fn = getfield(f, :fn)
-    return fn()::T
-end
-"""
-    Source{T,K}
-
-Source objects work with transactions such that any samples taken from a source
-during a transaction are either entirely sequentially taken from the source or
-they are not taken from the source at all. I.e., if a transaction is rolled back
-or if an exception occurs during a transaction after a sampling from a source,
-then the sampling is rolled back also.
-
-`Source`s obtain their samples from Source kernel objects, which inherit from
-the `AbstractSourceKernel` type. The type parameter `K` of the `Source` type
-must be the kernel type while `T` is the type parameter of type `K` (i.e.,
-`K <: AbstractSourceKernel{T}`).
-
-Sources can be sampled via the `get()` function. Althrough `get()` can be called
-either inside or outside of a transaction, when called inside of a transaction,
-the `get` is only performed when the transaction succeeds. Sources are thus
-safe to read from in transactions, unlike files and input streams, which might
-be read multiply times as the transaction is retried.
-
-See also: [`AbstractSourceKernel`](@ref), [`tx`](@ref), `get`.
-
-# Examples
-
-```@meta
-DocTestSetup = quote
-    using Air, Random
-    Random.seed!(100);
-end
-```
-
-```jldoctest; filter=r"Source{Any}\\(@[0-9a-zA-Z]+\\)"
-julia> s = Source(() -> rand(Int8))
-Source{Any}(@JIm7aUS2sOl)
-
-julia> receive(s)
--47
-
-julia> receive(s)
-126
-```
-"""
-mutable struct Source{T,K <: AbstractSourceKernel{T}}
-    cond::Threads.Condition
-    buffer::Vector{T}
-    position::UInt128
-    state::Symbol
-    waiting::Union{Nothing, Task}
-    error::Any
-    kernel::K
-end
-export Source
-Source{T,K}(k::K) where {T,K<:AbstractSourceKernel{T}} = begin
-    cond  = Threads.Condition()
-    buf   = Vector{T}()
-    return Source{T,K}(cond, buf, 0x0, :ok, nothing, nothing, k)
-end
-Source{T}(f::Function) where {T} = begin
-    k = FunctionSourceKernel{T}(f)
-    return Source{T,FunctionSourceKernel{T}}(k)
-end
-Source(f::Function) = Source{Any}(f)
-Source{K}(k::K) where {T, K <: AbstractSourceKernel{T}} = Source{T,K}(k)
-Source(k::K) where {T, K <: AbstractSourceKernel{T}} = Source{T,K}(k)
-Base.show(io::IO, ::MIME"text/plain", a::Source{T,K}) where {T,K} = begin
-    print(io, "Source{$T}(@$(objectid(a)))")
-end
-Base.propertynames(::Source) = (:state, :position, :iswaiting, :error, :kernelid)
-Base.getproperty(v::Source, p) = begin
-    if p == :state
-        return getfield(v, :state)
-    elseif p == :position
-        return getfield(v, :position)
-    elseif p == :iswaiting
-        return getfield(v, :waiting) !== nothing
-    elseif p == :error
-        return getfield(v, :error)
-    elseif p == :kernelid
-        return objectid(getfield(v, :kernel))
-    else
-        error("type $(typeof(v)) has no field $p")
-    end
-end
-
-# Sometimes we need to abort a source read...
-"""
-    SourceReadError{T,K}
-
-Source read errors are generated when, during a transaction, a source is being
-read by multiple threads at once and becomes invalid for the current
-transaction. This is not really an error, and users should not encounter these
-exceptions; rather they should result in transaction retries.
-"""
-struct SourceReadError{T,K} <: Exception
-    source::Source{T,K}
-    start_position::UInt128
-end
-# Sometimes something goes wrong and an exception has to be raised in the kernel
-"""
-    SourceAbortError{T,K}
-
-A SourceAbortError is raised when a task is reading from a source (i.e., waiting
-for a source-kernel to pop a value) and a reset is issued to the source. In
-general this shouldn't happen because errors should only arise from the task
-waiting on the kernel itself.
-"""
-struct SourceAbortError{T,K} <: Exception
-    source::Source{T,K}
-end
-"""
-    SourceKernelError{T,K}
-
-A SourceKernelError is raised when an operation is attempted on a source whose
-kernel has raised an exception. The error of a source s may also be extracted
-via geterror(s).
-
-For a SourceKernelError object err, err.source is the original source,
-err.task is the task that was attempting to read the actor when the error was
-caught, and err.error is the thrown object itself.
-"""
-struct SourceKernelError{T,K} <: Exception
-    source::Source{T,K}
-    task::Task
-    error::Any
-end
-export SourceKernelError
-"""
-    source_claim!(s, start_pos, n)
-
-Identical to `source_claim(s, start_pos, n)` except that this version of the
-function requires that the mutex for `s` already be held.
-
-The `source_claim!` function is considered part of the internal/private code
-of Air and generally should not be used outside of the Air library.
-"""
-source_claim!(s::Source{T,K}, spos::UInt128, n::UInt128) where {T,K} = begin
-    (getfield(s, :state) == :error) && throw(getfield(s, :error))
-    pos = getfield(s, :position)
-    (pos == spos) || throw(SourceReadError{T,K}(s, spos))
-    setfield!(s, :position, pos + n)
-    buf = getfield(s, :buffer)
-    res = buf[1:n]
-    setfield!(s, :buffer, buf[n+1:end])
-    return res
-end
-"""
-    source_claim(s, start_pos, n)
-
-Claims the first n elements after the given source position start_post from the
-source s and updates the source object buffer to be free of those elements and
-the source position to be position + n. If the source position has been updated
-from start_pos, a SourceReadError exception is thrown.
-
-If n values have not already been ensured, then it is an error to call this
-function (i.e., it does not ensure the values, it just checks that the given
-start_pos is still equal to the source position).
-
-The `source_claim` function is considered part of the internal/private code
-of Air and generally should not be used outside of the Air library.
-"""
-source_claim(s::Source{T,K}, spos::UInt128, n::UInt128) where {T,K} = begin
-    cond = getfield(s, :cond)
-    lock(cond)
-    try
-        return source_claim!(s, spos, n)
-    finally
-        unlock(cond)
-    end
-end
-
 # #Transaction #################################################################
 """
     ActorTxData{T}
@@ -753,19 +505,6 @@ mutable struct ActorTxData{T}
     function ActorTxData{T}(w::S) where {T,S}
         return new{T}(w, w, nothing, ActorMsgQueue())
     end
-end
-"""
-    SourceTxData{T}
-
-The data tracked for a `Source{T}` during a transaction by the transaction's 
-`Transaction` struct.
-
-The `SourceTxData` struct is considered part of the internal/private code
-of Air and generally should not be used outside of the Air library.
-"""
-mutable struct SourceTxData
-    start_position::UInt128
-    count::UInt128
 end
 """
     TxRetryException
@@ -799,16 +538,14 @@ mutable struct Transaction
     reads::IdDict{Volatile, VolatileData}
     writes::IdDict{Volatile, NTuple{2,VolatileData}}
     actors::IdDict{Actor, ActorTxData}
-    sources::IdDict{Source, SourceTxData}
     Transaction() = new(:running,
                         IdDict{Volatile, VolatileData}(),
                         IdDict{Volatile, NTuple{2,VolatileData}}(),
-                        IdDict{Actor, ActorTxData}(),
-                        IdDict{Source, SourceTxData}())
+                        IdDict{Actor, ActorTxData}())
 end
 export Transaction
 Base.propertynames(::Transaction) =
-    (:state, :rvolatiles, :wvolatiles, :actors, :sourcces)
+    (:state, :rvolatiles, :wvolatiles, :actors)
 Base.getproperty(t::Transaction, p) = begin
     if p == :state
         return getfield(t, :state)
@@ -818,18 +555,15 @@ Base.getproperty(t::Transaction, p) = begin
         return Base.IdSet(keys(getfield(p, :writes)))
     elseif p == :actors
         return Base.IdSet(keys(getfield(p, :actors)))
-    elseif p ==  :sourcces
-        return Base.IdSet(keys(getfield(p, :sources)))
     else
         error("type $(typeof(t)) has no field $p")
     end
 end
 tx_clear!(t::Transaction) = begin
-    t.state = :running
+    setfield!(t, :state, :running)
     empty!(getfield(t, :reads))
     empty!(getfield(t, :writes))
     empty!(getfield(t, :actors))
-    empty!(getfield(t, :sources))
     return nothing
 end
 
@@ -903,10 +637,8 @@ function tx(fn::F) where {F <: Function}
         catch e
             if isa(e, TxRetryException)
                 continue
-            elseif isa(e, SourceReadError)
-                continue
             else
-                rethrow(e)
+                rethrow()
             end
         end
         # At this point the transaction is over and we need to ensure that the
@@ -927,13 +659,11 @@ function tx(fn::F) where {F <: Function}
         # values must all be tested, then actors.
         reads = getfield(the_tx, :reads)
         actors = getfield(the_tx, :actors)
-        sources = getfield(the_tx, :sources)
         setfield!(the_tx, :state, :locking)
         nw = length(writes)
         nr = length(reads)
         n  = nw + nr
         m  = length(actors)
-        p  = length(sources)
         vols = Vector{Volatile}(undef, n)
         vols[1:nr] .= keys(reads)
         vols[nr+1:end] .= keys(writes)
@@ -941,10 +671,6 @@ function tx(fn::F) where {F <: Function}
         acts = Vector{Actor}(undef, m)
         acts[1:m] .= keys(actors)
         sort!(acts, by=objectid)
-        srcs = Vector{Source}(undef, p)
-        srcs[1:p] .= keys(sources)
-        sort!(srcs, by=objectid)
-        # go through and lock; check while doing so.
         locked = 0
         checked = 0
         success = false
@@ -978,17 +704,6 @@ function tx(fn::F) where {F <: Function}
                     checked += 1
                 end
                 (checked == n + m) || break
-                # Next we need to lock and check the sources that were received.
-                for src in srcs
-                    lock(getfield(src, :cond))
-                    locked += 1
-                end
-                for (src,dat) in sources
-                    (getfield(src, :state) == :error) && throw(getfield(src, :error))
-                    (dat.start_position == getfield(src, :position)) || break
-                    checked += 1
-                end
-                (checked == n + m + p) || break
                 # If we reach this point, then everything checks out and we can
                 # commit all of the changes and complete the transaction.
                 setfield!(the_tx, :state, :committing)
@@ -1002,10 +717,6 @@ function tx(fn::F) where {F <: Function}
                     (r === nothing) || actor_reset!(act, r.value)
                     isempty(q) || actor_send!(act, q)
                 end
-                # And we need to claim the received items from the sources
-                for (src,dat) in getfield(the_tx, :sources)
-                    source_claim!(src, dat.start_position, dat.count)
-                end
                 # That's all we need to do, aside from unlock.
                 success = true
             end
@@ -1017,15 +728,8 @@ function tx(fn::F) where {F <: Function}
             locked -= n
             if locked > 0
                 for mux in 1:locked
-                    (mux > m) && break
+                    #(mux > m) && break
                     unlock(getfield(acts[mux], :mutex))
-                end
-                locked -= m
-                if locked > 0
-                    for mux in 1:locked
-                        #(mux > p) && break
-                        unlock(getfield(srcs[mux], :cond))
-                    end
                 end
             end
         end
@@ -1033,8 +737,11 @@ function tx(fn::F) where {F <: Function}
     end
     # It's possible we got here because we were suceessful, but it might be that
     # we failed too many times.
-    success || error("transaction aborted after failing $TX_MAX_ATTEMPTS times")
-    return res
+    if success
+        return res
+    else
+        error("transaction aborted after failing $TX_MAX_ATTEMPTS times")
+    end
 end
 export tx
 
@@ -1245,6 +952,7 @@ start handling sent messages again, (2) gives it the new initial value `x`, and
 not in an error state, this just yields `nothing`.
 """
 reset(a::Actor{T}, s::S) where {T,S} = actor_reset(a, s, currtx())
+export reset
 
 """
     actor_send(a, msg)
@@ -1314,9 +1022,6 @@ do something, that transaction will deadlock.
 """
 send(f::Function, a::Actor{T}) where {T} = actor_send(a, ActorMsg(f), currtx())
 export send
-"""
-
-"""
 
 """
     geterror(actor)
@@ -1355,265 +1060,6 @@ geterror(a::Actor{T}) where {T} = begin
     w = actor_value(a, currtx())
     return isa(w, ActorException{T}) ? w : nothing
 end
-
-
-# Source functions.
-"""
-    geterror(s)
-
-Yields a `Some{Any}` instance containing thhe error raised by the source-kernel
-for the source object `s` if `s` is in an error-state; otherwise yields
-`nothing`.
-"""
-geterror(s::Source{T,K}) where {T,K} = lock(getfield(s, :cond)) do
-    if getfield(s, :state) == :error
-        return Some{Any}(getfield(s, :error))
-    else
-        return nothing
-    end
-end
 export geterror
 
-"""
-    reset(s, k)
-
-Resets a source object `s` with the new source kernel `k` (which must be of the
-same kernel type as `s`, and which may be the same kernel object that `s`
-already has). This clears the error state from the source and allows it to be
-read again. Yields a `Some{Any}` instance containing the error if the reset was
-successful and yelds `nothing` if the source was not in an error state.
-"""
-reset(s::Source{T,K}, newkern::K) where {T,K} = lock(getfield(s, :cond)) do
-    if getfield(s, :state) != :error
-        return nothing
-    elseif getfield(s, :waiting) !== nothing
-        schedule(s._waiting, SourceAbortError{T,K}(s), error=true)
-    end
-    err = getfield(s, :error)
-    setfield!(s, :buffer,   Vector{T}())
-    setfield!(s, :position, 0x0)
-    setfield!(s, :state,    :ok)
-    setfield!(s, :waiting,  nothing)
-    setfield!(s, :error,    nothing)
-    setfield!(s, :kernel,   newkern)
-    return Some{Any}(err)
-end
-export reset
-
-"""
-    source_ensure!(s, n, p0)
-
-Ensures that the source `s` contains at least `n` items in its queue then yields
-a tuple `(position, first_n)` where `position` is the current stream position
-and `first_n` is the vector of the first `n` stream elements. If `p0` is
-`nothing` then it is ignored, but if it is a 128-bit unsigned integer, then the
-current source positionn of `s` must be equal to `p0` as well or else a
-`SourceReadError` is thrown.
-
-Unlike with the `source_ensure()` function, The condition for source `s` must
-locked when `source_ensure!()` is called.
-
-If the start position moves out from underneath the source as it is waiting on
-the kernel, then a `SourceReadError` is thrown.
-
-This function is part of the internal/private interface for `Air` and generally
-shouldn't be called outside of it.
-"""
-source_ensure!(s::Source{T,K}, n::UInt128, start_pos::Union{Nothing,UInt128}) where {T,K} = begin
-    s_buf = getfield(s, :buffer)
-    s_cond = getfield(s, :cond)
-    s_kern = getfield(s, :kernel)
-    # Some checks to make sure that our state is fine.
-    # First, make sure the start_pos hasn't changed.
-    if start_pos !== nothing && getfield(s, :position) != start_pos
-        throw(SourceReadError{T,K}(s, start_pos))
-    end
-    start_pos = getfield(s, :position)
-    # If the buffer already has enough items, no action is needed.
-    (length(s_buf) >= n) && return (start_pos, s_buf[1:n])
-    # Okay, we're goig to start reading... we loop until there are enough;
-    # if something else claims the start position from underneath us during
-    # this time, we can abort.
-    curr_task = current_task()
-    while getfield(s, :position) == start_pos && length(s_buf) < n
-        s_state = getfield(s, :state)
-        if s_state === :ok
-            # It's our job to read from the source next. We need to unlock the
-            # cond to do this then relock onnce we've succeeded.
-            setfield!(s, :state, :reading)
-            setfield!(s, :waiting, curr_task)
-            unlock(s_cond)
-            x = try
-                pop!(s_kern)
-            catch e
-                # Uh-oh, we are now in an error-state... relock the condition.
-                lock(s_cond)
-                # In the unique case that what was throws was a reset interrupt
-                # for our task, we should not attempt to update the source
-                # because it has already been reset by another thread; the abort
-                # exception just tells us to abort this task.
-                if !isa(e, SourceAbortError{T,K})
-                    # This is the only place allowed to set error state, so we
-                    # can be confident that an error wasn't constructed by
-                    # another task.
-                    setfield!(s, :state, :error)
-                    setfield!(s, :error, SourceKernelError{T,K}(s,curr_task,e))
-                    setfield!(s, :waiting, nothing)
-                    # We've raised an error on the source, so notify all the
-                    # waiting tasks.
-                    notify(s_cond, nothing, all=true)
-                end
-                # Finally, rethrow the error.
-                rethrow(getfield(s, :error))
-            end
-            # we always have to relock! We are expected to leave this function
-            # with the cond locked, and it could cause deadlocks if we don't.
-            lock(s_cond)
-            setfield!(s, :state, :ok)
-            setfield!(s, :waiting, nothing)
-            # Regardless of where the start positoin is now, or what has
-            # happend to the buffer, we need to append this new value to
-            # the buffer.
-            push!(s_buf, x)
-            # We've updated the source-buffer, so notify the waiters.
-            notify(s_cond, nothing, all=true)
-        elseif s_state === :reading
-            # Secondly, someone else might be reading the kernel right now. If
-            # so we want to wait on the condition instead of reading ourselves.
-            wait(s_cond)
-        elseif s_state === :error
-            # If the buffer is in an error state, we should just throw the
-            # exception that was raised previously.
-            throw(getfield(s, :error))
-        else
-            error("invalid source state: $(s_state)")
-        end
-    end
-    # If the start position has moved and we # need to start all over.
-    (start_pos == getfield(s, :position)) || throw(
-        SourceReadError{T,K}(s, start_pos))
-    # Otherwise, we can return the current data!
-    return (start_pos, s_buf[1:n])
-end
-"""
-    source_ensure(s, n, p0)
-
-Ensures that the source `s` contains at least `n` items in its queue then yields
-a tuple `(position, first_n)` where `position` is the current stream position
-and `first_n` is the vector of the first `n` stream elements. If `p0` is
-`nothing` then it is ignored, but if it is a 128-bit unsigned integer, then the
-current source positionn of `s` must be equal to `p0` as well or else a
-`SourceReadError` is thrown.
-
-Unlike with the `source_ensure!()` function, The condition for source `s` must
-not be locked when `source_ensure()` is called.
-
-If the start position moves out from underneath the source as it is waiting on
-the kernel, then a `SourceReadError` is thrown.
-
-This function is part of the internal/private interface for `Air` and generally
-shouldn't be called outside of it.
-"""
-source_ensure(s::Source, n::UInt128, p0::Union{Nothing,UInt128}) =
-    lock(getfield(s, :cond)) do; source_ensure!(s, n, p0) end
-"""
-    source_receive(s, n)
-    source_receive(s, nothing)
-
-Performs the internal logic of receiving on a source. This functiion is intended
-as part of the internal/private logic of `Air` and generally shouldn't be called
-outside of it.
-
-See also: [`receive`](@ref), [`Source`](@ref), [`tx`](@ref)
-"""
-source_receive(s::Source{T,K}, ::Nothing) where {T,K} =
-    source_receive(s, nothing, currtx())
-source_receive(s::Source{T,K}, n::UInt128) where {T,K} =
-    source_receive(s, n, currtx())
-source_receive(s::Source{T,K}, ::Nothing, t::Transaction) where {T,K} = begin
-    (getfield(t, :state) === :running) || error(
-        "sources can only be popped in a transaction before finalizing")
-    sources = getfield(t, :sources)
-    dat = get(sources, s, nothing)
-    if dat === nothing
-        # We don't need to lock the cond here because it doesn't matter
-        # which side of any state-change this particular read of the
-        # position member lands.
-        sources[s] = SourceTxData(getfield(s, :position), 0x0)
-    end
-    # If the source is already in the transaction, then this is a no-op.
-    return nothing
-end
-source_receive(s::Source{T,K}, n::UInt128, t::Transaction) where {T,K} = begin
-    (getfield(t, :state) === :running) || error(
-        "sources can only be popped in a transaction before finalizing")
-    if n == 0x0
-        source_receive(s, nothing, t)
-        return T[]
-    end
-    sources = getfield(t, :sources)
-    dat = get(sources, s, nothing)
-    if dat === nothing
-        (pos, x) = source_ensure(s, n, nothing)
-        sources[s] = SourceTxData(pos, n)
-    else
-        (pos, x) = source_ensure(s, dat.count + n, dat.start_position)
-        x = x[dat.count+1:end]
-        dat.count += n
-    end
-    return x
-end
-source_receive(s::Source{T,K}, ::Nothing, ::Nothing) where {T,K} = nothing
-source_receive(s::Source{T,K}, n::UInt128, ::Nothing) where {T,K} = begin
-    (n == 0x0) && return T[]
-    s_buf = getfield(s, :buffer)
-    while true
-        try
-            return lock(getfield(s, :cond)) do
-                # Basic error checks.
-                (getfield(s, :state) == :error) && throw(getfield(s, :error))
-                # If the buffer is full enough, we can do a claim;
-                # otherwise, we'll have to ensure it.
-                pos = getfield(s, :position)
-                if length(s_buf) < n
-                    (pos,res) = source_ensure!(s, n, nothing)
-                end
-                return source_claim!(s, pos, n)
-            end
-        catch e
-            isa(e, SourceReadError{T,K}) || rethrow()
-        end
-    end
-end
-"""
-    receive(s)
-    receive(s, n)
-    receive(s, nothing)
-
-For a Source object s, yields the next value in its queue. Reading from a
-source in this way is thread-safe as long as it is done within a transaction.
-Inside of a transaction, all source reads are guaranteed to be sequential
-(i.e., not interrupted by other threads).
-
-The second argument, n, may be passed, in which case, no matter what it is (even
-1 or 0), a vector of the next n elements is returned; this receives each of them
-so they cannot be received later. Additionally, you can `receive(s, nothing)` to
-ensure that, during a transaction, no other thread processes anything from the
-source without actually reading from the source (this yields `nothing`).
-
-`receive(s)` is equivalent to `receive(s, 1)[1]`.
-
-See also: [`Source`](@ref), [`tx`](@ref)
-"""
-receive(s::Source{T,K}) where {T,K} =
-    source_receive(s, UInt128(0x1), currtx())[1]
-receive(s::Source{T,K}, n::UInt128) where {T,K} =
-    source_receive(s, n, currtx())
-receive(s::Source{T,K}, n::Integer) where {T,K} =
-    source_receive(s, UInt128(n), currtx())
-receive(s::Source{T,K}, ::Nothing) where {T,K} = begin
-    source_receive(s, 0x0, currtx())
-    return nothing
-end
-export receive
-
+    
