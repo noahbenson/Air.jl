@@ -1118,17 +1118,23 @@ end
 Base.isreadable(io::AirOut) = false
 Base.iswritable(io::AirOut) = true
 Base.eof(io::AirOut) = eof(stdout)
-Base.write(io::AirOut, x::UInt8) = send(io.actor) do io;
-    write(stdout, x)
-    return io
+Base.write(io::AirOut, x::UInt8) = let so = stdout
+    return send(io.actor) do io;
+        write(so, x)
+        return io
+    end
 end
-Base.write(io::AirOut, x::Char) = send(io.actor) do io;
-    write(stdout, x)
-    return io
+Base.write(io::AirOut, x::Char) = let so = stdout
+    return send(io.actor) do io;
+        write(so, x)
+        return io
+    end
 end
-Base.write(io::AirOut, x::Union{String,SubString{String}}) = send(io.actor) do io;
-    write(stdout, x)
-    return io
+Base.write(io::AirOut, x::Union{String,SubString{String}}) = let so = stdout
+    return send(io.actor) do io;
+        write(so, x)
+        return io
+    end
 end
 
 """
