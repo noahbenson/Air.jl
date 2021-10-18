@@ -110,6 +110,9 @@ PArray{T,N}() where {T,N} = PArray{T,N}(undef, (0, [1 for _ in 2:N]...))
 PArray(a::AbstractArray{T,N}) where {T,N} = PArray{T,N}(a)
 PArray(p::PArray{T,N}) where {T,N} = p
 PArray() = PArray{Any,1}()
+# Convert function also.
+Base.convert(::Type{PArray{T,N}}, x) where {T,N} = PArray{T,N}(x)
+Base.convert(::Type{PArray{T,N}}, x::PArray{T,N}) where {T,N} = x
 
 
 # ==============================================================================
