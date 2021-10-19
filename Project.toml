@@ -4,17 +4,15 @@ authors = ["Noah C. Benson"]
 version = "0.1.1"
 
 [deps]
-BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
-Compat = "34da2185-b29b-5c13-b0c7-acf172513d20"
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
-Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
-StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
 julia = "1.5"
+DataStructures = "0.18"
+Documenter = "0.26"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
