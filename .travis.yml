@@ -25,6 +25,6 @@ jobs:
       after_success: skip
   fast_finish: true
 script:
-  - travis_wait julia --code-coverage make.jl test
+  - travis_wait julia -t3 --code-coverage make.jl test
 after_success:
-  - julia make.jl codecov
+  - julia -t3 make.jl codecov
