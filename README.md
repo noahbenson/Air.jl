@@ -128,8 +128,8 @@ julia> setindex(m, -100, 2, 1)
 ```julia
 julia> using Air
 
-# Volatile objects are like Ref objects, but they are always safe to read and
-# they can only be set inside a transaction.
+# Volatile objects are like Ref objects. They are designed to be always safe to
+# read but to only be settable inside a transaction.
 julia> vol = Volatile(PDict(:a => 1, :b => 2, :c => 3))
 Volatile{PDict{Symbol,Int64}}(@CjK4yBeEKUm: PDict(:c => 3,:a => 1,:b => 2))
 
@@ -186,16 +186,18 @@ julia> notes[]
 0-element PArray{String,1}
 
 # We can define a function that sends a log to the message. The send function
-# requires that the first argument me a function, to be run in the actor's
+# requires that the first argument be a function, to be run in the actor's
 # thread, whose one parameter is the current value of actor and whose return
 # value is the updated value for the actor.
-julia> logmsg(s) = send(val -> pushfirst(val, s), notes)
+julia> logmsg(s) = begin
+         send(val -> pushfirst(val, s), notes)
+         nothing
+       end
 logmsg (generic function with 1 method)
 
 # We can test out the log function. Note that the pushfirst action in the
 # logmsg function above is run in a separate thread (the actor's thread).
 julia> logmsg("Log initialized.")
-Actor{PArray{String,1}}(@1j6NGQzgacH: String[])
 
 julia> notes[]
 1-element PArray{String,1}:
