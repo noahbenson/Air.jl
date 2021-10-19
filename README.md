@@ -69,7 +69,7 @@ julia> cube[:height]
 
 # The behavioir of PDict is generally similar to Dict.
 julia> cube[:name]
-KeyError: key :name not found
+ERROR: KeyError: key :name not found
 ```
 
 #### `PArray`: Persistent Arrays
