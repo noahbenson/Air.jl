@@ -64,6 +64,11 @@ julia> push(u, 3)
  1
  2
  3
+
+julia> PArray{Symbol,2}(:abc, (2,3))
+2×3 PArray{Symbol,2}:
+ :abc  :abc  :abc
+ :abc  :abc  :abc
 ```
 """
 struct PArray{T,N} <: AbstractPArray{T,N}
@@ -83,7 +88,7 @@ end
 # PArray Constructors
 
 PArray{T,N}(default, size::NTuple{N,<:Integer}) where {T,N} = begin
-    default = Tuple{T}(default)
+    default = Tuple{T}((default,))
     return PArray{T,N}(0x0, LinearIndices(size), PTree{T}(), default)
 end
 PArray{T,N}(::UndefInitializer, size::NTuple{N,<:Integer}) where {T,N} =
@@ -522,4 +527,125 @@ popfirst(u::PVector{T}) where {T} = begin
     return PVector{T}(u._i0 + 0x1, _lindex(n-1), tree, u._default)
 end
 
-export PArray, PVector
+# pzeros, pones, and other useful utility functions.
+"""
+    pzeros(dims...)
+    pzeros(T, dims...)
+
+Yields a persistent array (`PArray`) of zeros exactly as done by the `zeros()`
+function.
+
+See also [`pones`](@ref), [`pfill`](@ref), [`zeros`](@ref)
+
+# Examples
+
+```@meta
+DocTestSetup = quote
+    using Air, SparseArrays
+end
+```
+
+```jldoctest; filter=r"3-element (PArray{Float64,1}|PVector{Float64}):"
+julia> pzeros(Integer, 3)
+3-element PArray{Integer,1}:
+ 0
+ 0
+ 0
+
+julia> pzeros(Bool, (1,2))
+1×2 PArray{Bool,2}:
+ 0  0
+
+julia> pzeros(2, 3)
+2×3 PArray{Float64,2}:
+ 0.0  0.0  0.0
+ 0.0  0.0  0.0
+
+julia> pzeros((1, 1, 1, 1))
+1×1×1×1 PArray{Float64,4}:
+[:, :, 1, 1] =
+ 0.0
+```
+"""
+pzeros(::Type{T}, dims::Vararg{Integer}) where {T} = PArray{T,length(dims)}(0, dims...)
+pzeros(::Type{T}, dims::Tuple) where {T} = PArray{T,length(dims)}(0, dims...)
+pzeros(dims::Tuple) = PArray{Float64,length(dims)}(0.0, dims)
+pzeros(dims::Vararg{Integer}) = PArray{Float64,length(dims)}(0.0, dims...)
+
+"""
+    pones(dims...)
+    pones(T, dims...)
+
+Yields a persistent array (`PArray`) of ones exactly as done by the `ones()`
+function.
+
+See also [`pzeros`](@ref), [`pfill`](@ref), [`ones`](@ref)
+
+# Examples
+
+```@meta
+DocTestSetup = quote
+    using Air, SparseArrays
+end
+```
+
+```jldoctest; filter=r"3-element (PArray{Float64,1}|PVector{Float64}):"
+julia> pones(Integer, 3)
+3-element PArray{Integer,1}:
+ 1
+ 1
+ 1
+
+julia> pones(Bool, (1,2))
+1×2 PArray{Bool,2}:
+ 1  1
+
+julia> pones(2, 3)
+2×3 PArray{Float64,2}:
+ 1.0  1.0  1.0
+ 1.0  1.0  1.0
+
+julia> pones((1, 1, 1, 1))
+1×1×1×1 PArray{Float64,4}:
+[:, :, 1, 1] =
+ 1.0
+```
+"""
+pones(::Type{T}, dims...) where {T} = PArray{T,length(dims)}(1, dims...)
+pones(::Type{T}, dims::Tuple) where {T} = PArray{T,length(dims)}(1, dims...)
+pones(dims::Tuple) = PArray{Float64,length(dims)}(1.0, dims)
+pones(dims::Vararg{Integer}) = PArray{Float64,length(dims)}(1.0, dims...)
+
+"""
+    pfill(val, dims...)
+
+Yields a persistent array (`PArray`) of values exactly as done by the `fill()`
+function.
+
+See also [`pones`](@ref), [`pzeros`](@ref), [`fiill`](@ref)
+
+# Examples
+
+```@meta
+DocTestSetup = quote
+    using Air, SparseArrays
+end
+```
+
+```jldoctest; filter=r"3-element (PArray{Float64,1}|PVector{Float64}):"
+julia> pfill(NaN, 3)
+3-element PArray{Float64,1}:
+ NaN
+ NaN
+ NaN
+
+julia> pfill(:abc, 2, 3)
+2×3 PArray{Symbol,2}:
+ :abc  :abc  :abc
+ :abc  :abc  :abc
+```
+"""
+pfill(val::T, dims::Vararg{Integer}) where {T} = PArray{T,length(dims)}(val, dims...)
+pfill(val::T, dims::Tuple) where {T} = PArray{T,length(dims)}(val, dims)
+
+export PArray, PVector, pzeros, pones, pfill
