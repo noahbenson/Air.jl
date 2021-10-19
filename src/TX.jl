@@ -112,7 +112,7 @@ end
 julia> a = Actor{Symbol}(:start_sym)
 Actor{Symbol}(@JIm7aUS2sOl: :start_sym)
 
-julia> send(a) do val; Symbol("new_\$(val)") end
+julia> send(a) do val; sleep(0.1); Symbol("new_\$(val)") end
 Actor{Symbol}(@JIm7aUS2sOl: :start_sym)
 
 julia> sleep(1); a[]
