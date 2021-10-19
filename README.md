@@ -6,7 +6,7 @@
 
 # Air ##########################################################################
 
-Functional collections and utilities for Julia that are as light as air.
+An **A**tomic **I**mmutable **R**esource for Julia that is as light as air.
 
 
 ## Author ######################################################################
@@ -16,11 +16,18 @@ Noah C. Benson &lt;<nben@uw.edu>&gt;
 
 ## Description #################################################################
 
-Air is a Julia library that aims to take advantage of Julia's builtin immutable
-paradigms to provide a set of functional utilities. Air is currently heavily
-under development and will be changing substantially in the near future.
-Inspiration for Air's design is derived largely from paradigms in Clojure and
-Scala.
+Air is an [immutable data structure](https://en.wikipedia.org/wiki/Persistent_data_structure)
+and [software transactional memory](https://en.wikipedia.org/wiki/Software_transactional_memory)
+tool.  It provides several persistent data structures including dictionaries,
+sets, N-dimensional arrays, heaps, weighted dictionaries, and weighted sets,
+and it includes a transaction system that allows one to write atomic operations
+over such data.
+
+Air is a Julia library that takes advantage of Julia's builtin immutable
+paradigms to provide this set of functional utilities. Air is currently 
+under development but includes substantial testing and is generally stable.
+Inspiration for Air's design is derived largely from paradigms in
+[Clojure](https://en.wikipedia.org/wiki/Clojure).
 
 ### Examples
 
