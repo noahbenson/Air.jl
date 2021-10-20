@@ -5,6 +5,9 @@ makedocs(;
     format=Documenter.HTML(),
     pages=[
         "Home" => "index.md",
+        "Persistent Dictionaries" => "pdict.md",
+        "Persistent Sets" => "pset.md",
+        "Persistent Arrays" => "parray.md"
     ],
     repo="https://github.com/noahbenson/Air.jl/blob/{commit}{path}#L{line}",
     sitename="Air.jl",
