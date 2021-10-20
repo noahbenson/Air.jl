@@ -250,8 +250,7 @@ macro, `Actor`s and `Volatile`s are promising (though more testing is neeeded).
       weight, and the sete itself acts both as a piority queue (`first(pwset)`
       always yields the element with the highest weight in `O(1)` time) and as
       a distribution (`rand(pwset)` yields a random element of the set where the
-      probability of an element being chosen is equal to its weight divided by
-      the total weight of the elements in the set.
+      probability of each element is proportional to its weight).
     * `PWDict`, a persistent weighted dictionary type is like the `PWSet` type,
       but insted of elements with weights, the dictionary contains key-valye
       pairs with weights.
