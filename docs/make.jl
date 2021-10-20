@@ -16,5 +16,7 @@ makedocs(;
 )
 
 deploydocs(;
-    repo="github.com/noahbenson/Air.jl",
+           repo="github.com/noahbenson/Air.jl",
+           deploy_config=Documenter.Travis(),
+           push_preview=false
 )
