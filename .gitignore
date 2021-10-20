@@ -12,6 +12,8 @@ deps/deps.jl
 /packages/
 /registries/
 /compiled/
+/environments/
+/artifacts/
 .ipynb_checkpoints/
 
 # IPython Notebooks, in general, shouldn't be committed.
