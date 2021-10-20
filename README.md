@@ -27,13 +27,13 @@ Air is currently under development but includes substantial testing and is
 generally stable.  Inspiration for Air's design is derived largely from
 paradigms in [Clojure](https://en.wikipedia.org/wiki/Clojure).
 
-### Examples
+## Examples
 
 The following code blocks demonstrate some simple examples of how one can use
 the `Air` library.
 
 
-#### `PDict`: Persistent Dictionaries
+### `PDict`: Persistent Dictionaries
 
 ```julia
 julia> using Air
@@ -77,7 +77,7 @@ julia> cube[:name]
 ERROR: KeyError: key :name not found
 ```
 
-#### `PArray`: Persistent Arrays
+### `PArray`: Persistent Arrays
 
 ```julia
 julia> using Air
@@ -128,7 +128,7 @@ julia> setindex(m, -100, 2, 1)
  -100  5  5
 ```
 
-#### `Actor`, `Volatile`, and `tx()`: Thread-safe transactions
+### `Actor`, `Volatile`, and `tx()`: Thread-safe transactions
 
 ```julia
 julia> using Air
@@ -232,14 +232,15 @@ julia> notes[]
  "Log initialized."
 ```
 
-### Plans
+## Plans
 
 Note that many of the core components for Air already have working
-implementations. Several more are currently undergoing testing. In particular,
-the existing persistent data structures are fairly well tested and have a
+implementations. Others are currently undergoing testing. In particular, the
+existing persistent data structures are fairly well tested and have a
 performance comparable to their clojure counterparts. Additionally, initial
-tests of the thread-safe transaction system using the `@tx` transaction block
-macro, `Actor`s and `Volatile`s are promising (though more testing is neeeded).
+tests of the thread-safe transaction system using the transaction block macro,
+`Actor`s and `Volatile`s appear to work fine. However, as the author is not an
+expert on testing multi-threaded code, some caution is advisable.
 
 * Completed plans
   * Persistent data structures:
@@ -255,21 +256,29 @@ macro, `Actor`s and `Volatile`s are promising (though more testing is neeeded).
       but insted of elements with weights, the dictionary contains key-valye
       pairs with weights.
     * `LazyDict`, a persistent lazy dictionary type.
-* Plans with incomplete testing:
-  * Multi-threading utilities, inspired by Clojure
-    * Thread-safe `Delay` type.
-    * Thread-local `Var` type.
-    * A `Volatile` type that operates with the `@tx` macro to ensure
+  * Composable multi-threading utilities, inspired by Clojure
+    * A `Volatile` type that operates within transaction blocks to ensure
       that all updates to references within a synchronized block are performed
       atomically.
     * An `Actor` type for sending asynchronous jobs to independent threads which
-      also respects the atomic requirements of transactional `tx` blocks.
-* Plans that are implemented but require testing
-  * Multi-threading utilities, inspired by Clojure
+      also respects the atomic requirements of transactional blocks.
+    * Thread-local `Var` type.
+    * Thread-safe `Delay` type.
+* Plans with incomplete testing:
     * Thread-safe `Promise` types.
 * Plans that are not yet implemented
+  * **Forms.** Arbitrarily-deep nested persistent dictionaries and vectors are
+    a common data organization paradigm for persistent data. With `Volatile`
+    objects embedded in such a data-structure, multi-threaded operations can be
+    made almost transparent. The `Form` trait will be a subsystem for such
+    structures, using the various persistent types.
+  * Better query/build/update API tools for the data structures:
+    * The `setindex` and `push` functions are great, but it would be nice if
+    nested persistent data structures had single coherent way of updating and
+    querying them.
   * **Persistent Record Types.** Tool for defining data structures that
-    support lazy reification of members.
+    support lazy reification of members and updates to their properties in the
+    style of persistent data structure.
   * **Inheritable Method Parameters.** A common problem in many languages is
     that an API function that calls another lower-level function often needs to
     support some subset of the argument preprocessing that occurs in the
@@ -277,7 +286,6 @@ macro, `Actor`s and `Volatile`s are promising (though more testing is neeeded).
     arguments shouldn't need to be duplicated in multiple places; rather a
     simple macro should make it easy for common parameters to occur in both
     places and be documented identically in both.
-  * Better query/build/update API tools for the data structures?
 
 
 ## License
