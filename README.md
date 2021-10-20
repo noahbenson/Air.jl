@@ -138,7 +138,7 @@ julia> using Air
 julia> vol = Volatile(PDict(:a => 1, :b => 2, :c => 3))
 Volatile{PDict{Symbol,Int64}}(@CjK4yBeEKUm: PDict(:c => 3,:a => 1,:b => 2))
 
-# Like with Ref objects, Volatiles can be access with getindex(), inside or
+# Like with Ref objects, Volatiles can be accessed with getindex(), inside or
 # outside of a transaction.
 julia> vol[]
 PDict{Symbol,Int64} with 3 entries:
