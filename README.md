@@ -27,6 +27,11 @@ Air is currently under development but includes substantial testing and is
 generally stable.  Inspiration for Air's design is derived largely from
 paradigms in [Clojure](https://en.wikipedia.org/wiki/Clojure).
 
+## Documentation
+
+Documentation for `Air` is an ongoing endeavor and can be found
+[here](http://noahbenson.github.io/Air.jl/dev/).
+
 ## Examples
 
 The following code blocks demonstrate some simple examples of how one can use
