@@ -535,7 +535,7 @@ end
 Yields a persistent array (`PArray`) of zeros exactly as done by the `zeros()`
 function.
 
-See also [`pones`](@ref), [`pfill`](@ref), [`zeros`](@ref)
+See also [`pones`](@ref), [`pfill`](@ref), `zeros`
 
 # Examples
 
@@ -579,7 +579,7 @@ pzeros(dims::Vararg{Integer}) = PArray{Float64,length(dims)}(0.0, dims...)
 Yields a persistent array (`PArray`) of ones exactly as done by the `ones()`
 function.
 
-See also [`pzeros`](@ref), [`pfill`](@ref), [`ones`](@ref)
+See also [`pzeros`](@ref), [`pfill`](@ref), `ones`
 
 # Examples
 
@@ -622,7 +622,7 @@ pones(dims::Vararg{Integer}) = PArray{Float64,length(dims)}(1.0, dims...)
 Yields a persistent array (`PArray`) of values exactly as done by the `fill()`
 function.
 
-See also [`pones`](@ref), [`pzeros`](@ref), [`fiill`](@ref)
+See also [`pones`](@ref), [`pzeros`](@ref), `fill`
 
 # Examples
 
