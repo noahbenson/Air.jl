@@ -18,16 +18,14 @@ Noah C. Benson &lt;<nben@uw.edu>&gt;
 
 Air is an [immutable data structure](https://en.wikipedia.org/wiki/Persistent_data_structure)
 and [software transactional memory](https://en.wikipedia.org/wiki/Software_transactional_memory)
-tool.  It provides several persistent data structures including dictionaries,
-sets, N-dimensional arrays, heaps, weighted dictionaries, and weighted sets,
-and it includes a transaction system that allows one to write atomic operations
-over such data.
+tool for Julia.  It provides several persistent data structures including
+dictionaries, sets, N-dimensional arrays, heaps, weighted dictionaries, and
+weighted sets, and it includes a transaction system that allows one to compose
+atomic operations over such data.
 
-Air is a Julia library that takes advantage of Julia's builtin immutable
-paradigms to provide this set of functional utilities. Air is currently 
-under development but includes substantial testing and is generally stable.
-Inspiration for Air's design is derived largely from paradigms in
-[Clojure](https://en.wikipedia.org/wiki/Clojure).
+Air is currently under development but includes substantial testing and is
+generally stable.  Inspiration for Air's design is derived largely from
+paradigms in [Clojure](https://en.wikipedia.org/wiki/Clojure).
 
 ### Examples
 
@@ -188,11 +186,11 @@ PDict{Symbol,Int64} with 5 entries:
 julia> notes = Actor{PVector{String}}(pfill("", 0))
 Actor{PArray{String,1}}(@1j6NGQzgacH: String[])
 
-# It is safe to read actors at any time; this similar to reading Ref values.
+# It is safe to read actors at any time, similar to reading Volatile values.
 julia> notes[]
 0-element PArray{String,1}
 
-# We can define a function that sends a log to the message. The send function
+# We can define a function that sends a message to the log. The send function
 # requires that the first argument be a function, to be run in the actor's
 # thread, whose one parameter is the current value of actor and whose return
 # value is the updated value for the actor.
