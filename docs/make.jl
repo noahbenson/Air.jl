@@ -14,7 +14,6 @@ makedocs(;
          repo="https://github.com/noahbenson/Air.jl/blob/{commit}{path}#L{line}",
          sitename="Air.jl",
          authors="Noah C. Benson",
-         strict=:doctest,
          #assets=String[],
 )
 

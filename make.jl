@@ -23,9 +23,10 @@ end
 for j in jobs
     if j == :test
         Pkg.test("Air", coverage=true)
-        #Pkg.add("Documenter")
-        #import Documenter
-        #Documenter.doctest(Air)
+    elseif j == :doctest
+        Pkg.add("Documenter")
+        import Documenter
+        Documenter.doctest(Air)
     elseif j == :codecov
         Pkg.add("Coverage")
         using Coverage

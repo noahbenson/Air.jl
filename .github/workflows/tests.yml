@@ -15,10 +15,20 @@ on:
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # This workflow contains a single job called "build"
-  build:
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest
+  test:
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+    fail-fast: false
+    matrix:
+      version:
+        - '1.5'
+        - '1'
+        #- 'nightly'
+      os:
+        - ubuntu-latest
+      arch:
+        - x64
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -29,18 +39,41 @@ jobs:
         # uses: julia-actions/setup-julia@ee66464cb7897ffcc5322800f4b18d449794af30
         uses: julia-actions/setup-julia@v1.6.1
         with:
-          # The Julia version to download (if necessary) and use. Example: 1.0.4
-          version: 1 # optional, default is 1
-          # Architecture of the Julia binaries. Defaults to x64.
-          arch: x64 # optional, default is x64
-          # Display InteractiveUtils.versioninfo() after installing
-          show-versioninfo: true # optional, default is false
+          version: ${{ matrix.version }}
+          arch: ${{ matrix.arch }}
+          show-versioninfo: true
+      - uses: actions/cache@v1
+        env:
+          cache-name: cache-artifacts
+        with:
+          path: ~/.julia/artifacts
+          key: ${{ runner.os }}-test-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-test-${{ env.cache-name }}-
+            ${{ runner.os }}-test-
+            ${{ runner.os }}-
       - name: Run Tests
         run: |
-          cd $GITHUB_WORKSPACE && ./make.jl test
-      - name: Buld Docs
-        env:
+          cd $GITHUB_WORKSPACE && ./make.jl test && ./make.jl doctest
+      - uses: julia-actions/julia-processcoverage@v1
+      - uses: codecov/codecov-action@v1
+        with:
+          file: lcov.info
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: julia-actions/setup-julia@v1.6.1
+        with:
+          version: '1'
+      - run: |
+          julia --project=docs -e '
+            using Pkg
+            Pkg.develop(PackageSpec(path=pwd()))
+            Pkg.instantiate()'
+      - env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd $GITHUB_WORKSPACE && ./make.jl docs
-                    
+
