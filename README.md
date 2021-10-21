@@ -272,6 +272,12 @@ expert on testing multi-threaded code, some caution is advisable.
 * Plans with incomplete testing:
     * Thread-safe `Promise` types.
 * Plans that are not yet implemented
+  * **Improved Persistent Array Methods.** Currently, most methods of persistent
+    arrays yield mutable Julia arrays instead of persistent arrays. This is
+    largely because the `PArray` class does not explicitly overload these
+    functions or the broadcasting functions in order to ensure that it creates
+    `PArray` objects. For example, `PArray([1,2,3]) .+ 1` should yield a
+    `PArray`; currently it yields an `Array`.
   * **Forms.** Arbitrarily-deep nested persistent dictionaries and vectors are
     a common data organization paradigm for persistent data. With `Volatile`
     objects embedded in such a data-structure, multi-threaded operations can be
@@ -291,7 +297,13 @@ expert on testing multi-threaded code, some caution is advisable.
     arguments shouldn't need to be duplicated in multiple places; rather a
     simple macro should make it easy for common parameters to occur in both
     places and be documented identically in both.
-
+* Problems that needs to be worked out:
+  * It's not clear to me that Julia has entirely settled on or documented the
+    difference between the `@async` and the `@spawn` macros. My suspicion is
+    that the `Actor` constructor may need an additional parameter `async=false`
+    that can be set to true in order to force threads to be created using
+    `@async` instead of `@spawn`. In clojure there's a similar distinction
+    between the `send` and the `send-off` functions.
 
 ## License
 
