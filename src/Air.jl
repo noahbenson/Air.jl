@@ -66,7 +66,7 @@ julia> @p[1, 2, 3, 4]
  4
 ```
 
-```jldoctest; filter=r"2×2 PArray{Symbol, ?2}:"
+```jldoctest; filter=r"2×2 (PArray{Symbol, ?2}|PMatrix{Symbol}):"
 julia> @p[:q2 :q1; :q3 :q4]
 2×2 PArray{Symbol,2}:
  :q2  :q1
