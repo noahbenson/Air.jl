@@ -66,7 +66,7 @@ julia> push(u, 3)
  3
 ```
 
-```jldoctest; filter=r"2×3 (PArray{Symbol, 2}|PMatrix{Symbol}):"
+```jldoctest; filter=r"2×3 (PArray{Symbol, ?2}|PMatrix{Symbol}):"
 julia> PArray{Symbol,2}(:abc, (2,3))
 2×3 PArray{Symbol,2}:
  :abc  :abc  :abc
