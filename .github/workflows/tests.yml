@@ -42,5 +42,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd $GIITHUB_WORKSPACE && ./make.jl docs
+          cd $GITHUB_WORKSPACE && ./make.jl docs
                     
