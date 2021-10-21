@@ -39,5 +39,8 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE && ./make.jl test
       - name: Buld Docs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd $GIITHUB_WORKSPACE && ./make.jl docs
+                    
