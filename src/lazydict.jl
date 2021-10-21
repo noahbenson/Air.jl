@@ -244,7 +244,9 @@ LazyIdDict{Symbol,Float64} with 3 entries:
   :a => 1.0
   :b => 2.0
 
-julia> d2 = push(d, :d => Delay{Real}(() -> (println("Running..."); 0.5))); haskey(d2, :d)
+julia> d2 = push(d, :d => Delay{Real}(() -> (println("Running..."); 0.5)));
+
+julia> haskey(d2, :d)
 true
 
 julia> d2[:d]
@@ -253,6 +255,7 @@ Running...
 
 julia> d2[:d]
 0.5
+```
 """ LazyIdDict
 
 # Export the relevant symbols.
