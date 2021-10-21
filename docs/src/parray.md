@@ -1,9 +1,11 @@
-# Persistent Array Examples
+# Persistent Arrays
 
 One of the core pieces of `Air` is the persistent array type. This type is
 broadly similar to Julia's native array type; the `PArray{T,N}` type imitates
 the `Array{T,N}` type. This page walks through several simple examples of the
 usage of this type.
+
+## Examples
 
 ```julia
 julia> using Air

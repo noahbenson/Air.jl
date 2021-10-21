@@ -1,10 +1,12 @@
-# Persistent Dictionary Examples
+# Persistent Dictionaries
 
 One of the core pieces of `Air` is the persistent dictionary types. These types
 are broadly similar to Julia's native dictionary types; the `PDict{K,V}` type
 imitates the `Dict{K,V}` type, and the `PIdDict{K,V}` type imitates
 `IdDict{K,V}`. This page walks through several simple examples of the usage of
 these types.
+
+## Examples
 
 ```julia
 julia> using Air

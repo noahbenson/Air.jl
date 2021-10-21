@@ -5,6 +5,8 @@ similar to Julia's native set types; the `PSet{T}` type imitates the `Set{T}`
 type, and the `PIdSet{T}` type imitates `Core.IdSet{T}`. This page walks through
 several simple examples of the usage of these types.
 
+## Examples
+
 ```julia
 julia> using Air
 
