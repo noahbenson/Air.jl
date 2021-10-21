@@ -240,9 +240,9 @@ LazyIdDict{Symbol,Real} with 3 entries:
 ```jldoctest; filter=r"LazyIdDict{Symbol, ?Float64} with 3 entries:"
 julia> d = LazyIdDict{Symbol,Float64}(:a => 1, :b => 2, :c => 12.8)
 LazyIdDict{Symbol,Float64} with 3 entries:
-  :c => 12.8
-  :a => 1.0
   :b => 2.0
+  :a => 1.0
+  :c => 12.8
 
 julia> d2 = push(d, :d => Delay{Real}(() -> (println("Running..."); 0.5)));
 
