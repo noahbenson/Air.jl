@@ -1,6 +1,6 @@
 <!-- [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://noahbenson.github.io/Air.jl/stable) -->
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://noahbenson.github.io/Air.jl/dev)
-[![Build Status](https://travis-ci.com/noahbenson/Air.jl.svg?branch=master)](https://travis-ci.com/noahbenson/Air.jl)
+![Build Status](https://github.com/noahbenson/Air.jl/actions/workflows/tests.yml/badge.svg)
 [![Codecov](https://codecov.io/gh/noahbenson/Air.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/noahbenson/Air.jl)
 
 
