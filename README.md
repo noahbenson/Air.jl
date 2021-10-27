@@ -73,11 +73,11 @@ PDict{Symbol,Float64} with 3 entries:
   :height => 0.2
   :width  => 9.4
 
-# Lookup operatoins are nearly as fast as with native Dict objects.
+# Lookup operations are nearly as fast as with native Dict objects.
 julia> cube[:height]
 0.2
 
-# The behavioir of PDict is generally similar to Dict.
+# The behavior of PDict is generally similar to Dict.
 julia> cube[:name]
 ERROR: KeyError: key :name not found
 ```
@@ -197,7 +197,8 @@ julia> notes[]
 
 # We can define a function that sends a message to the log. The send function
 # requires that the first argument be a function, to be run in the actor's
-# thread, whose one parameter is the current value of actor and whose return
+# thread, whose one parameter is the current 
+e of actor and whose return
 # value is the updated value for the actor.
 julia> logmsg(s) = begin
          send(val -> pushfirst(val, s), notes)
@@ -242,23 +243,23 @@ julia> notes[]
 Note that many of the core components for Air already have working
 implementations. Others are currently undergoing testing. In particular, the
 existing persistent data structures are fairly well tested and have a
-performance comparable to their clojure counterparts. Additionally, initial
+performance comparable to their Clojure counterparts. Additionally, initial
 tests of the thread-safe transaction system using the transaction block macro,
 `Actor`s and `Volatile`s appear to work fine. However, as the author is not an
 expert on testing multi-threaded code, some caution is advisable.
 
-* Completed plans
+* Completed plans:
   * Persistent data structures:
     * `PArray`, a persistent array type that mimics Julia's native `Array`
     * `PDict`, a persistent dictionary type that mimics Julia's native `Dict`
     * `PSet`, a persistent set type.
     * `PWSet`, a weighted persistent set type. Each element of a `PWSet` has a
-      weight, and the sete itself acts both as a piority queue (`first(pwset)`
-      always yields the element with the highest weight in `O(1)` time) and as
+      weight, and the set itself acts both as a piority queue (`first(pwset)`
+      always yields the element with the most weight in `O(1)` time) and as
       a distribution (`rand(pwset)` yields a random element of the set where the
       probability of each element is proportional to its weight).
     * `PWDict`, a persistent weighted dictionary type is like the `PWSet` type,
-      but insted of elements with weights, the dictionary contains key-valye
+      but insted of elements with weights, the dictionary contains key–value
       pairs with weights.
     * `LazyDict`, a persistent lazy dictionary type.
   * Composable multi-threading utilities, inspired by Clojure
@@ -271,14 +272,14 @@ expert on testing multi-threaded code, some caution is advisable.
     * Thread-safe `Delay` type.
 * Plans with incomplete testing:
     * Thread-safe `Promise` types.
-* Plans that are not yet implemented
+* Plans that are not yet implemented:
   * **Improved Persistent Array Methods.** Currently, most methods of persistent
     arrays yield mutable Julia arrays instead of persistent arrays. This is
     largely because the `PArray` class does not explicitly overload these
     functions or the broadcasting functions in order to ensure that it creates
     `PArray` objects. For example, `PArray([1,2,3]) .+ 1` should yield a
     `PArray`; currently it yields an `Array`.
-  * **Forms.** Arbitrarily-deep nested persistent dictionaries and vectors are
+  * **Forms.** Arbitrarily-deep-nested persistent dictionaries and vectors are
     a common data organization paradigm for persistent data. With `Volatile`
     objects embedded in such a data-structure, multi-threaded operations can be
     made almost transparent. The `Form` trait will be a subsystem for such
@@ -302,14 +303,14 @@ expert on testing multi-threaded code, some caution is advisable.
     difference between the `@async` and the `@spawn` macros. My suspicion is
     that the `Actor` constructor may need an additional parameter `async=false`
     that can be set to true in order to force threads to be created using
-    `@async` instead of `@spawn`. In clojure there's a similar distinction
+    `@async` instead of `@spawn`. In Clojure there's a similar distinction
     between the `send` and the `send-off` functions.
 
 ## License
 
 MIT License
 
-Copyright (c) 2019-2021 Noah C. Benson
+Copyright (c) 2019–2021 Noah C. Benson
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
