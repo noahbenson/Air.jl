@@ -197,8 +197,7 @@ julia> notes[]
 
 # We can define a function that sends a message to the log. The send function
 # requires that the first argument be a function, to be run in the actor's
-# thread, whose one parameter is the current 
-e of actor and whose return
+# thread, whose one parameter is the current value of actor and whose return
 # value is the updated value for the actor.
 julia> logmsg(s) = begin
          send(val -> pushfirst(val, s), notes)
@@ -206,7 +205,7 @@ julia> logmsg(s) = begin
        end
 logmsg (generic function with 1 method)
 
-# We can test out the log function. Note that the pushfirst action in the
+# We can test out the logmsg function. Note that the pushfirst action in the
 # logmsg function above is run in a separate thread (the actor's thread).
 julia> logmsg("Log initialized.")
 
@@ -255,14 +254,14 @@ expert on testing multi-threaded code, some caution is advisable.
     * `PSet`, a persistent set type.
     * `PWSet`, a weighted persistent set type. Each element of a `PWSet` has a
       weight, and the set itself acts both as a piority queue (`first(pwset)`
-      always yields the element with the most weight in `O(1)` time) and as
+      always yields the element with the highest weight in `O(1)` time) and as
       a distribution (`rand(pwset)` yields a random element of the set where the
       probability of each element is proportional to its weight).
     * `PWDict`, a persistent weighted dictionary type is like the `PWSet` type,
-      but insted of elements with weights, the dictionary contains key–value
+      but instead of elements with weights, the dictionary contains key–value
       pairs with weights.
     * `LazyDict`, a persistent lazy dictionary type.
-  * Composable multi-threading utilities, inspired by Clojure
+  * Composable multi-threading utilities, inspired by Clojure:
     * A `Volatile` type that operates within transaction blocks to ensure
       that all updates to references within a synchronized block are performed
       atomically.
@@ -279,7 +278,7 @@ expert on testing multi-threaded code, some caution is advisable.
     functions or the broadcasting functions in order to ensure that it creates
     `PArray` objects. For example, `PArray([1,2,3]) .+ 1` should yield a
     `PArray`; currently it yields an `Array`.
-  * **Forms.** Arbitrarily-deep-nested persistent dictionaries and vectors are
+  * **Forms.** Arbitrarily-deep nested persistent dictionaries and vectors are
     a common data organization paradigm for persistent data. With `Volatile`
     objects embedded in such a data-structure, multi-threaded operations can be
     made almost transparent. The `Form` trait will be a subsystem for such
