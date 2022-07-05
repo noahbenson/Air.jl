@@ -141,7 +141,11 @@ ptree_firstbit(nodeid::HASH_T) = ptree_bitshift(nodeid)[1]
 
 Yields the minimum child leaf index associated with the given nodeid.
 """
-ptree_minleaf(nodeid::HASH_T) = nodeid & ~PTREE_DEPTH_MASK
+ptree_minleaf(nodeid::HASH_T) = begin
+    (b0,s) = ptree_bitshift(nodeid)
+    mask = (HASH_ONE << (b0 + s)) - HASH_ONE
+    return nodeid & ~mask
+end
 """
     ptree_maxleaf(nodeid)
 
@@ -158,7 +162,6 @@ end
 Yields the (min, max) child leaf index assiciated with the given nodeid.
 """
 ptree_minmaxleaf(nodeid::HASH_T) = begin
-    mn = ptree_minleaf(nodeid)
     (bit0,shift) = ptree_bitshift(nodeid)
     mask = (HASH_ONE << (bit0+shift)) - HASH_ONE
     return (nodeid & ~mask, nodeid | mask)
