@@ -91,22 +91,62 @@
         @test Air.getweight(d, :b) == 5.0
     end
 
-    @testset "pop preserves the subtree-weight totals" begin
-        # KNOWN BUG (pre-existing, not introduced here): deleting from a
-        # `PHeap` leaves the cached subtree-weight totals inconsistent with the
-        # actual weights of the remaining nodes. The heap ordering itself is
-        # correct, but `Random.rand` scales its draw by the root total, so
-        # weighted sampling is skewed after any `pop`/`delete`. The `@test_broken`
-        # below records this; it should start passing when the totals are fixed
-        # in `_pheap_swap`/`_pheap_delete`.
-        h = Air.PHeap{Int,Float64}(>)
-        for it in ((1, 1.0), (2, 5.0), (3, 3.0), (4, 2.0), (5, 4.0))
-            h = push(h, it)
+    @testset "the cached subtree totals stay consistent" begin
+        # `PHeap` caches, for every node, the total weight of its subtree, and
+        # `Random.rand` scales its draw by the root's total. If those totals
+        # drift, weighted sampling is silently skewed, so check the defining
+        # relation — a node's total is its own weight plus its children's —
+        # after every operation.
+        badtotals(h) = begin
+            hp = Air.getfield(h, :_heap)
+            n = length(hp)
+            nbad = 0
+            for i in 1:n
+                (_, w, tot) = hp[i]
+                expected = w
+                (2i <= n) && (expected += hp[2i][3])
+                (2i + 1 <= n) && (expected += hp[2i + 1][3])
+                tot == expected || (nbad += 1)
+            end
+            nbad
         end
-        h = pop(h)
-        hp = Air.getfield(h, :_heap)
-        root_tot = hp[1][3]
-        weight_sum = sum((hp[i][2] for i in 1:length(hp)); init=0.0)
-        @test_broken root_tot == weight_sum
+        # `>` puts the largest weight first, `<` the smallest.
+        for (cmp, isdesc) in ((>, true), (<, false))
+            h = Air.PHeap{Int,Float64}(cmp)
+            live = Int[]
+            for step in 1:200
+                r = mod(step, 4)
+                if isempty(live) || r == 0 || r == 1
+                    h = push(h, (step, float(mod(step * 7, 13) + 1)))
+                    push!(live, step)
+                elseif r == 2
+                    h = Air.setweight(h, rand(live), float(mod(step * 5, 13) + 1))
+                elseif r == 3 && mod(step, 8) == 3
+                    k = first(h); h = pop(h); filter!(!=(k), live)
+                else
+                    k = rand(live); h = delete(h, k); filter!(!=(k), live)
+                end
+                @test badtotals(h) == 0
+            end
+            # the root total must equal the sum of the remaining weights
+            @test Air.getfield(h, :_heap)[1][3] ==
+                sum(Air.getweight(h, k) for k in live; init=0.0)
+        end
+    end
+
+    @testset "weighted sampling is proportional to weight" begin
+        # The user-visible consequence of drifting totals: draws are scaled by
+        # the root total, so a wrong total skews them.
+        h = Air.PHeap{Int,Float64}(>)
+        h = push(h, (1, 1.0))
+        h = push(h, (2, 9.0))
+        h = push(h, (3, 5.0))
+        h = delete(h, 3)                 # deleting used to be what broke them
+        counts = Dict(1 => 0, 2 => 0)
+        for _ in 1:20_000
+            counts[rand(h)] += 1
+        end
+        ratio = counts[2] / max(counts[1], 1)
+        @test 7.0 < ratio < 11.0         # expected 9.0
     end
 end
