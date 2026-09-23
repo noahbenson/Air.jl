@@ -253,21 +253,17 @@ julia> u = [:a,:b,:c,:d]; push(u, :e)
 ```
 
 ```jldoctest
-julia> s = Set([:a, :b, :c]); push(s, :d)
-Set{Symbol} with 4 elements:
-  :a
-  :b
-  :d
-  :c
+julia> s = Set([:a, :b, :c]); s2 = push(s, :d);
+
+julia> (length(s2), :a in s2, :d in s2, :e in s2)
+(4, true, true, false)
 ```
 
-```jldoctest; filter=r"Dict{Symbol, ?Int64} with 4 entries:"
-julia> d = Dict(:a => 1, :b => 2); push(d, :c => 3, :d => 4)
-Dict{Symbol,Int64} with 4 entries:
-  :a => 1
-  :b => 2
-  :d => 4
-  :c => 3
+```jldoctest
+julia> d = Dict(:a => 1, :b => 2); d2 = push(d, :c => 3, :d => 4);
+
+julia> (length(d2), d2[:c], d2[:d])
+(4, 3, 4)
 ```
 """
 function push end

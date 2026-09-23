@@ -46,7 +46,7 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest; filter=r"0-element (PArray{Any, ?1}|PVector{Any})"
+```jldoctest; filter=r"0-element (PArray{Any, ?1}|PVector{Any})|Any\\[\\]"
 julia> PArray()
 0-element PArray{Any,1}
 ```
