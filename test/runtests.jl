@@ -23,5 +23,6 @@ Random.seed!(0x5eed)
     include("variables.jl")
     include("TX.jl")
     include("countdown.jl")
+    include("typestability.jl")
     include("aqua.jl")
 end
