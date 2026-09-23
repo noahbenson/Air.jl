@@ -53,15 +53,51 @@ PHeap{T}(f::F) where {T,F<:Function} = PHeap{T,Float64,F,PDict{T,Int}}(f)
 PHeap{T}() where {T} = PHeap{T,Float64,typeof(>),PDict{T,Int}}(>)
 PHeap(f::F) where {F<:Function} = PHeap{Any,Float64,F,PDict{Any,Int}}(f)
 PHeap() = PHeap{Any,Float64,typeof(>),PDict{Any,Int}}(>)
+"""
+    _pheap_swap(heap, index, ii, jj, childsecond)
+
+Exchanges the value/weight stored at slots `ii` and `jj` of `heap`, which must be
+adjacent in the tree (one the parent of the other), repairing the cached
+subtree-weight totals and the value→slot index. `childsecond` says whether `jj`
+is the child (as in `_pheap_fix_down`) or the parent (as in `_pheap_fix_up`).
+
+A swap leaves the shape of the tree alone, so each slot's total must be the
+weight now sitting in it plus the totals of the children it already had. Both are
+computed here, before either slot is written, so they cost nothing beyond the two
+writes the exchange needs anyway.
+
+Computing them from the children is what makes this correct. Adjusting the totals
+the two slots held before the swap — which is what this used to do — only comes
+out right if those totals were consistent beforehand, and during a percolation
+they are not: the caller has already added the weight change to the node it is
+moving, so the totals along the path are mid-update. The children, by contrast,
+are untouched at this point, because a percolation rewrites one slot at a time
+along a single path.
+"""
 function _pheap_swap(
-    heap::PVector{Tuple{T,W,W}}, index::D, ii::Int, jj::Int, subii::Bool, subjj::Bool
+    heap::PVector{Tuple{T,W,W}}, index::D, ii::Int, jj::Int, childsecond::Bool
 ) where {T,W,D<:AbstractPDict{T,Int}}
-    (tii, wii, totii) = heap[ii]
-    (tjj, wjj, totjj) = heap[jj]
-    newtotii = totjj + wii - (subjj ? wjj : 0)
-    newtotjj = totii + wjj - (subii ? wii : 0)
-    heap = setindex(heap, (tjj, wjj, newtotjj), ii)
-    heap = setindex(heap, (tii, wii, newtotii), jj)
+    n = length(heap)
+    (tii, wii, _) = heap[ii]
+    (tjj, wjj, _) = heap[jj]
+    child, parent = childsecond ? (jj, ii) : (ii, jj)
+    # After the exchange, slot `ii` holds `jj`'s value/weight and vice versa, so
+    # the child slot's new weight is the one that was at the other slot.
+    childw = childsecond ? wii : wjj
+    parentw = childsecond ? wjj : wii
+    # The child slot keeps the children it already had.
+    ctot = childw
+    (2child <= n) && (ctot += heap[2child][3])
+    (2child + 1 <= n) && (ctot += heap[2child + 1][3])
+    # The parent slot's children are the child slot (with its new total) and that
+    # slot's sibling.
+    ptot = parentw
+    for k in (2parent, 2parent + 1)
+        (k <= n) || continue
+        ptot += (k == child) ? ctot : heap[k][3]
+    end
+    heap = setindex(heap, (tjj, wjj, ii == child ? ctot : ptot), ii)
+    heap = setindex(heap, (tii, wii, jj == child ? ctot : ptot), jj)
     index = setindex(index, ii, tjj)
     index = setindex(index, jj, tii)
     return (heap, index)
@@ -91,7 +127,7 @@ function _pheap_fix_up(
         # Break when we don't need to percolate up anymore.
         cmp(neww, parent[2]) || break
         # We need to swap with the parent
-        (heap, index) = _pheap_swap(heap, index, ii, pp, true, false)
+        (heap, index) = _pheap_swap(heap, index, ii, pp, false)
         ii = pp
     end
     # At this point we may have gone all the way up the heap, but we might have
@@ -119,7 +155,7 @@ function _pheap_fix_down(
             # Only check the left...
             if cmp(lnode[2], node[2])
                 # Swap these two
-                (heap, index) = _pheap_swap(heap, index, ii, lch, true, true)
+                (heap, index) = _pheap_swap(heap, index, ii, lch, true)
             end
             # There can't be children beyond this point.
             break
@@ -128,12 +164,12 @@ function _pheap_fix_down(
             if cmp(lnode[2], rnode[2])
                 cmp(node[2], lnode[2]) && break
                 # lnode < node and lnode < rnode
-                (heap, index) = _pheap_swap(heap, index, ii, lch, true, true)
+                (heap, index) = _pheap_swap(heap, index, ii, lch, true)
                 ii = lch
             else
                 cmp(node[2], rnode[2]) && break
                 # rnode < node and rnode < lnode
-                (heap, index) = _pheap_swap(heap, index, ii, rch, true, true)
+                (heap, index) = _pheap_swap(heap, index, ii, rch, true)
                 ii = rch
             end
         end
