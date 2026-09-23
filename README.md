@@ -1,6 +1,6 @@
 <!-- [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://noahbenson.github.io/Air.jl/stable) -->
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://noahbenson.github.io/Air.jl/dev)
-![Build Status](https://github.com/noahbenson/Air.jl/actions/workflows/tests.yml/badge.svg)
+[![Build Status](https://github.com/noahbenson/Air.jl/actions/workflows/tests.yml/badge.svg)](https://github.com/noahbenson/Air.jl/actions/workflows/tests.yml)
 [![Codecov](https://codecov.io/gh/noahbenson/Air.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/noahbenson/Air.jl)
 
 
@@ -27,10 +27,21 @@ Air is currently under development but includes substantial testing and is
 generally stable.  Inspiration for Air's design is derived largely from
 paradigms in [Clojure](https://en.wikipedia.org/wiki/Clojure).
 
+## Requirements
+
+Air requires **Julia 1.10 or later**, and is tested against the 1.10 LTS, the
+latest release, and nightly, on Linux, macOS, and Windows.
+
 ## Documentation
 
 Documentation for `Air` is an ongoing endeavor and can be found
-[here](http://noahbenson.github.io/Air.jl/dev/).
+[here](https://noahbenson.github.io/Air.jl/dev/).  In addition to this page, it
+includes guides for the
+[persistent collections](https://noahbenson.github.io/Air.jl/dev/parray/),
+the [transaction system](https://noahbenson.github.io/Air.jl/dev/stm/),
+[task-local variables](https://noahbenson.github.io/Air.jl/dev/var/),
+[utilities](https://noahbenson.github.io/Air.jl/dev/util/), and a
+[full API reference](https://noahbenson.github.io/Air.jl/dev/API/).
 
 ## Examples
 
@@ -267,7 +278,7 @@ expert on testing multi-threaded code, some caution is advisable.
       atomically.
     * An `Actor` type for sending asynchronous jobs to independent threads which
       also respects the atomic requirements of transactional blocks.
-    * Thread-local `Var` type.
+    * Task-local `Var` type.
     * Thread-safe `Delay` type.
 * Plans with incomplete testing:
     * Thread-safe `Promise` types.
