@@ -138,6 +138,35 @@ end
 # ==============================================================================
 # Task-local variables
 
+# A filtered volatile routes every write through the `filter` function stored in
+# the volatile's data; that field is typed `Function`, so the call is dynamic.
+# Measured here so the cost of that is visible rather than assumed.
+SUITE["tx"]["filtered"] = @benchmarkable begin
+    local v = Volatile{Int}(0)
+    tx() do
+        setfilter!(v, x -> x + 1)
+    end
+    tx() do
+        for i in 1:$NTX
+            v[] = i
+        end
+    end
+    v[]
+end
+
+# Sending to an actor enqueues a function for its own task to run later; the
+# queue is heterogeneous by design, so the call the actor makes is dynamic.
+SUITE["actor"] = BenchmarkGroup(["send"])
+SUITE["actor"]["send"] = @benchmarkable begin
+    local a = Actor{Int}(0)
+    for i in 1:$NTX
+        send(a) do x
+            x + i
+        end
+    end
+    a
+end
+
 SUITE["var"] = BenchmarkGroup(["read"])
 SUITE["var"]["getindex"] = @benchmarkable begin
     local v = Var{Int}(0)
