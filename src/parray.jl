@@ -395,7 +395,11 @@ Base.iterate(u::PArray{T,N}) where {T,N} = iterate(u, 1)
 # ==============================================================================
 # Indexing methods
 
-IndexStyle(::Type{PArray{T,N}}) where {T,N} = IndexLinear()
+# A `PArray` only defines N-dimensional `getindex`, so it is a Cartesian array.
+# Claiming `IndexLinear` here meant that linear indexing was left to Base's
+# fallback; since Julia 1.13 that fallback raises a `CanonicalIndexError`
+# instead, so `p[1]` (and anything built on it, such as array equality) failed.
+Base.IndexStyle(::Type{PArray{T,N}}) where {T,N} = IndexCartesian()
 function _parray_get(u::PTree{T}, ii::HASH_T, ::Nothing) where {T}
     x = get(u, ii, nothing)
     (x === nothing) || return x
