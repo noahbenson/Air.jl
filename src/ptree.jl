@@ -512,7 +512,7 @@ function getpair(u::PTree{T}, k::HASH_T) where {T}
         id = getfield(u, :id)
     end
 end
-function Base.get(u::PTree{T}, k::HASH_T, df) where {T}
+@inline function Base.get(u::PTree{T}, k::HASH_T, df) where {T}
     # Start by making sure that the address spaces are compatible:
     # we want to make sure (once) that k is beneath u.
     id = getfield(u, :id)
@@ -561,7 +561,7 @@ function Base.in(kv::Pair{HASH_T,T}, u::PTree{T}, f::F) where {T,F<:Function}
 end
 Base.in(kv::Pair{HASH_T,T}, u::PTree{T}) where {T} = in(kv, u, (===))
 
-Base.iterate(u::PTree{T}) where {T} = begin
+@inline Base.iterate(u::PTree{T}) where {T} = begin
     (getfield(u, :numel) == 0) && return nothing
     id = getfield(u, :id)
     d = ptree_depth(id)
@@ -578,7 +578,7 @@ Base.iterate(u::PTree{T}) where {T} = begin
     v = leaves[1] # @inbounds leaves[1]
     return (Pair{HASH_T,T}(k, v), k)
 end
-iterkeys(u::PTree{T}) where {T} = begin
+@inline iterkeys(u::PTree{T}) where {T} = begin
     (getfield(u, :numel) == 0) && return nothing
     id = getfield(u, :id)
     d = ptree_depth(id)
@@ -595,7 +595,7 @@ iterkeys(u::PTree{T}) where {T} = begin
     v = leaves[1] # @inounds leaves[1]
     return (k, k)
 end
-itervals(u::PTree{T}) where {T} = begin
+@inline itervals(u::PTree{T}) where {T} = begin
     (getfield(u, :numel) == 0) && return nothing
     id = getfield(u, :id)
     d = ptree_depth(id)
@@ -672,7 +672,7 @@ macro _ptree_iterate_gencode(rtype::Symbol)
     # Put these together into the functions.
     return esc(
         quote
-            $fn(u::PTree{T}, k0::HASH_T) where {T} = begin
+            @inline $fn(u::PTree{T}, k0::HASH_T) where {T} = begin
                 id = getfield(u, :id)
                 d = ptree_depth(id)
                 while true
