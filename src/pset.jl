@@ -83,12 +83,12 @@ macro _plinset_code(name::Symbol, eq, h)
             Base.eltype(::Type{$name{T}}) where {T} = T
             Base.eltype(::$name{T}) where {T} = T
             Base.IteratorSize(::Type{$name{T}}) where {T} = Base.HasLength()
-            Base.iterate(u::$name{T}) where {T} = begin
+            @inline Base.iterate(u::$name{T}) where {T} = begin
                 els = getfield(u, :elements)
                 (els === nothing) && return nothing
                 return iterate(els)
             end
-            Base.iterate(u::$name{T}, state) where {T} = begin
+            @inline Base.iterate(u::$name{T}, state) where {T} = begin
                 els = getfield(u, :elements)
                 return iterate(els, state)
             end
@@ -202,14 +202,14 @@ macro _pset_code(name::Symbol, eq, h, linset)
             Base.IteratorEltype(::Type{$name{T}}) where {T} = Base.HasEltype()
             Base.eltype(::Type{$name{T}}) where {T} = T
             Base.eltype(u::$name{T}) where {T} = T
-            Base.iterate(u::$name{T}) where {T} = begin
+            @inline Base.iterate(u::$name{T}) where {T} = begin
                 (getfield(u, :count) == 0) && return nothing
                 (lst, titer) = iterate(getfield(u, :root))
                 lst = lst[2]
                 (el, liter) = iterate(lst)
                 return (el, (lst, liter, titer))
             end
-            Base.iterate(u::$name{T}, tup) where {T} = begin
+            @inline Base.iterate(u::$name{T}, tup) where {T} = begin
                 (lst, liter, titer) = tup
                 if liter !== nothing
                     r = iterate(lst, liter)

@@ -79,7 +79,7 @@ macro _plindict_code(name::Symbol, eq, h)
             Base.eltype(::Type{$name{K,V}}) where {K,V} = Pair{K,V}
             Base.eltype(::$name{K,V}) where {K,V} = Pair{K,V}
             Base.IteratorSize(::Type{$name{K,V}}) where {K,V} = Base.HasLength()
-            Base.iterate(u::$name{K,V}, ii::Int) where {K,V} = begin
+            @inline Base.iterate(u::$name{K,V}, ii::Int) where {K,V} = begin
                 (ii > length(u)) && return nothing
                 ks = getfield(u, :keys)::Vector{K}
                 vs = getfield(u, :values)::Vector{V}
@@ -88,7 +88,7 @@ macro _plindict_code(name::Symbol, eq, h)
                     ii + 1,
                 )
             end
-            Base.iterate(u::$name{K,V}) where {K,V} = iterate(u, 1)
+            @inline Base.iterate(u::$name{K,V}) where {K,V} = iterate(u, 1)
             Base.get(u::$name{K,V}, kk, df) where {K,V} = begin
                 ks = getfield(u, :keys)
                 (ks === nothing) && return df
@@ -253,14 +253,14 @@ macro _pdict_code(name::Symbol, eq, h, lindict)
             Base.eltype(::Type{$name{K,V}}) where {K,V} = Pair{K,V}
             Base.eltype(::$name{K,V}) where {K,V} = Pair{K,V}
             Base.IteratorSize(::Type{$name{K,V}}) where {K,V} = Base.HasLength()
-            Base.iterate(u::$name{K,V}) where {K,V} = begin
+            @inline Base.iterate(u::$name{K,V}) where {K,V} = begin
                 x = itervals(getfield(u, :root))
                 (x === nothing) && return nothing
                 (rootel, rootii) = x
                 (el, reliter) = iterate(rootel)
                 return (el, (rootii, reliter, length(rootel)))
             end
-            Base.iterate(u::$name{K,V}, tup::Tuple{HASH_T,Int,Int}) where {K,V} = begin
+            @inline Base.iterate(u::$name{K,V}, tup::Tuple{HASH_T,Int,Int}) where {K,V} = begin
                 (rootii, reliter, rellen) = tup
                 root = getfield(u, :root)
                 if reliter < rellen
