@@ -3,8 +3,9 @@ name: CI
 on:
   push:
     branches: [master]
+  # Deliberately not restricted to PRs targeting `master`: PRs stacked on
+  # another feature branch need CI too.
   pull_request:
-    branches: [master]
   workflow_dispatch:
 
 concurrency:
