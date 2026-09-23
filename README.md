@@ -1,6 +1,6 @@
 <!-- [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://noahbenson.github.io/Air.jl/stable) -->
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://noahbenson.github.io/Air.jl/dev)
-![Build Status](https://github.com/noahbenson/Air.jl/actions/workflows/tests.yml/badge.svg)
+[![Build Status](https://github.com/noahbenson/Air.jl/actions/workflows/tests.yml/badge.svg)](https://github.com/noahbenson/Air.jl/actions/workflows/tests.yml)
 [![Codecov](https://codecov.io/gh/noahbenson/Air.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/noahbenson/Air.jl)
 
 
@@ -27,10 +27,21 @@ Air is currently under development but includes substantial testing and is
 generally stable.  Inspiration for Air's design is derived largely from
 paradigms in [Clojure](https://en.wikipedia.org/wiki/Clojure).
 
+## Requirements
+
+Air requires **Julia 1.10 or later**, and is tested against the 1.10 LTS, the
+latest release, and nightly, on Linux, macOS, and Windows.
+
 ## Documentation
 
 Documentation for `Air` is an ongoing endeavor and can be found
-[here](http://noahbenson.github.io/Air.jl/dev/).
+[here](https://noahbenson.github.io/Air.jl/dev/).  In addition to this page, it
+includes guides for the
+[persistent collections](https://noahbenson.github.io/Air.jl/dev/parray/),
+the [transaction system](https://noahbenson.github.io/Air.jl/dev/stm/),
+[task-local variables](https://noahbenson.github.io/Air.jl/dev/var/),
+[utilities](https://noahbenson.github.io/Air.jl/dev/util/), and a
+[full API reference](https://noahbenson.github.io/Air.jl/dev/API/).
 
 ## Examples
 
@@ -73,7 +84,8 @@ PDict{Symbol,Float64} with 3 entries:
   :height => 0.2
   :width  => 9.4
 
-# Lookup operations are nearly as fast as with native Dict objects.
+# Lookups are logarithmic in the size of the dictionary, and allocate a
+# little; see the comparison against Dict in bench/compare_base.jl.
 julia> cube[:height]
 0.2
 
@@ -103,7 +115,8 @@ julia> m = pfill(5, (2,3))
 
 # The operations push(), pushfirst(), pop(), and popfirst() are all similar to
 # their mutable equivalents (push!(), pushfirst!(), pop!(), and popfirst!()),
-# and all are very efficient with PVector (PArray{*,1}) objects.
+# and all are efficient with PVector (PArray{*,1}) objects, allocating only
+# the path they change.
 julia> v = push(v, -1.8)
 4-element PArray{Float64,1}:
   1.0
@@ -241,11 +254,13 @@ julia> notes[]
 
 Note that many of the core components for Air already have working
 implementations. Others are currently undergoing testing. In particular, the
-existing persistent data structures are fairly well tested and have a
-performance comparable to their Clojure counterparts. Additionally, initial
-tests of the thread-safe transaction system using the transaction block macro,
-`Actor`s and `Volatile`s appear to work fine. However, as the author is not an
-expert on testing multi-threaded code, some caution is advisable.
+existing persistent data structures are fairly well tested, and the test suite
+includes benchmarks (`bench/`) and a comparison against the mutable `Base`
+collections (`bench/compare_base.jl`) so that performance claims can be checked
+rather than asserted. Additionally, initial tests of the thread-safe transaction
+system using the transaction block macro, `Actor`s and `Volatile`s appear to
+work fine. However, as the author is not an expert on testing multi-threaded
+code, some caution is advisable.
 
 * Completed plans:
   * Persistent data structures:
@@ -267,7 +282,7 @@ expert on testing multi-threaded code, some caution is advisable.
       atomically.
     * An `Actor` type for sending asynchronous jobs to independent threads which
       also respects the atomic requirements of transactional blocks.
-    * Thread-local `Var` type.
+    * Task-local `Var` type.
     * Thread-safe `Delay` type.
 * Plans with incomplete testing:
     * Thread-safe `Promise` types.

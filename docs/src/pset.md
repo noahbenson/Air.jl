@@ -54,7 +54,7 @@ PSet{Symbol} with 6 elements:
   :Caitlin
   :Sheri
 
-# Lookup operatoins are nearly as fast as with native Set objects.
+# Membership tests are logarithmic in the size of the set.
 julia> in(:Joseph, names)
 true
 ```

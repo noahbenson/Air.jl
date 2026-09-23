@@ -349,20 +349,18 @@ julia> PDict()
 PDict{Any,Any}()
 ```
 
-```jldoctest; filter=r"PDict{Symbol, ?Real} with 3 entries:"
-julia> PDict(:a => 1, :b => 2, :c => 12.8)
-PDict{Symbol,Real} with 3 entries:
-  :c => 12.8
-  :a => 1
-  :b => 2
+```jldoctest
+julia> d = PDict(:a => 1, :b => 2, :c => 12.8);
+
+julia> (d[:a], d[:b], d[:c])
+(1, 2, 12.8)
 ```
 
-```jldoctest; filter=r"PDict{Symbol, ?Float64} with [34] entries:"
-julia> d = PDict{Symbol,Float64}(:a => 1, :b => 2, :c => 12.8)
-PDict{Symbol,Float64} with 3 entries:
-  :c => 12.8
-  :a => 1.0
-  :b => 2.0
+```jldoctest
+julia> d = PDict{Symbol,Float64}(:a => 1, :b => 2, :c => 12.8);
+
+julia> (d[:a], d[:c])
+(1.0, 12.8)
 
 julia> :b in keys(d)
 true
@@ -370,12 +368,10 @@ true
 julia> d[:c]
 12.8
 
-julia> push(d, :d => 0.1)
-PDict{Symbol,Float64} with 4 entries:
-  :d => 0.1
-  :c => 12.8
-  :a => 1.0
-  :b => 2.0
+julia> d2 = push(d, :d => 0.1);
+
+julia> (length(d2), d2[:d])
+(4, 0.1)
 ```
 """ PDict
 @doc """
@@ -403,21 +399,20 @@ end
 ```jldoctest; filter=r"PIdDict{Any, ?Any}\\(\\)"
 julia> PIdDict()
 PIdDict{Any,Any}()
-
-```jldoctest; filter=r"PIdDict{Symbol, ?Real} with 3 entries:"
-julia> PIdDict(:a => 1, :b => 2, :c => 12.8)
-PIdDict{Symbol,Real} with 3 entries:
-  :c => 12.8
-  :a => 1
-  :b => 2
 ```
 
-```jldoctest; filter=r"PIdDict{Symbol, ?Float64} with [34] entries:"
-julia> d = PIdDict{Symbol,Float64}(:a => 1, :b => 2, :c => 12.8)
-PIdDict{Symbol,Float64} with 3 entries:
-  :c => 12.8
-  :a => 1.0
-  :b => 2.0
+```jldoctest
+julia> d = PIdDict(:a => 1, :b => 2, :c => 12.8);
+
+julia> (d[:a], d[:b], d[:c])
+(1, 2, 12.8)
+```
+
+```jldoctest
+julia> d = PIdDict{Symbol,Float64}(:a => 1, :b => 2, :c => 12.8);
+
+julia> (d[:a], d[:c])
+(1.0, 12.8)
 
 julia> :b in keys(d)
 true
@@ -425,12 +420,11 @@ true
 julia> d[:c]
 12.8
 
-julia> push(d, :d => 0.1)
-PIdDict{Symbol,Float64} with 4 entries:
-  :d => 0.1
-  :c => 12.8
-  :a => 1.0
-  :b => 2.0
+julia> d2 = push(d, :d => 0.1);
+
+julia> (length(d2), d2[:d])
+(4, 0.1)
+```
 """ PIdDict
 
 # Export the relevant symbols.
