@@ -143,7 +143,11 @@ ptree_firstbit(nodeid::HASH_T) = ptree_bitshift(nodeid)[1]
 
 Yields the minimum child leaf index associated with the given nodeid.
 """
-ptree_minleaf(nodeid::HASH_T) = nodeid & ~PTREE_DEPTH_MASK
+ptree_minleaf(nodeid::HASH_T) = begin
+    (b0, s) = ptree_bitshift(nodeid)
+    mask = (HASH_ONE << (b0 + s)) - HASH_ONE
+    return nodeid & ~mask
+end
 """
     ptree_maxleaf(nodeid)
 
@@ -160,7 +164,6 @@ end
 Yields the (min, max) child leaf index assiciated with the given nodeid.
 """
 ptree_minmaxleaf(nodeid::HASH_T) = begin
-    mn = ptree_minleaf(nodeid)
     (bit0, shift) = ptree_bitshift(nodeid)
     mask = (HASH_ONE << (bit0+shift)) - HASH_ONE
     return (nodeid & ~mask, nodeid | mask)
@@ -434,19 +437,19 @@ end
 Base.convert(::Type{PTree{T}}, u::PTree{T}) where {T} = u
 Base.convert(::Type{PTree{T}}, u::PTree{U}) where {T,U} = PTree{T}(u)
 Base.convert(::Type{PTree{T}}, u::AbstractDict{HASH_T,U}) where {T,U} = PTree{T}(u)
-Base.convert(::Type{PTree{T}}, u::AbstractArray{1,U}) where {T,U} = PTree{T}(u)
+Base.convert(::Type{PTree{T}}, u::AbstractArray{U,1}) where {T,U} = PTree{T}(u)
 
 # ==============================================================================
 # Methods
 #
 # Definitions of methods of the above type.
-Base.empty(u::PTree{T}) where {T} = PTree{T}(r)
+Base.empty(u::PTree{T}) where {T} = PTree{T}()
 Base.empty(u::PTree{T}, S::Type) where {T} = PTree{S}()
 Base.isempty(u::PTree{T}) where {T} = (getfield(u, :numel) == 0)
 Base.length(u::PTree{T}) where {T} = getfield(u, :numel)
 function Base.isequal(t::PTree{T}, s::PTree{S}) where {T,S}
     bits = getfield(t, :bits)
-    (bits == getfiield(s, :bits)) || return false
+    (bits == getfield(s, :bits)) || return false
     (getfield(t, :id) == getfield(s, :id)) || return false
     tcells = getfield(t, :cells)
     scells = getfield(s, :cells)
@@ -534,15 +537,16 @@ function Base.get(u::PTree{T}, k::HASH_T, df) where {T}
     end
 end
 function Base.in(kv::Pair{HASH_T,T}, u::PTree{T}, f::F) where {T,F<:Function}
+    k = kv[1]
     id = getfield(u, :id)
-    ptree_isbeneath(id, k) || return df
+    ptree_isbeneath(id, k) || return false
     # Also, if we are empty, we need to return right away.
-    (getfield(u, :numel) == 0) && return df
+    (getfield(u, :numel) == 0) && return false
     # Okay, let's try to find the child.
     while true
         # Is it in this Tree?
         (inq, bitidx, idx) = ptree_cellindex!(u, k)
-        inq || return df
+        inq || return false
         # Are we a twig?
         #if isa(getfield(u, :cells), Vector{T})
         if ptree_depth(id) == PTREE_TWIG_DEPTH

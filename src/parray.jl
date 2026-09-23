@@ -103,8 +103,8 @@ PArray(default::T, size::NTuple{N,<:Integer}) where {T,N} = PArray{T,N}(default,
 function PArray(default::T, size::Vararg{<:Integer,N}) where {T,N}
     return PArray{T,N}(default, NTuple{N,Int}(size))
 end
-function PArray(default::T, size::Vector{<:Integer}) where {T,N}
-    return PArray{T,N}(default, NTuple{N,Int}(size))
+function PArray(default::T, size::Vector{<:Integer}) where {T}
+    return PArray(default, NTuple{length(size),Int}(size))
 end
 function PArray{T,N}(a::AbstractArray{S,N}) where {T,N,S}
     tree = PTree{T}(a)
@@ -131,7 +131,7 @@ const PVector{T} = PArray{T,1} where {T}
 PVector(default::T, len::II) where {T,II<:Integer} = PArray{T,1}(default, (len,))
 PVector(default::T, len::Tuple{II}) where {T,II<:Integer} = PArray{T,1}(default, len)
 PVector(a::AbstractArray{T,1}) where {T} = PArray{T,1}(a)
-PVector(p::PArray{T,1}) where {T,N} = p
+PVector(p::PArray{T,1}) where {T} = p
 PVector() = PArray{Any,1}()
 export PVector
 
@@ -145,9 +145,9 @@ PMatrix(args...) = PArray{Any,2}(args...)
 function PMatrix(default::T, rs::II, cs::JJ) where {T,II<:Integer,JJ<:Integer}
     return PArray{T,2}(default, (rs, cs))
 end
-PMatrix(default::T, sz::Tuple{<:Integer,<:Integer}) where {T} = PArray{T,2}(default, len)
+PMatrix(default::T, sz::Tuple{<:Integer,<:Integer}) where {T} = PArray{T,2}(default, sz)
 PMatrix(a::AbstractArray{T,2}) where {T} = PArray{T,2}(a)
-PMatrix(p::PArray{T,2}) where {T,N} = p
+PMatrix(p::PArray{T,2}) where {T} = p
 PMatrix() = PArray{Any,2}()
 export PMatrix
 

@@ -215,6 +215,9 @@ function _memoize_fixarg(arg::Expr)
         end
     )
 end
+# Arguments without a type annotation, e.g. `x` in `f(x)`, arrive as plain
+# symbols rather than expressions.
+_memoize_fixarg(arg) = arg
 # Now the memoize macro itself.
 """
     @memoize name(args...) = expr
@@ -285,7 +288,7 @@ macro memoize(assgn::Expr)
     end
     # See if the expr is tagged; if so, we have a particular type we can use in
     # the memoization dict.
-    MT = expr.head === :(::) ? expr.head : :Any
+    MT = expr.head === :(::) ? expr.args[2] : :Any
     # Make an expression for the tuple of arguments.
     argtup = Expr(:tuple, args...)
     # Symbols we will need in the generated code.
@@ -524,7 +527,7 @@ julia> lockall((r1, r2, r3)) do; :success end
 ```
 """
 function lockall end
-lockall(f::Function, locks::Vector{T}) where {T,N} = _lockall(f, copy(locks))
+lockall(f::Function, locks::Vector{T}) where {T} = _lockall(f, copy(locks))
 lockall(f::Function, locks::NTuple{N,T}) where {T,N} = _lockall(f, [locks...])
 lockall(f::Function, locks::Vararg{T,N}) where {T,N} = _lockall(f, [locks...])
 export lockall
@@ -536,7 +539,7 @@ _to_pairs(kvs) = begin
         K = Any
         V = Any
         if Base.IteratorEltype(kvs) isa Base.HasEltype
-            ET = Base.eltype(itr)
+            ET = Base.eltype(kvs)
             if isa(ET, DataType)
                 if ET <: Pair
                     K = ET.parameters[1]

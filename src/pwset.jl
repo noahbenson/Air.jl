@@ -50,10 +50,10 @@ macro _pwset_code(name::Symbol, dicttype::Symbol)
             function $name{T}(itr) where {T}
                 return $name{T}(itr...)
             end
-            function $name{T}(::Tuple{}) where {T,W<:Number}
+            function $name{T}(::Tuple{}) where {T}
                 return $name{T,Float64}(PHeap{T,Float64,typeof(>),$dicttype{T,Int}}(>))
             end
-            function $name{T}() where {T,W<:Number}
+            function $name{T}() where {T}
                 return $name{T,Float64}(PHeap{T,Float64,typeof(>),$dicttype{T,Int}}(>))
             end
             function $name{T}(d::$name{T,W}) where {T,W}
@@ -75,7 +75,9 @@ macro _pwset_code(name::Symbol, dicttype::Symbol)
                 return $name{Any,Float64}()
             end
             function $name()
-                return $name{Any,Float64}(PHeap{Any,Float64,typeof(>),$dicttype{T,Int}}(>))
+                return $name{Any,Float64}(
+                    PHeap{Any,Float64,typeof(>),$dicttype{Any,Int}}(>)
+                )
             end
             # Document the equal/hash types.
             equalfn(::Type{T}) where {T<:$name} = equalfn($(dicttype))

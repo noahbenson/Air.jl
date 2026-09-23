@@ -36,17 +36,17 @@ macro _plinset_code(name::Symbol, eq, h)
                     for ii in 1:length(u)
                         ui = u[ii]
                         found = false
-                        for jj in 1:k
-                            if v[ii] == ui
+                        for jj in 1:kk
+                            if v[jj] == ui
                                 found = true
                                 break
                             end
                         end
                         found && continue
-                        k += 1
-                        v[k] = ui
+                        kk += 1
+                        v[kk] = ui
                     end
-                    resize!(v, k)
+                    resize!(v, kk)
                     return new{T}(v)
                 end
             end
@@ -124,7 +124,7 @@ macro _plinset_code(name::Symbol, eq, h)
                 else
                     for ii in 1:n
                         if $eq(els[ii], x)
-                            return $name{T}(delete(elss, ii), Val{:safe}())
+                            return $name{T}(delete(els, ii), Val{:safe}())
                         end
                     end
                 end
@@ -200,8 +200,8 @@ macro _pset_code(name::Symbol, eq, h, linset)
             Base.length(s::$name) = getfield(s, :count)
             Base.IteratorSize(::Type{$name{T}}) where {T} = Base.HasLength()
             Base.IteratorEltype(::Type{$name{T}}) where {T} = Base.HasEltype()
-            Base.eltype(::Type{$name{T}}) where {T,N} = T
-            Base.eltype(u::$name{T}) where {T,N} = T
+            Base.eltype(::Type{$name{T}}) where {T} = T
+            Base.eltype(u::$name{T}) where {T} = T
             Base.iterate(u::$name{T}) where {T} = begin
                 (getfield(u, :count) == 0) && return nothing
                 (lst, titer) = iterate(getfield(u, :root))

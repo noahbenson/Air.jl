@@ -128,7 +128,7 @@ macro _pwdict_code(name::Symbol, dicttype::Symbol)
                 (heap === u.heap && dict === u.dict) && return u
                 return $name{K,V,W}(heap, dict)
             end
-            Air.push(u::$name{K,V,W}, x::Tuple) where {K,V,W,J,U} = begin
+            Air.push(u::$name{K,V,W}, x::Tuple) where {K,V,W} = begin
                 (k, v, w) = _to_pwtup(x)
                 heap = push(u.heap, (k, w))
                 dict = push(u.dict, k => v)

@@ -35,27 +35,24 @@ struct PHeap{T,W<:Number,F<:Function,D<:AbstractPDict{T,Int}}
     _index::D
     _compare::F
 end
-function PHeap{T,W,F,D}(f::F) where {T,W<:Number,F<:Function,D<:AbstractPDict}
-    return PHeap{T,W,F,D}(PVector{Tuple{T,W,W}}(), D{T,Int}(), f)
-end
+# The index dictionary parameter must be fully parameterized (e.g. `PDict{T,Int}`)
+# rather than a bare `PDict`, because the struct constrains it to
+# `D <: AbstractPDict{T,Int}`; a `UnionAll` like `PDict` does not satisfy that.
 function PHeap{T,W,F,D}(f::F) where {T,W<:Number,F<:Function,D<:AbstractPDict{T,Int}}
     return PHeap{T,W,F,D}(PVector{Tuple{T,W,W}}(), D(), f)
 end
-function PHeap{T,W,D}(f::F) where {T,W<:Number,F<:Function,D<:AbstractPDict}
-    return PHeap{T,W,F,D}(PVector{Tuple{T,W,W}}(), D{T,Int}(), f)
-end
-function PHeap{T,W,D}(f::F) where {T,W<:Number,F<:Function,D<:AbstractPDict{T,Int}}
-    return PHeap{T,W,F,D}(PVector{Tuple{T,W,W}}(), D(), f)
-end
-PHeap{T,W,D}() where {T,W<:Number,D<:AbstractPDict} = PHeap{T,W,D}(>)
-PHeap{T,W}(f::F) where {T,W<:Number,F<:Function} = PHeap{T,W,PDict}(f)
-PHeap{T,W}() where {T,W<:Number} = PHeap{T,W,PDict}(>)
-PHeap{T,D}(f::F) where {T,F<:Function,D<:AbstractPDict} = PHeap{T,Float64,D}(f)
-PHeap{T,D}() where {T,D<:AbstractPDict} = PHeap{T,Float64,D}(>)
-PHeap{T}(f::F) where {T,F<:Function} = PHeap{T,Float64,F,PDict}(f)
-PHeap{T}() where {T} = PHeap{T,Float64,PDict}(>)
-PHeap(f::F) where {F<:Function} = PHeap{Any,Float64,F,PDict}(f)
-PHeap() = PHeap{Any,Float64,PDict}(>)
+PHeap{T,W,F,D}() where {T,W<:Number,F<:Function,D<:AbstractPDict{T,Int}} =
+    PHeap{T,W,F,D}(>)
+# Shorthand constructors: the weight type defaults to Float64, the comparison to
+# `>`, and the index dictionary to a `PDict` keyed by `T`.
+PHeap{T,W,F}(f::F) where {T,W<:Number,F<:Function} = PHeap{T,W,F,PDict{T,Int}}(f)
+PHeap{T,W,F}() where {T,W<:Number,F<:Function} = PHeap{T,W,F,PDict{T,Int}}(>)
+PHeap{T,W}(f::F) where {T,W<:Number,F<:Function} = PHeap{T,W,F,PDict{T,Int}}(f)
+PHeap{T,W}() where {T,W<:Number} = PHeap{T,W,typeof(>),PDict{T,Int}}(>)
+PHeap{T}(f::F) where {T,F<:Function} = PHeap{T,Float64,F,PDict{T,Int}}(f)
+PHeap{T}() where {T} = PHeap{T,Float64,typeof(>),PDict{T,Int}}(>)
+PHeap(f::F) where {F<:Function} = PHeap{Any,Float64,F,PDict{Any,Int}}(f)
+PHeap() = PHeap{Any,Float64,typeof(>),PDict{Any,Int}}(>)
 function _pheap_swap(
     heap::PVector{Tuple{T,W,W}}, index::D, ii::Int, jj::Int, subii::Bool, subjj::Bool
 ) where {T,W,D<:AbstractPDict{T,Int}}
@@ -268,19 +265,27 @@ function _pheap_delete(p::PHeap{T,W,F,D}, ii::Int) where {T,W,F,D}
     n = length(p)
     cmp = p._compare
     (n == 1) && return PHeap{T,W,F,D}(pop(p._heap), empty(p._index), cmp)
-    # Grab the very last node, then we can prep the removal by updating its
-    # weight to be zero (this subtracts its weight from the tree's totals).
+    # Grab the very last node and the value being deleted.
     (tn, wn, totn) = p._heap[n]
-    (heap, index) = _pheap_fixw(p._heap, p._index, cmp, n, zero(W))
-    # Now we replace the node in slot ii with the last node, but keep the
-    # old weight so that the tree's totals are still valid.
-    (tii, wii, totii) = heap[ii]
-    heap = setindex(pop(heap), (tn, wii, totii), ii)
-    index = setindex(delete(index, tii), ii, tn)
-    # Then set the weight at that node to be that of its old value!
+    tii = p._heap[ii][1]
+    # Remove the last slot and subtract its weight from its ancestors' subtree
+    # totals. Note that we deliberately do *not* zero the last node's weight to
+    # prepare the removal: whether a zero weight stays at the end of the heap or
+    # percolates towards the root depends on the comparison function, so doing
+    # that would move the node (and thus pop the wrong element) for comparators
+    # such as `<`.
+    heap = pop(p._heap)
+    heap = _pheap_fix_tot(heap, div(n, 2), -wn)
+    index = delete(p._index, tii)
+    # If we removed the last node, we are already done.
+    (ii == n) && return PHeap{T,W,F,D}(heap, index, cmp)
+    # Otherwise move the last node into the vacated slot, keeping the weight and
+    # subtree total it replaces so that the tree's totals stay valid, then set
+    # its real weight (which percolates and repairs the totals along the way).
+    (_, wii, totii) = heap[ii]
+    heap = setindex(heap, (tn, wii, totii), ii)
+    index = setindex(index, ii, tn)
     (heap, index) = _pheap_fixw(heap, index, cmp, ii, wn)
-    # Thwt will leave us in a valid state; return the new heap.
-    (heap === p._heap && index === p._index) && return p
     return PHeap{T,W,F,D}(heap, index, cmp)
 end
 function pop(p::PHeap{T,W,F,D}) where {T,W,F,D}

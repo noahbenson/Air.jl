@@ -364,7 +364,7 @@ pop(d::AbstractDict{K,V}, k::J, dv) where {K,V,J} = begin
     v = pop!(rem, k, dv)
     return (v, rem)
 end
-pop(s::AbstractSet{T}) where {T,S} = begin
+pop(s::AbstractSet{T}) where {T} = begin
     rem = copy(s)
     u = pop!(rem)
     return (u, rem)
@@ -374,10 +374,10 @@ pop(s::AbstractSet{T}, u::S) where {T,S} = begin
     u = pop!(rem, u)
     return (u, rem)
 end
-function pop(s::AbstractPSet{T}) where {T,S}
-    (length(d) == 0) && throw(ArgumentError("cannot pop from an empty collection"))
-    x = iterate(d)[1]
-    return (x, delete(d, x))
+function pop(s::AbstractPSet{T}) where {T}
+    (length(s) == 0) && throw(ArgumentError("cannot pop from an empty collection"))
+    x = iterate(s)[1]
+    return (x, delete(s, x))
 end
 pop(s::AbstractPSet{T}, u::S) where {T,S} = begin
     rem = copy(s)
@@ -736,7 +736,7 @@ function delete(u::AbstractVector{T}, k::K) where {T,K<:Integer}
     (k < n) && copyto!(out, k, u, k + 1, n - k)
     return out
 end
-delete(a::Tuple, idx::K) where {K<:Integer,T} = (a[1:(idx - 1)]..., a[(idx + 1):end]...)
+delete(a::Tuple, idx::K) where {K<:Integer} = (a[1:(idx - 1)]..., a[(idx + 1):end]...)
 function delete(a::Tuple{}, idx::II) where {II<:Integer}
     return throw(ArgumentError("delete: $idx is out of range for a Tuple{}"))
 end

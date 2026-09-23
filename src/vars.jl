@@ -374,11 +374,11 @@ Var{Any}(@JIm7aUS2sOl: :start_sym; init=:start_sym)
 """
 macro var(expr::Expr)
     (expr.head === :(=)) ||
-        throw(ArgumentException("@var macro requires an assigmnet expression"))
+        throw(ArgumentError("@var macro requires an assignment expression"))
     (name, initval) = expr.args
     isa(name, QuoteNode) && (name = name.value)
     isa(name, Symbol) ||
-        throw(ArgumentException("@var macro requires a symbol for the name"))
+        throw(ArgumentError("@var macro requires a symbol for the name"))
     s = gensym()
     if isa(initval, Expr) && initval.head === :(::)
         T = initval.args[2]

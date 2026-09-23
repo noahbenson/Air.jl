@@ -360,6 +360,16 @@ struct VolatileData{T}
     function VolatileData{T}(v::S) where {T,S}
         return new{T}(v, nothing, nothing)
     end
+    # Store `v` verbatim: unlike the constructors above, the filter is *not*
+    # applied. This is needed wherever the documentation requires that a value
+    # not be refiltered, namely `setfilter!`, `setfinalize!`, and
+    # `voldata_finalize` (the finalize/filter functions are not rerun when the
+    # filter is changed, nor when the finalizer returns a value).
+    function VolatileData{T}(
+        v::S, flt::Union{Nothing,Function}, fin::Union{Nothing,Function}, ::Val{:raw}
+    ) where {T,S}
+        return new{T}(v, flt, fin)
+    end
 end
 """
     voldata_finalize(voldata)
@@ -373,7 +383,7 @@ This function is a private/internal implementation detail of the `Air` library.
 function voldata_finalize(v::VolatileData{T}) where {T}
     (v.finalize === nothing) && return v
     u = v.finalize(v.value)
-    return (u === v.value ? v : VolatileData{T}(u, v.filter, v.finalize))
+    return (u === v.value ? v : VolatileData{T}(u, v.filter, v.finalize, Val{:raw}()))
 end
 """
     Volatile{T}(value)
@@ -480,7 +490,7 @@ Base.show(io::IO, v::Volatile) = begin
     print(io, ")")
 end
 Base.propertynames(::Volatile) = (:value,)
-Base.getproperty(v::Volatile, p) = begin
+Base.getproperty(v::Volatile, p::Symbol) = begin
     if p == :value
         return v[]
     else
@@ -524,15 +534,13 @@ A transaction object keeps track of what is going on during a particular
 transaction. These are generally low-level objects that shouldn't be
 touched directly.
 
-Transactions have the following propertiies:
-* `state` is either `:running`, `:validating`, or `:error`;
+Transactions have the following properties:
+* `state` is one of `:running`, `:finalizing`, `:locking`, or `:committing`;
 * `rvolatiles` is the set of all `Volatile` objects that have been read during
   the transaction;
-* `wvolatiles` is the set of all `Volatile` objects that have been changed;
-* `actors` is the set of all `Actor` objects to which messagees have been sent
-  during the transaction; and
-* `sources` is the set of all `Source` objects from which items have been
-  popped.
+* `wvolatiles` is the set of all `Volatile` objects that have been changed; and
+* `actors` is the set of all `Actor` objects to which messages have been sent
+  during the transaction.
 """
 mutable struct Transaction
     state::Symbol
@@ -550,15 +558,15 @@ mutable struct Transaction
 end
 export Transaction
 Base.propertynames(::Transaction) = (:state, :rvolatiles, :wvolatiles, :actors)
-Base.getproperty(t::Transaction, p) = begin
+Base.getproperty(t::Transaction, p::Symbol) = begin
     if p == :state
         return getfield(t, :state)
     elseif p == :rvolatiles
-        return Base.IdSet(keys(getfield(p, :reads)))
+        return Base.IdSet{Volatile}(keys(getfield(t, :reads)))
     elseif p == :wvolatiles
-        return Base.IdSet(keys(getfield(p, :writes)))
+        return Base.IdSet{Volatile}(keys(getfield(t, :writes)))
     elseif p == :actors
-        return Base.IdSet(keys(getfield(p, :actors)))
+        return Base.IdSet{Actor}(keys(getfield(t, :actors)))
     else
         error("type $(typeof(t)) has no field $p")
     end
@@ -817,8 +825,8 @@ function volatile_setindex!(v::Volatile{T}, x::S, ::Nothing) where {T,S}
 end
 function Base.setindex!(v::Volatile{T}, x::S) where {T,S}
     value = getfield(v, :value)
-    # Run the filter on the new value.
-    (value.filter === nothing) || (x = value.filter(x))
+    # The `VolatileData` constructor applies the filter, so it must not be
+    # applied here as well.
     newdat = VolatileData{T}(x, value.filter, value.finalize)
     return volatile_setindex!(v, newdat, currtx())
 end
@@ -837,6 +845,14 @@ Yields the finalize-function for the volatile v.
 """
 getfinalize(v::Volatile{T}) where {T} = _volatile_getindex(v, currtx()).finalize
 export getfinalize
+# The `VolatileData` associated with `v` from the transaction's point of view:
+# the staged write if `v` has already been written in this transaction, and the
+# committed value otherwise. `setfilter!`/`setfinalize!` build on this so that
+# setting both functions in a single transaction does not discard one of them.
+_volatile_txdata(v::Volatile{T}, t::Transaction) where {T} = begin
+    w = get(getfield(t, :writes), v, nothing)
+    return w === nothing ? getfield(v, :value) : w[2]
+end
 """
     setfilter!(vol, fn)
 
@@ -845,9 +861,10 @@ the vol is set (`vol[] = x`) the filter-function is called and the value saved
 in `vol` is instead `fn(x)`. This must be called within a transaction.
 """
 function setfilter!(vol::Volatile{T}, f::Function) where {T}
-    value = getfield(v, :value)
-    newdat = VolatileData{T}(value.value, f, value.finalize)
-    return volatile_setindex!(v, newdat, currtx())
+    t = currtx()
+    value = t === nothing ? getfield(vol, :value) : _volatile_txdata(vol, t)
+    newdat = VolatileData{T}(value.value, f, value.finalize, Val{:raw}())
+    return volatile_setindex!(vol, newdat, t)
 end
 export setfilter!
 """
@@ -861,9 +878,10 @@ the value committed to `vol` is instead `fn(x)` where `x` is the value set to
 transaction.
 """
 function setfinalize!(vol::Volatile{T}, f::Function) where {T}
-    value = getfield(v, :value)
-    newdat = VolatileData{T}(value.value, value.filter, f)
-    return volatile_setindex!(v, newdat, currtx())
+    t = currtx()
+    value = t === nothing ? getfield(vol, :value) : _volatile_txdata(vol, t)
+    newdat = VolatileData{T}(value.value, value.filter, f, Val{:raw}())
+    return volatile_setindex!(vol, newdat, t)
 end
 export setfinalize!
 
@@ -956,7 +974,7 @@ start handling sent messages again, (2) gives it the new initial value `x`, and
 (3) yields the `ActorException` object that was just clared.  If the actor is
 not in an error state, this just yields `nothing`.
 """
-reset(a::Actor{T}, s::S) where {T,S} = actor_reset(a, s, currtx())
+Base.reset(a::Actor{T}, s::S) where {T,S} = actor_reset(a, s, currtx())
 export reset
 
 """
