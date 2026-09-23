@@ -4,6 +4,9 @@
 deps/deps.jl
 .DS_Store
 /Manifest.toml
+/docs/Manifest.toml
+/test/Manifest.toml
+/bench/Manifest.toml
 /dev/
 /docs/build/
 /docs/site/
