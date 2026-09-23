@@ -62,3 +62,25 @@ jobs:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
         continue-on-error: true
+
+  # Static analysis with JET. JET is sensitive to the Julia version, so this is
+  # advisory rather than a merge gate.
+  quality:
+    name: JET
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+      - name: Report type errors
+        run: |
+          # JET is added to a throwaway environment that also has Air itself, so
+          # that `using Air` resolves (the test project does not contain it;
+          # `Pkg.test` injects it only for the test run).
+          julia --project=@jet -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.add("JET")'
+          julia --project=@jet -e 'using JET, Air; report_package(Air)'

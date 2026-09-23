@@ -771,10 +771,14 @@ export @tx
 # Now that we have definend transactions, we can define the volatile access
 # methods.
 function _volatile_getindex(v::Volatile{T}, t::Transaction) where {T}
+    # The transaction's dictionaries are keyed by `Volatile` and hold untyped
+    # `VolatileData`, so without these assertions the value read out of them is
+    # inferred as `Any` and every read inside a transaction is boxed. The data
+    # stored for a `Volatile{T}` is always a `VolatileData{T}`.
     w = get(getfield(t, :writes), v, nothing)
-    (w === nothing) || return w[2]
+    (w === nothing) || return w[2]::VolatileData{T}
     w = get(getfield(t, :reads), v, nothing)
-    (w === nothing) || return w
+    (w === nothing) || return w::VolatileData{T}
     w = getfield(v, :value)
     getfield(t, :reads)[v] = w
     return w
