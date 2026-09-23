@@ -84,7 +84,8 @@ PDict{Symbol,Float64} with 3 entries:
   :height => 0.2
   :width  => 9.4
 
-# Lookup operations are nearly as fast as with native Dict objects.
+# Lookups are logarithmic in the size of the dictionary, and allocate a
+# little; see the comparison against Dict in bench/compare_base.jl.
 julia> cube[:height]
 0.2
 
@@ -114,7 +115,8 @@ julia> m = pfill(5, (2,3))
 
 # The operations push(), pushfirst(), pop(), and popfirst() are all similar to
 # their mutable equivalents (push!(), pushfirst!(), pop!(), and popfirst!()),
-# and all are very efficient with PVector (PArray{*,1}) objects.
+# and all are efficient with PVector (PArray{*,1}) objects, allocating only
+# the path they change.
 julia> v = push(v, -1.8)
 4-element PArray{Float64,1}:
   1.0
@@ -252,11 +254,13 @@ julia> notes[]
 
 Note that many of the core components for Air already have working
 implementations. Others are currently undergoing testing. In particular, the
-existing persistent data structures are fairly well tested and have a
-performance comparable to their Clojure counterparts. Additionally, initial
-tests of the thread-safe transaction system using the transaction block macro,
-`Actor`s and `Volatile`s appear to work fine. However, as the author is not an
-expert on testing multi-threaded code, some caution is advisable.
+existing persistent data structures are fairly well tested, and the test suite
+includes benchmarks (`bench/`) and a comparison against the mutable `Base`
+collections (`bench/compare_base.jl`) so that performance claims can be checked
+rather than asserted. Additionally, initial tests of the thread-safe transaction
+system using the transaction block macro, `Actor`s and `Volatile`s appear to
+work fine. However, as the author is not an expert on testing multi-threaded
+code, some caution is advisable.
 
 * Completed plans:
   * Persistent data structures:

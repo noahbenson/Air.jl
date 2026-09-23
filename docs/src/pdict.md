@@ -41,7 +41,7 @@ PDict{Symbol,Float64} with 3 entries:
   :height => 0.2
   :width  => 9.4
 
-# Lookup operatoins are nearly as fast as with native Dict objects.
+# Lookups are logarithmic in the size of the dictionary.
 julia> cube[:height]
 0.2
 

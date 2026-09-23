@@ -26,7 +26,8 @@ julia> m = pfill(5, (2,3))
 
 # The operations push(), pushfirst(), pop(), and popfirst() are all similar to
 # their mutable equivalents (push!(), pushfirst!(), pop!(), and popfirst!()),
-# and all are very efficient with PVector (PArray{*,1}) objects.
+# and all are efficient with PVector (PArray{*,1}) objects, allocating only
+# the path they change.
 julia> v = push(v, -1.8)
 4-element PArray{Float64,1}:
   1.0
