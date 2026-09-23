@@ -24,9 +24,7 @@ jobs:
         version:
           - '1.10'   # LTS
           - '1.11'
-          # The latest release (1.13 at the time of writing) is not listed
-          # here: it requires the `IndexStyle` fix that lands in the follow-up
-          # correctness PR. Nightly is included as an advisory leg below.
+          - '1'      # latest release
           - 'nightly'
         os:
           - ubuntu-latest
