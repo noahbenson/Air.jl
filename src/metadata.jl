@@ -6,9 +6,9 @@
 # SimpleDict
 # Simple dictionaries are dictionaries whose keys are Symbols. Simple dicts can
 # be used in argument processing if their keys are valid tokens.
-const AbstractSimpleDict{T} = AbstractDict{Symbol, T} where {T}
-const SimpleDict{T} = Dict{Symbol, T} where {T}
-const PSimpleDict{T} = PDict{Symbol, T} where {T}
+const AbstractSimpleDict{T} = AbstractDict{Symbol,T} where {T}
+const SimpleDict{T} = Dict{Symbol,T} where {T}
+const PSimpleDict{T} = PDict{Symbol,T} where {T}
 SimpleDict() = SimpleDict{Any}()
 PSimpleDict() = PSimpleDict{Any}()
 # How we parse arguments in simpleflat.
@@ -24,14 +24,15 @@ _simplebuild!(d::SimpleDict{T}, p::Tuple{Symbol,S}) where {T,S} = begin
     d[p[1]] = p[2]
     return args
 end
-_simplebuild!(d::SimpleDict{T}, p::AbstractSimpleDict{S}, args...) where {T,S} = begin
-    for (k,v) in p
+function _simplebuild!(d::SimpleDict{T}, p::AbstractSimpleDict{S}, args...) where {T,S}
+    for (k, v) in p
         d[k] = v
     end
     return args
 end
-_simplebuild!(d::SimpleDict{T}, a0, args...) where {T} =
-    error("invalid simpleflat argument type: $(typeof(a0))")
+function _simplebuild!(d::SimpleDict{T}, a0, args...) where {T}
+    return error("invalid simpleflat argument type: $(typeof(a0))")
+end
 """
     simpleflat(args...)
     simpleflat(T, args...)
@@ -50,7 +51,7 @@ supplied as the first argument, in which case, it is of type SimpleDict{T}.
 If the supplied type T is Union{}, then the type used is the result of
 typejoining across all the values.
 """
-simpleflat(::Type{T0}, args...; kws...) where {T0} = begin
+function simpleflat(::Type{T0}, args...; kws...) where {T0}
     tjoin = false
     T = T0 === Union{} ? Any : T0
     # Create the buffer dictionary into which we gather these.
@@ -66,7 +67,7 @@ simpleflat(::Type{T0}, args...; kws...) where {T0} = begin
         aa = _simplebuild!(d, aa...)
     end
     # Merge the keywords in last.
-    for (k,v) in kws
+    for (k, v) in kws
         d[k] = v
     end
     # Check if we still need to join types.
@@ -78,7 +79,6 @@ simpleflat(::Type{T0}, args...; kws...) where {T0} = begin
 end
 simpleflat(args...; kw...) = simpleflat(Union{}, args...; kw...)
 simpleflat() = SimpleDict{Any}()
-
 
 ################################################################################
 # MetaData
@@ -156,12 +156,13 @@ an exception is thrown.
 
 On success, the new value of the meta-data dictionary is returned.
 """
-setmetadata!(t::T, d::D) where {T, D <: AbstractMetaData} =
-    setmetadata!(metatrait(T), t, d)
-setmetadata!(::WoutMetaData, t::T, d::D) where {T, D <: AbstractMetaData} =
-    error("type $(T) does not support meta-data")
-setmetadata!(::WithMetaData, t::T, d::D) where {T, D <: AbstractMetaData} =
-    error("type $(T) does not support setting meta-data of type $(D)")
+setmetadata!(t::T, d::D) where {T,D<:AbstractMetaData} = setmetadata!(metatrait(T), t, d)
+function setmetadata!(::WoutMetaData, t::T, d::D) where {T,D<:AbstractMetaData}
+    return error("type $(T) does not support meta-data")
+end
+function setmetadata!(::WithMetaData, t::T, d::D) where {T,D<:AbstractMetaData}
+    return error("type $(T) does not support setting meta-data of type $(D)")
+end
 # #withmetadata
 """
     withmetadata(object, dict)
@@ -169,12 +170,13 @@ setmetadata!(::WithMetaData, t::T, d::D) where {T, D <: AbstractMetaData} =
 Yields a duplicate of the given object except that its meta-data dictionary
 will have been updated to be equal to dict.
 """
-withmetadata(t::T, d::D) where {T, D <: AbstractMetaData} =
-    withmetadata(metatrait(T), t, d)
-withmetadata(::WoutMetaData, t::T, d::D) where {T, D <: AbstractMetaData} =
-    error("type $(T) does not support meta-data")
-withmetadata(::WithMetaData, t::T, d::D) where {T, D <: AbstractMetaData} =
-    error("type $(T) does not support clone-updating meta-data of type $(D)")
+withmetadata(t::T, d::D) where {T,D<:AbstractMetaData} = withmetadata(metatrait(T), t, d)
+function withmetadata(::WoutMetaData, t::T, d::D) where {T,D<:AbstractMetaData}
+    return error("type $(T) does not support meta-data")
+end
+function withmetadata(::WithMetaData, t::T, d::D) where {T,D<:AbstractMetaData}
+    return error("type $(T) does not support clone-updating meta-data of type $(D)")
+end
 # #setmeta!
 """
     withmeta(obj, k, v)
@@ -194,13 +196,14 @@ Note that matched `k, v` argument pairs may be replaced with or interspersed
 with arguments such as `k => v` and `(k,v)` so long as the associated keys
 are symbols.
 """
-withmeta(t::T, args...; kw...) where {T} =
-    withmeta(metatrait(T), t, args...; kw...)
-withmeta(::WoutMetaData, t::T, args...; kw...) where {T} =
-    error("type $(T) does not support meta-data")
-_buildmeta(md0::AbstractSimpleDict{V}, args...; kw...) where {V} =
-    simpleflat(V, md0, args...; kw...)
-withmeta(Q::WithMetaData, t::T, args...; kw...) where {T} = begin
+withmeta(t::T, args...; kw...) where {T} = withmeta(metatrait(T), t, args...; kw...)
+function withmeta(::WoutMetaData, t::T, args...; kw...) where {T}
+    return error("type $(T) does not support meta-data")
+end
+function _buildmeta(md0::AbstractSimpleDict{V}, args...; kw...) where {V}
+    return simpleflat(V, md0, args...; kw...)
+end
+function withmeta(Q::WithMetaData, t::T, args...; kw...) where {T}
     # Get the meta-data that we start with
     md0 = metadata(Q, t)
     # Process the arguments
@@ -220,15 +223,16 @@ been removed. If obj does not support meta-data or does not support
 clone-updating the meta-data, an exception will be thrown.
 """
 woutmeta(t::T, args...) where {T} = woutmeta(metatrait(T), t, args...)
-woutmeta(::WoutMetaData, t::T, args...) where {T} =
-    error("type $(T) does not support meta-data")
+function woutmeta(::WoutMetaData, t::T, args...) where {T}
+    return error("type $(T) does not support meta-data")
+end
 _trimmeta(md0::AbstractSimpleDict{V}, args...) where {V} = begin
     for arg in args
         md0 = delete(md0, arg)
     end
     return md0
 end
-woutmeta(Q::WithMetaData, t::T, args...) where {T} = begin
+function woutmeta(Q::WithMetaData, t::T, args...) where {T}
     # Get the meta-data that we start with
     md0 = metadata(Q, t)
     # Process the arguments

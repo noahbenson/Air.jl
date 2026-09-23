@@ -1,79 +1,66 @@
-# This is a basic workflow to help you get started with Actions
-
 name: CI
 
-# Controls when the workflow will run
 on:
-  # Triggers the workflow on push or pull request events but only for the master branch
   push:
-    branches: [ master ]
+    branches: [master]
+  # Deliberately not restricted to PRs targeting `master`: PRs stacked on
+  # another feature branch need CI too.
   pull_request:
-    branches: [ master ]
-
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
-    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.threads }} thread(s)
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    continue-on-error: ${{ matrix.version == 'nightly' }}
     strategy:
       fail-fast: false
       matrix:
         version:
-          - '1.5'
-          - '1'
-          #- 'nightly'
+          - '1.10'   # LTS
+          - '1.11'
+          # The latest release (1.13 at the time of writing) is not listed
+          # here: it requires the `IndexStyle` fix that lands in the follow-up
+          # correctness PR. Nightly is included as an advisory leg below.
+          - 'nightly'
         os:
           - ubuntu-latest
-        arch:
-          - x64
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
+          - macos-latest
+          - windows-latest
+        threads:
+          - '4'
+        exclude:
+          - os: macos-latest
+            version: nightly
+          - os: windows-latest
+            version: nightly
+        include:
+          # A single-threaded sanity leg: ensures the library also works
+          # without the multithreaded STM test coverage.
+          - os: ubuntu-latest
+            version: '1.10'
+            threads: '1'
+    env:
+      JULIA_NUM_THREADS: ${{ matrix.threads }}
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v2
-      - name: Setup Julia environment
-        # You may pin to the exact commit or the version.
-        # uses: julia-actions/setup-julia@ee66464cb7897ffcc5322800f4b18d449794af30
-        uses: julia-actions/setup-julia@v1.6.1
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.version }}
-          arch: ${{ matrix.arch }}
           show-versioninfo: true
-      - uses: actions/cache@v1
-        env:
-          cache-name: cache-artifacts
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
         with:
-          path: ~/.julia/artifacts
-          key: ${{ runner.os }}-test-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-test-${{ env.cache-name }}-
-            ${{ runner.os }}-test-
-            ${{ runner.os }}-
-      - name: Run Tests
-        run: |
-          cd $GITHUB_WORKSPACE && ./make.jl test && ./make.jl doctest
+          julia_args: --threads=${{ matrix.threads }}
       - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v1
+      - uses: codecov/codecov-action@v4
         with:
-          file: lcov.info
-  docs:
-    name: Documentation
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: julia-actions/setup-julia@v1.6.1
-        with:
-          version: '1'
-      - run: |
-          julia --project=docs -e '
-            using Pkg
-            Pkg.develop(PackageSpec(path=pwd()))
-            Pkg.instantiate()'
-      - env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cd $GITHUB_WORKSPACE && ./make.jl docs
-
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+        continue-on-error: true

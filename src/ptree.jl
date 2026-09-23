@@ -19,44 +19,49 @@
 
 # # Constants ==================================================================
 #   This is the type of the unsigned integer used for the leaves.
-const HASH_T              = typejoin(typeof(hash(nothing)),
-                                     typeof(objectid(nothing)))
-const HASH_ZERO           = HASH_T(0x00)
-const HASH_ONE            = HASH_T(0x01)
-const HASH_MAX            = ~HASH_ZERO
+const HASH_T = typejoin(typeof(hash(nothing)), typeof(objectid(nothing)))
+const HASH_ZERO = HASH_T(0x00)
+const HASH_ONE = HASH_T(0x01)
+const HASH_MAX = ~HASH_ZERO
 # Number of bits in the total addressable hash-space of a PTree.
-const HASH_BITCOUNT       = sizeof(HASH_T) * 8
-const HASH_TOPBIT         = HASH_T(0x01) << (HASH_BITCOUNT - 1)
+const HASH_BITCOUNT = sizeof(HASH_T) * 8
+const HASH_TOPBIT = HASH_T(0x01) << (HASH_BITCOUNT - 1)
 #   We use a constant shift of 5 throughout except at the root node (which is
 #   Due to the implemeentation details, the twig shifts *MUST* be >= 3 and all
 #   shifts must be <= 7.
-const PTREE_NODE_SHIFT    = 6
-const PTREE_TWIG_SHIFT    = 6
-const PTREE_ROOT_SHIFT    = (let tmp = rem(HASH_BITCOUNT - PTREE_TWIG_SHIFT,
-                                           PTREE_NODE_SHIFT)
-                                 (tmp == 0 ? PTREE_NODE_SHIFT : tmp)
-                             end)
+const PTREE_NODE_SHIFT = 6
+const PTREE_TWIG_SHIFT = 6
+const PTREE_ROOT_SHIFT = (
+    let tmp = rem(HASH_BITCOUNT - PTREE_TWIG_SHIFT, PTREE_NODE_SHIFT)
+        (tmp == 0 ? PTREE_NODE_SHIFT : tmp)
+    end
+)
 const PTREE_ROOT_FIRSTBIT = HASH_BITCOUNT - PTREE_ROOT_SHIFT
-const PTREE_ROOT_NCHILD   = (1 << PTREE_ROOT_SHIFT)
-const PTREE_NODE_NCHILD   = (1 << PTREE_NODE_SHIFT)
-const PTREE_TWIG_NCHILD   = (1 << PTREE_TWIG_SHIFT)
-const PTREE_BITS_BITCOUNT = max(PTREE_ROOT_NCHILD,
-                                PTREE_NODE_NCHILD,
-                                PTREE_TWIG_NCHILD)
-const PTREE_BITS_T        = (if     (PTREE_BITS_BITCOUNT <= 8)  UInt8
-                             elseif (PTREE_BITS_BITCOUNT <= 16) UInt16
-                             elseif (PTREE_BITS_BITCOUNT <= 32) UInt32
-                             elseif (PTREE_BITS_BITCOUNT <= 64) UInt64
-                             else                               UInt128
-                             end)
-const BITS_ZERO           = PTREE_BITS_T(0x0)
-const BITS_ONE            = PTREE_BITS_T(0x1)
-const PTREE_NODE_BITS     = HASH_BITCOUNT - PTREE_ROOT_SHIFT - PTREE_TWIG_SHIFT
-const PTREE_NODE_LEVELS   = div(PTREE_NODE_BITS, PTREE_NODE_SHIFT)
-const PTREE_LEVELS        = PTREE_NODE_LEVELS + 2
-const PTREE_ROOT_DEPTH    = 0
-const PTREE_TWIG_DEPTH    = PTREE_ROOT_DEPTH + PTREE_NODE_LEVELS + 1
-const PTREE_LEAF_DEPTH    = PTREE_TWIG_DEPTH + 1
+const PTREE_ROOT_NCHILD = (1 << PTREE_ROOT_SHIFT)
+const PTREE_NODE_NCHILD = (1 << PTREE_NODE_SHIFT)
+const PTREE_TWIG_NCHILD = (1 << PTREE_TWIG_SHIFT)
+const PTREE_BITS_BITCOUNT = max(PTREE_ROOT_NCHILD, PTREE_NODE_NCHILD, PTREE_TWIG_NCHILD)
+const PTREE_BITS_T = (
+    if (PTREE_BITS_BITCOUNT <= 8)
+        UInt8
+    elseif (PTREE_BITS_BITCOUNT <= 16)
+        UInt16
+    elseif (PTREE_BITS_BITCOUNT <= 32)
+        UInt32
+    elseif (PTREE_BITS_BITCOUNT <= 64)
+        UInt64
+    else
+        UInt128
+    end
+)
+const BITS_ZERO = PTREE_BITS_T(0x0)
+const BITS_ONE = PTREE_BITS_T(0x1)
+const PTREE_NODE_BITS = HASH_BITCOUNT - PTREE_ROOT_SHIFT - PTREE_TWIG_SHIFT
+const PTREE_NODE_LEVELS = div(PTREE_NODE_BITS, PTREE_NODE_SHIFT)
+const PTREE_LEVELS = PTREE_NODE_LEVELS + 2
+const PTREE_ROOT_DEPTH = 0
+const PTREE_TWIG_DEPTH = PTREE_ROOT_DEPTH + PTREE_NODE_LEVELS + 1
+const PTREE_LEAF_DEPTH = PTREE_TWIG_DEPTH + 1
 # Functions for making masks
 """
     lowmask(bitno, T)
@@ -70,9 +75,8 @@ The default value of T is the PTree hash type (HASH_T).
 
 lowmask(bitno) is equal to ~highmask(bitno).
 """
-lowmask(bitno::K, ::Type{T}) where {T<:Unsigned,K<:Integer} =
-    ((T(0x01) << bitno) - 0x01)
-lowmask(bitno::K) where {K <: Integer} = lowmask(bitno, HASH_T)
+lowmask(bitno::K, ::Type{T}) where {T<:Unsigned,K<:Integer} = ((T(0x01) << bitno) - 0x01)
+lowmask(bitno::K) where {K<:Integer} = lowmask(bitno, HASH_T)
 """
     highmask(bitno, T)
     highmask(bitno)
@@ -85,13 +89,12 @@ The default value of T is the PTree hash type (HASH_T).
 
 highmask(bitno) is equal to ~lowmask(bitno).
 """
-highmask(bitno::K, ::Type{T}) where {T<:Unsigned,K<:Integer} =
-    ~lowmask(bitno, T)
-highmask(bitno::K) where {K <: Integer} = highmask(bitno, HASH_T)
+highmask(bitno::K, ::Type{T}) where {T<:Unsigned,K<:Integer} = ~lowmask(bitno, T)
+highmask(bitno::K) where {K<:Integer} = highmask(bitno, HASH_T)
 # The mask of the bits that represent the depth of the node-id in a PTree.
 const PTREE_DEPTH_MASK = lowmask(PTREE_TWIG_SHIFT)
 # The pair type for the dict interface.
-const HASHPAIR_T{T} = Pair{HASH_T, T} where {T}
+const HASHPAIR_T{T} = Pair{HASH_T,T} where {T}
 
 # # Functions
 """
@@ -108,14 +111,13 @@ Yields the tuple (B0,S) of the first bit index and the shift for the given
 depth.
 """
 depth_to_bitshift(depth::Integer) = depth_to_bitshift(Int(depth))
-depth_to_bitshift(depth::Int) = begin
+function depth_to_bitshift(depth::Int)
     if depth == PTREE_TWIG_DEPTH
         return (0, PTREE_TWIG_SHIFT)
     elseif depth == 0
         return (PTREE_ROOT_FIRSTBIT, PTREE_ROOT_SHIFT)
     else
-        return (PTREE_ROOT_FIRSTBIT - depth*PTREE_NODE_SHIFT,
-                PTREE_NODE_SHIFT)
+        return (PTREE_ROOT_FIRSTBIT - depth*PTREE_NODE_SHIFT, PTREE_NODE_SHIFT)
     end
 end
 """
@@ -148,7 +150,7 @@ ptree_minleaf(nodeid::HASH_T) = nodeid & ~PTREE_DEPTH_MASK
 Yields the maximum child leaf index assiciated with the given nodeid.
 """
 ptree_maxleaf(nodeid::HASH_T) = begin
-    (b0,s) = ptree_bitshift(nodeid)
+    (b0, s) = ptree_bitshift(nodeid)
     mask = (HASH_ONE << (b0 + s)) - HASH_ONE
     return nodeid | mask
 end
@@ -159,7 +161,7 @@ Yields the (min, max) child leaf index assiciated with the given nodeid.
 """
 ptree_minmaxleaf(nodeid::HASH_T) = begin
     mn = ptree_minleaf(nodeid)
-    (bit0,shift) = ptree_bitshift(nodeid)
+    (bit0, shift) = ptree_bitshift(nodeid)
     mask = (HASH_ONE << (bit0+shift)) - HASH_ONE
     return (nodeid & ~mask, nodeid | mask)
 end
@@ -168,8 +170,7 @@ end
 
 Yields the node-id for the node whose minimum leaf and depth are given.
 """
-ptree_id(minleaf::Integer,depth::Integer) = 
-    ptree_id(HASH_T(minleaf), HASH_T(depth))
+ptree_id(minleaf::Integer, depth::Integer) = ptree_id(HASH_T(minleaf), HASH_T(depth))
 ptree_id(minleaf::HASH_T, depth::HASH_T) = minleaf | depth
 """
     ptree_parentid(nodeid0)
@@ -178,7 +179,7 @@ Yields the node-id of the parent of the given node. Note that node 0 (the tree's
 theoretical root) has no parent. If given a node id of 0, this function will
 return an arbitrary large number.
 """
-ptree_parentid(nodeid0::HASH_T) = begin
+function ptree_parentid(nodeid0::HASH_T)
     d = ptree_depth(nodeid0) - 0x1
     node = nodeid0 & ~((-HASH_T(1)) >> (d*PTREE_NODE_SHIFT))
     return node | d
@@ -189,7 +190,7 @@ end
 Yields true if the given leafid can be found beneath the given node-id.
 """
 ptree_isbeneath(nodeid::HASH_T, leafid::HASH_T) = begin
-    (mn,mx) = ptree_minmaxleaf(nodeid)
+    (mn, mx) = ptree_minmaxleaf(nodeid)
     return leafid <= mx && leafid >= mn
 end
 """
@@ -197,9 +198,9 @@ end
 
 Yields the highest bit that is different between id1 and id2.
 """
-ptree_highbitdiff(id1::HASH_T, id2::HASH_T) =
-    HASH_BITCOUNT - leading_zeros(xor(id1, id2)) - 1
-
+function ptree_highbitdiff(id1::HASH_T, id2::HASH_T)
+    return HASH_BITCOUNT - leading_zeros(xor(id1, id2)) - 1
+end
 
 # ==============================================================================
 # Structures / Types
@@ -218,24 +219,23 @@ All fields of a PTree should be considered strictly private, as modification
 of the fields may result in a kernel crash. The properties of a PTree are both
 immutable and safe to inpect.
 """
-struct PTree{T} <: AbstractDict{HASH_T, T}
+struct PTree{T} <: AbstractDict{HASH_T,T}
     id::HASH_T
     bits::PTREE_BITS_T
     numel::Int
-    cells::Union{Nothing, Vector{T}, Vector{PTree{T}}}
+    cells::Union{Nothing,Vector{T},Vector{PTree{T}}}
 end
 const PTREE_NODE_CELL_T{T} = Vector{PTree{T}} where {T}
 const PTREE_TWIG_CELL_T{T} = Vector{T} where {T}
 const PTREE_EMPTY_CELL_T = Nothing
-const PTREE_CELLS_T{T} = Union{PTREE_EMPTY_CELL_T,
-                               PTREE_NODE_CELL_T{T},
-                               PTREE_TWIG_CELL_T{T}} where {T}
+const PTREE_CELLS_T{T} =
+    Union{PTREE_EMPTY_CELL_T,PTREE_NODE_CELL_T{T},PTREE_TWIG_CELL_T{T}} where {T}
 # We will occasionally want to do something across all the children of a node;
 # we can exploit the bits data to speed this up in sparse cases. The code for
 # doing that is in these two macros.
 macro _ptree_forcells(tree, var::Symbol, expr::Expr)
     b = gensym("bits")
-    return quote
+    return esc(quote
         let $b = $(tree).bits, $var
             while true
                 $var = trailing_zeros($b)
@@ -247,12 +247,12 @@ macro _ptree_forcells(tree, var::Symbol, expr::Expr)
                 $b &= ~($(HASH_T(0x01)) << $var)
             end
         end
-    end |> esc
+    end)
 end
 macro _ptree_forcells_from(tree, var::Symbol, from, expr::Expr)
     b = gensym("bits")
     f = gensym("from")
-    return quote
+    return esc(quote
         let $b = $(tree).bits & highmask($from), $var
             while true
                 $var = trailing_zeros($b)
@@ -264,7 +264,7 @@ macro _ptree_forcells_from(tree, var::Symbol, from, expr::Expr)
                 b &= ~($(HASH_T(0x01)) << $var)
             end
         end
-    end |> esc
+    end)
 end
 """
     ptree_cellindex(ptree, leafid)
@@ -278,7 +278,7 @@ ptree (i.e., it cannot exist beneath this ptree) then the cellindex returned
 returned is 0, but the bitindex will still match the appropriate shift for the
 ptree's depth.
 """
-ptree_cellindex(id::HASH_T, bits::PTREE_BITS_T, leafid::HASH_T) = begin
+function ptree_cellindex(id::HASH_T, bits::PTREE_BITS_T, leafid::HASH_T)
     # Check that the leaf is below this leaf.
     (bit0, shift) = ptree_bitshift(id)
     # Grab the index out of the leaf id.
@@ -289,8 +289,9 @@ ptree_cellindex(id::HASH_T, bits::PTREE_BITS_T, leafid::HASH_T) = begin
     chno = 1 + count_ones(bits & lowmask(idx))
     return (bits & flag == flag, idx, chno)
 end
-ptree_cellindex(u::PTree{T}, leafid::HASH_T) where {T} =
-    ptree_cellindex(getfield(u, :id), getfield(u, :bits), leafid)
+function ptree_cellindex(u::PTree{T}, leafid::HASH_T) where {T}
+    return ptree_cellindex(getfield(u, :id), getfield(u, :bits), leafid)
+end
 """
     ptree_cellindex!(ptree, leafid)
     ptree_cellindex!(nodeid, bits, leafid)
@@ -300,7 +301,7 @@ appropriate bit is not set then 0 is returned. However, unlike the function
 ptree_cellindex(), this function does not check whether or not the given leafid
 is in the set of possible children of the tree.
 """
-ptree_cellindex!(id::HASH_T, bits::PTREE_BITS_T, leafid::HASH_T) = begin
+function ptree_cellindex!(id::HASH_T, bits::PTREE_BITS_T, leafid::HASH_T)
     # Check that the leaf is below this leaf.
     (bit0, shift) = ptree_bitshift(id)
     # Grab the index out of the leaf id.
@@ -310,8 +311,9 @@ ptree_cellindex!(id::HASH_T, bits::PTREE_BITS_T, leafid::HASH_T) = begin
     chno = 1 + count_ones(bits & lowmask(idx))
     return (bits & flag == flag, idx, chno)
 end
-ptree_cellindex!(ptree::PTree{T}, leafid::HASH_T) where {T} =
-    ptree_cellindex!(getfield(ptree, :id), getfield(ptree, :bits), leafid)
+function ptree_cellindex!(ptree::PTree{T}, leafid::HASH_T) where {T}
+    return ptree_cellindex!(getfield(ptree, :id), getfield(ptree, :bits), leafid)
+end
 """
     ptree_cellkey(ptree, childidx)
 Yields the leafid (a HASH_T value) of the key that goes with the particular
@@ -321,21 +323,21 @@ ptree_cellkey(id::HASH_T, k::HASH_T) = begin
     mn = ptree_minleaf(id)
     return mn | k
 end
-ptree_cellkey(id::HASH_T, k::II) where {II<:Integer} =
-    ptree_cellkey(id, (HASH_T(k)))
-ptree_cellkey(u::PTree{T}, k::II) where {T,II<:Integer} =
-    ptree_cellkey(getfield(u, :id), HASH_T(k))
-ptree_cellkey(u::PTree{T}, k::HASH_T) where {T} =
-    ptree_cellkey(getfield(u, :id), k)
+ptree_cellkey(id::HASH_T, k::II) where {II<:Integer} = ptree_cellkey(id, (HASH_T(k)))
+function ptree_cellkey(u::PTree{T}, k::II) where {T,II<:Integer}
+    return ptree_cellkey(getfield(u, :id), HASH_T(k))
+end
+ptree_cellkey(u::PTree{T}, k::HASH_T) where {T} = ptree_cellkey(getfield(u, :id), k)
 
 # # Constructors ===============================================================
 #   First, constructors for making empty Trees.
 PTree{T}() where {T} = PTree{T}(0x0, 0x0, 0, nothing)
 #   Now for copying trees of the same type.
-PTree{T}(u::PTree{T}) where {T}   = u
-PTree{T}(u::PTree{U}) where {T,U} = begin
-    (id, bits, n, cells) = (getfield(u, :id),    getfield(u, :bits),
-                            getfield(u, :numel), getfield(u, :cells))
+PTree{T}(u::PTree{T}) where {T} = u
+function PTree{T}(u::PTree{U}) where {T,U}
+    (id, bits, n, cells) = (
+        getfield(u, :id), getfield(u, :bits), getfield(u, :numel), getfield(u, :cells)
+    )
     d = ptree_depth(id)
     if d == PTREE_TWIG_DEPTH
         cells::Vector{U}
@@ -347,13 +349,13 @@ PTree{T}(u::PTree{U}) where {T,U} = begin
 end
 PTree{T}(d::AbstractDict{HASH_T,S}) where {T,S} = begin
     u = PTree{T}()
-    for (k,v) in d
+    for (k, v) in d
         u = setindex(u, v, k)
     end
     return u
 end
 #   We want to be able to construct the twig for a pair:
-PTree{T}(kv::Pair{HASH_T,V}) where {T,V} = begin
+function PTree{T}(kv::Pair{HASH_T,V}) where {T,V}
     id = ptree_id(kv[1] & ~PTREE_DEPTH_MASK, PTREE_TWIG_DEPTH)
     bits = PTREE_BITS_T(0x1) << (kv[1] & PTREE_DEPTH_MASK)
     return PTree{T}(id, bits, 1, T[kv[2]])
@@ -361,7 +363,7 @@ end
 PTree(kv::Pair{HASH_T,V}) where {V} = PTree{V}(kv)
 #   We also construct from arrays; they are considered to be 0-indexed when used
 #   with trees.
-PTree{T}(u::AbstractArray{S,N}) where {T,S,N} = begin
+function PTree{T}(u::AbstractArray{S,N}) where {T,S,N}
     depth = PTREE_TWIG_DEPTH
     height = 1
     n = length(u)
@@ -371,7 +373,7 @@ PTree{T}(u::AbstractArray{S,N}) where {T,S,N} = begin
     maxidx = fld(n + PTREE_TWIG_NCHILD - 1, PTREE_TWIG_NCHILD)
     bits = ~PTREE_BITS_T(0x0)
     nodes = Vector{PTree{T}}(undef, maxidx)
-    for ii in 1:maxidx 
+    for ii in 1:maxidx
         kk0 = (ii - 1)*PTREE_TWIG_NCHILD
         nn = min(PTREE_TWIG_NCHILD, n - kk0)
         nid = ptree_id(PTREE_TWIG_NCHILD * (ii-1), depth)
@@ -401,7 +403,7 @@ PTree{T}(u::AbstractArray{S,N}) where {T,S,N} = begin
         maxidx = div(n + PTREE_NODE_NCHILD - 1, PTREE_NODE_NCHILD)
         nodes = Vector{PTree{T}}(undef, maxidx)
         hnp = PTREE_NODE_NCHILD^(height-1) # number per node at the prev level
-        hn  = Int(PTREE_NODE_NCHILD*hnp) # number per node at this level
+        hn = Int(PTREE_NODE_NCHILD*hnp) # number per node at this level
         bits = ~PTREE_BITS_T(0x0)
         for ii in 1:maxidx
             kk0 = (ii - 1)*PTREE_NODE_NCHILD
@@ -418,8 +420,12 @@ PTree{T}(u::AbstractArray{S,N}) where {T,S,N} = begin
                 for kk in 1:nn
                     @inbounds ch[kk] = (@inbounds oldnodes[kk + kk0])
                 end
-                nodes[ii] = PTree{T}(nid, (PTREE_BITS_T(0x1) << nn) - 0x1,
-                                     (nn - 1)*hnp + getfield(ch[end], :numel), ch)
+                nodes[ii] = PTree{T}(
+                    nid,
+                    (PTREE_BITS_T(0x1) << nn) - 0x1,
+                    (nn - 1)*hnp + getfield(ch[end], :numel),
+                    ch,
+                )
             end
         end
     end
@@ -427,10 +433,8 @@ end
 # Finally, we want to duplicate all of these constructors using the convert
 Base.convert(::Type{PTree{T}}, u::PTree{T}) where {T} = u
 Base.convert(::Type{PTree{T}}, u::PTree{U}) where {T,U} = PTree{T}(u)
-Base.convert(::Type{PTree{T}}, u::AbstractDict{HASH_T,U}) where {T,U} =
-    PTree{T}(u)
-Base.convert(::Type{PTree{T}}, u::AbstractArray{1,U}) where {T,U} =
-    PTree{T}(u)
+Base.convert(::Type{PTree{T}}, u::AbstractDict{HASH_T,U}) where {T,U} = PTree{T}(u)
+Base.convert(::Type{PTree{T}}, u::AbstractArray{1,U}) where {T,U} = PTree{T}(u)
 
 # ==============================================================================
 # Methods
@@ -440,7 +444,7 @@ Base.empty(u::PTree{T}) where {T} = PTree{T}(r)
 Base.empty(u::PTree{T}, S::Type) where {T} = PTree{S}()
 Base.isempty(u::PTree{T}) where {T} = (getfield(u, :numel) == 0)
 Base.length(u::PTree{T}) where {T} = getfield(u, :numel)
-Base.isequal(t::PTree{T}, s::PTree{S}) where {T,S} = begin
+function Base.isequal(t::PTree{T}, s::PTree{S}) where {T,S}
     bits = getfield(t, :bits)
     (bits == getfiield(s, :bits)) || return false
     (getfield(t, :id) == getfield(s, :id)) || return false
@@ -454,14 +458,10 @@ Base.isequal(t::PTree{T}, s::PTree{S}) where {T,S} = begin
     return true
 end
 Base.copy(t::PTree{T}) where {T} = t
-Base.propertynames(u::PTree{T}, private::Bool=false) where {T} =
-    (:leafcount,
-     :children,
-     :minleaf,
-     :maxleaf,
-     :depth,
-     :address)
-Base.getproperty(u::PTree{T}, symbol::Symbol) where {T} = begin
+function Base.propertynames(u::PTree{T}, private::Bool=false) where {T}
+    return (:leafcount, :children, :minleaf, :maxleaf, :depth, :address)
+end
+function Base.getproperty(u::PTree{T}, symbol::Symbol) where {T}
     if symbol == :leafcount
         return getfield(u, :numel)
     elseif symbol == :children
@@ -485,7 +485,7 @@ Base.getproperty(u::PTree{T}, symbol::Symbol) where {T} = begin
         throw(ArgumentError("Type PTree has no property $symbol"))
     end
 end
-getpair(u::PTree{T}, k::HASH_T) where {T} = begin
+function getpair(u::PTree{T}, k::HASH_T) where {T}
     # Start by making sure that the address spaces are compatible:
     # we want to make sure (once) that k is beneath u.
     id = getfield(u, :id)
@@ -509,7 +509,7 @@ getpair(u::PTree{T}, k::HASH_T) where {T} = begin
         id = getfield(u, :id)
     end
 end
-Base.get(u::PTree{T}, k::HASH_T, df) where {T} = begin
+function Base.get(u::PTree{T}, k::HASH_T, df) where {T}
     # Start by making sure that the address spaces are compatible:
     # we want to make sure (once) that k is beneath u.
     id = getfield(u, :id)
@@ -533,7 +533,7 @@ Base.get(u::PTree{T}, k::HASH_T, df) where {T} = begin
         id = getfield(u, :id)
     end
 end
-Base.in(kv::Pair{HASH_T,T}, u::PTree{T}, f::F) where {T,F<:Function} = begin
+function Base.in(kv::Pair{HASH_T,T}, u::PTree{T}, f::F) where {T,F<:Function}
     id = getfield(u, :id)
     ptree_isbeneath(id, k) || return df
     # Also, if we are empty, we need to return right away.
@@ -572,7 +572,7 @@ Base.iterate(u::PTree{T}) where {T} = begin
     bitno = trailing_zeros(bits)
     k = ptree_cellkey(id, bitno)
     v = leaves[1] # @inbounds leaves[1]
-    return (Pair{HASH_T,T}(k,v), k)
+    return (Pair{HASH_T,T}(k, v), k)
 end
 iterkeys(u::PTree{T}) where {T} = begin
     (getfield(u, :numel) == 0) && return nothing
@@ -610,9 +610,9 @@ itervals(u::PTree{T}) where {T} = begin
 end
 
 macro _ptree_iterate_gencode(rtype::Symbol)
-    cids = [gensym("cid") for _ in 1:PTREE_LEVELS-1]
-    cels = [gensym("cel") for _ in 1:PTREE_LEVELS-1]
-    bits = [gensym("bit") for _ in 1:PTREE_LEVELS-1]
+    cids = [gensym("cid") for _ in 1:(PTREE_LEVELS - 1)]
+    cels = [gensym("cel") for _ in 1:(PTREE_LEVELS - 1)]
+    bits = [gensym("bit") for _ in 1:(PTREE_LEVELS - 1)]
     if rtype == :keys
         rexpr = :(k)
         fn = :iterkeys
@@ -620,7 +620,7 @@ macro _ptree_iterate_gencode(rtype::Symbol)
         rexpr = :(v)
         fn = :itervals
     else
-        rexpr = :(Pair{HASH_T,T}(k,v))
+        rexpr = :(Pair{HASH_T,T}(k, v))
         fn = :(Base.iterate)
     end
     twigexpr = quote
@@ -641,7 +641,7 @@ macro _ptree_iterate_gencode(rtype::Symbol)
     end
     # At the lowest level, the try and twig expressions are the same.
     tryexpr = twigexpr
-    for ii in PTREE_LEVELS-1:-1:1
+    for ii in (PTREE_LEVELS - 1):-1:1
         cel = cels[ii]
         cid = cids[ii]
         bit = bits[ii]
@@ -666,40 +666,42 @@ macro _ptree_iterate_gencode(rtype::Symbol)
         end
     end
     # Put these together into the functions.
-    return quote
-        $fn(u::PTree{T}, k0::HASH_T) where {T} = begin
-            id = getfield(u, :id)
-            d = ptree_depth(id)
-            while true
-                $tryexpr
-                # If we reach the end of the loop, there's nothing past k0.
-                return nothing
-            end
-            # Upon finding a cell that hasn't been iterated, the code breaks
-            # from the abbove loop and brings us here.
-            id = getfield(u, :id)
-            d = ptree_depth(id)
-            while d < PTREE_TWIG_DEPTH
-                cells = getfield(u, :cells)::Vector{PTree{T}}
-                u = (@inbounds cells[1])
+    return esc(
+        quote
+            $fn(u::PTree{T}, k0::HASH_T) where {T} = begin
                 id = getfield(u, :id)
                 d = ptree_depth(id)
+                while true
+                    $tryexpr
+                    # If we reach the end of the loop, there's nothing past k0.
+                    return nothing
+                end
+                # Upon finding a cell that hasn't been iterated, the code breaks
+                # from the abbove loop and brings us here.
+                id = getfield(u, :id)
+                d = ptree_depth(id)
+                while d < PTREE_TWIG_DEPTH
+                    cells = getfield(u, :cells)::Vector{PTree{T}}
+                    u = (@inbounds cells[1])
+                    id = getfield(u, :id)
+                    d = ptree_depth(id)
+                end
+                leaves = getfield(u, :cells)::Vector{T}
+                bits = getfield(u, :bits)
+                nextbitno = trailing_zeros(bits)
+                k = ptree_cellkey(id, nextbitno)
+                v = (@inbounds leaves[1])
+                return ($rexpr, k)
             end
-            leaves = getfield(u, :cells)::Vector{T}
-            bits = getfield(u, :bits)
-            nextbitno = trailing_zeros(bits)
-            k = ptree_cellkey(id, nextbitno)
-            v = (@inbounds leaves[1])
-            return ($rexpr, k)
-        end
-    end |> esc
+        end,
+    )
 end
 # Run the macro to generate the iteration functions:
 (@_ptree_iterate_gencode keys)
 (@_ptree_iterate_gencode vals)
 (@_ptree_iterate_gencode pairs)
 
-setindex(u::PTree{T}, v::V, k::HASH_T) where {T,V} = begin
+function setindex(u::PTree{T}, v::V, k::HASH_T) where {T,V}
     # First of all, if this node is empty, we just return a new node
     (getfield(u, :numel) == 0) && return PTree{T}(k => v)
     # Next, if k is a child of this node, we return a new ancestor node that
@@ -740,7 +742,7 @@ setindex(u::PTree{T}, v::V, k::HASH_T) where {T,V} = begin
     flag = BITS_ONE << idx
     idx = 1 + count_ones(bits & lowmask(idx))
     # However, what we do next depends on whether we are in a twig node or not.
-    if ptree_depth(id) == PTREE_TWIG_DEPTH    
+    if ptree_depth(id) == PTREE_TWIG_DEPTH
         cells = getfield(u, :cells)::Vector{T}
         if bits & flag == flag
             # We are replacing an item
@@ -769,7 +771,7 @@ setindex(u::PTree{T}, v::V, k::HASH_T) where {T,V} = begin
         end
     end
 end
-delete(u::PTree{T}, k::HASH_T) where {T} = begin
+function delete(u::PTree{T}, k::HASH_T) where {T}
     id = getfield(u, :id)
     bits = getfield(u, :bits)
     (inq, bitidx, idx) = ptree_cellindex(id, bits, k)

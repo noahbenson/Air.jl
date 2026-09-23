@@ -7,13 +7,13 @@
     for el in els
         p = push(p, el)
     end
-    (lst,mst) = (first(p), pop(p))
+    (lst, mst) = (first(p), pop(p))
     @test lst == :d
-    (lst,mst) = (first(mst), pop(mst))
+    (lst, mst) = (first(mst), pop(mst))
     @test lst == :c
-    (lst,mst) = (first(mst), pop(mst))
+    (lst, mst) = (first(mst), pop(mst))
     @test lst == :b
-    (lst,mst) = (first(mst), pop(mst))
+    (lst, mst) = (first(mst), pop(mst))
     @test lst == :a
     @test isempty(mst)
     # make many samples and make sure they resemble the distribution
@@ -22,7 +22,7 @@
         sym = rand(p)
         counts[sym] += 1/1000
     end
-    @test  8.5 < counts[:a] < 12.5
+    @test 8.5 < counts[:a] < 12.5
     @test 18.5 < counts[:b] < 22.5
     @test 28.5 < counts[:c] < 32.5
     @test 38.5 < counts[:d] < 42.5

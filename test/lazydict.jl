@@ -20,39 +20,45 @@
         return fnval
     end
     @testset "LazyIdDict" begin
-        compare_test(Air.LazyIdDict{Symbol,Real}(),
-                     Base.IdDict{Symbol,Real}(),
-                     syms, nums, n)
-        compare_test(Air.LazyIdDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
-                     Base.IdDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
-                     syms, nums, n)
-        d = Air.LazyIdDict{Symbol,Int}(:a => Delay{Int}(delayfn1),
-                                       :b => Delay{Int}(delayfn2))
+        compare_test(
+            Air.LazyIdDict{Symbol,Real}(), Base.IdDict{Symbol,Real}(), syms, nums, n
+        )
+        compare_test(
+            Air.LazyIdDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
+            Base.IdDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
+            syms,
+            nums,
+            n,
+        )
+        d = Air.LazyIdDict{Symbol,Int}(
+            :a => Delay{Int}(delayfn1), :b => Delay{Int}(delayfn2)
+        )
         fnval = 0
         @test (d[:a], d[:b]) == (1, 2)
         @test (d[:b], d[:a]) == (2, 1)
-        d = Air.LazyIdDict{Symbol,Int}(:a => Delay{Int}(delayfn1),
-                                       :b => Delay{Int}(delayfn2))
+        d = Air.LazyIdDict{Symbol,Int}(
+            :a => Delay{Int}(delayfn1), :b => Delay{Int}(delayfn2)
+        )
         fnval = 0
         @test (d[:b], d[:a]) == (0, 1)
         @test (d[:a], d[:b]) == (1, 0)
     end
     @testset "LazyDict" begin
-        compare_test(Air.LazyDict{Symbol,Real}(),
-                     Base.Dict{Symbol,Real}(),
-                     syms, nums, n)
-        compare_test(Air.LazyDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
-                     Base.Dict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
-                     syms, nums, n)
-        d = Air.LazyDict{Symbol,Int}(:a => Delay{Int}(delayfn1),
-                                     :b => Delay{Int}(delayfn2))
+        compare_test(Air.LazyDict{Symbol,Real}(), Base.Dict{Symbol,Real}(), syms, nums, n)
+        compare_test(
+            Air.LazyDict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
+            Base.Dict{Symbol,Real}(:b=>20, :d=>40, :e=>50),
+            syms,
+            nums,
+            n,
+        )
+        d = Air.LazyDict{Symbol,Int}(:a => Delay{Int}(delayfn1), :b => Delay{Int}(delayfn2))
         fnval = 0
         @test (d[:a], d[:b]) == (1, 2)
         @test (d[:b], d[:a]) == (2, 1)
-        d = Air.LazyDict{Symbol,Int}(:a => Delay{Int}(delayfn1),
-                                     :b => Delay{Int}(delayfn2))
+        d = Air.LazyDict{Symbol,Int}(:a => Delay{Int}(delayfn1), :b => Delay{Int}(delayfn2))
         fnval = 0
         @test (d[:b], d[:a]) == (0, 1)
         @test (d[:a], d[:b]) == (1, 0)
     end
-end    
+end

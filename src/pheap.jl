@@ -8,8 +8,7 @@
 # MIT License
 # Copyright (c) 2020-2021 Noah C. Benson
 
-import Random
-
+using Random: Random
 
 # ==============================================================================
 # PHeap definition.
@@ -36,34 +35,32 @@ struct PHeap{T,W<:Number,F<:Function,D<:AbstractPDict{T,Int}}
     _index::D
     _compare::F
 end
-PHeap{T,W,F,D}(f::F) where {T, W<:Number, F<:Function, D<:AbstractPDict} = PHeap{T,W,F,D}(
-    PVector{Tuple{T,W,W}}(),
-    D{T,Int}(),
-    f)
-PHeap{T,W,F,D}(f::F) where {T, W<:Number, F<:Function, D<:AbstractPDict{T,Int}} = PHeap{T,W,F,D}(
-    PVector{Tuple{T,W,W}}(),
-    D(),
-    f)
-PHeap{T,W,D}(f::F) where {T, W<:Number, F<:Function, D<:AbstractPDict} = PHeap{T,W,F,D}(
-    PVector{Tuple{T,W,W}}(),
-    D{T,Int}(),
-    f)
-PHeap{T,W,D}(f::F) where {T, W<:Number, F<:Function, D<:AbstractPDict{T,Int}} = PHeap{T,W,F,D}(
-    PVector{Tuple{T,W,W}}(),
-    D(),
-    f)
-PHeap{T,W,D}()   where {T, W<:Number, D<:AbstractPDict} = PHeap{T,W,D}(>)
-PHeap{T,W}(f::F) where {T, W<:Number, F<:Function} = PHeap{T,W,PDict}(f)
-PHeap{T,W}()     where {T, W<:Number} = PHeap{T,W,PDict}(>)
-PHeap{T,D}(f::F) where {T, F<:Function, D<:AbstractPDict} = PHeap{T,Float64,D}(f)
-PHeap{T,D}()     where {T, D<:AbstractPDict} = PHeap{T,Float64,D}(>)
-PHeap{T}(f::F)   where {T, F<:Function} = PHeap{T,Float64,F,PDict}(f)
-PHeap{T}()       where {T} = PHeap{T,Float64,PDict}(>)
-PHeap(f::F)      where {F <: Function} = PHeap{Any,Float64,F,PDict}(f)
+function PHeap{T,W,F,D}(f::F) where {T,W<:Number,F<:Function,D<:AbstractPDict}
+    return PHeap{T,W,F,D}(PVector{Tuple{T,W,W}}(), D{T,Int}(), f)
+end
+function PHeap{T,W,F,D}(f::F) where {T,W<:Number,F<:Function,D<:AbstractPDict{T,Int}}
+    return PHeap{T,W,F,D}(PVector{Tuple{T,W,W}}(), D(), f)
+end
+function PHeap{T,W,D}(f::F) where {T,W<:Number,F<:Function,D<:AbstractPDict}
+    return PHeap{T,W,F,D}(PVector{Tuple{T,W,W}}(), D{T,Int}(), f)
+end
+function PHeap{T,W,D}(f::F) where {T,W<:Number,F<:Function,D<:AbstractPDict{T,Int}}
+    return PHeap{T,W,F,D}(PVector{Tuple{T,W,W}}(), D(), f)
+end
+PHeap{T,W,D}() where {T,W<:Number,D<:AbstractPDict} = PHeap{T,W,D}(>)
+PHeap{T,W}(f::F) where {T,W<:Number,F<:Function} = PHeap{T,W,PDict}(f)
+PHeap{T,W}() where {T,W<:Number} = PHeap{T,W,PDict}(>)
+PHeap{T,D}(f::F) where {T,F<:Function,D<:AbstractPDict} = PHeap{T,Float64,D}(f)
+PHeap{T,D}() where {T,D<:AbstractPDict} = PHeap{T,Float64,D}(>)
+PHeap{T}(f::F) where {T,F<:Function} = PHeap{T,Float64,F,PDict}(f)
+PHeap{T}() where {T} = PHeap{T,Float64,PDict}(>)
+PHeap(f::F) where {F<:Function} = PHeap{Any,Float64,F,PDict}(f)
 PHeap() = PHeap{Any,Float64,PDict}(>)
-_pheap_swap(heap::PVector{Tuple{T,W,W}}, index::D, ii::Int, jj::Int, subii::Bool, subjj::Bool) where {T,W,D<:AbstractPDict{T,Int}} = begin
-    (tii,wii,totii) = heap[ii]
-    (tjj,wjj,totjj) = heap[jj]
+function _pheap_swap(
+    heap::PVector{Tuple{T,W,W}}, index::D, ii::Int, jj::Int, subii::Bool, subjj::Bool
+) where {T,W,D<:AbstractPDict{T,Int}}
+    (tii, wii, totii) = heap[ii]
+    (tjj, wjj, totjj) = heap[jj]
     newtotii = totjj + wii - (subjj ? wjj : 0)
     newtotjj = totii + wjj - (subii ? wii : 0)
     heap = setindex(heap, (tjj, wjj, newtotjj), ii)
@@ -72,7 +69,7 @@ _pheap_swap(heap::PVector{Tuple{T,W,W}}, index::D, ii::Int, jj::Int, subii::Bool
     index = setindex(index, jj, tii)
     return (heap, index)
 end
-_pheap_fix_tot(heap::PVector{Tuple{T,W,W}}, ii::Int, dw::W) where {T,W} = begin
+function _pheap_fix_tot(heap::PVector{Tuple{T,W,W}}, ii::Int, dw::W) where {T,W}
     dw == 0 && return heap
     while ii > 0
         node = heap[ii]
@@ -81,7 +78,9 @@ _pheap_fix_tot(heap::PVector{Tuple{T,W,W}}, ii::Int, dw::W) where {T,W} = begin
     end
     return heap
 end
-_pheap_fix_up(heap::PVector{Tuple{T,W,W}}, index::D, cmp::F, ii::Int, oldw::W) where {T,W,F<:Function,D<:AbstractPDict{T,Int}} = begin
+function _pheap_fix_up(
+    heap::PVector{Tuple{T,W,W}}, index::D, cmp::F, ii::Int, oldw::W
+) where {T,W,F<:Function,D<:AbstractPDict{T,Int}}
     # This change affects the weight totals of nodes above us by this abount:
     newnode = heap[ii]
     neww = newnode[2]
@@ -104,7 +103,9 @@ _pheap_fix_up(heap::PVector{Tuple{T,W,W}}, index::D, cmp::F, ii::Int, oldw::W) w
     heap = _pheap_fix_tot(heap, div(ii, 2), dw)
     return (heap, index)
 end
-_pheap_fix_down(heap::PVector{Tuple{T,W,W}}, index::D, cmp::F, ii::Int) where {T,W,F<:Function,D<:AbstractPDict{T,Int}} = begin
+function _pheap_fix_down(
+    heap::PVector{Tuple{T,W,W}}, index::D, cmp::F, ii::Int
+) where {T,W,F<:Function,D<:AbstractPDict{T,Int}}
     # We can assume when this function is called that the totals are correct for
     # the entire heap at this point.
     n = length(heap)
@@ -142,7 +143,9 @@ _pheap_fix_down(heap::PVector{Tuple{T,W,W}}, index::D, cmp::F, ii::Int) where {T
     end
     return (heap, index)
 end
-_pheap_fixw(heap::PVector{Tuple{T,W,W}}, index::D, cmp::F, ii::Int, neww::W) where {T,W,F<:Function,D<:AbstractPDict{T,Int}} = begin
+function _pheap_fixw(
+    heap::PVector{Tuple{T,W,W}}, index::D, cmp::F, ii::Int, neww::W
+) where {T,W,F<:Function,D<:AbstractPDict{T,Int}}
     node = heap[ii]
     oldw = node[2]
     dw = neww - oldw
@@ -163,8 +166,8 @@ _pheap_fixw(heap::PVector{Tuple{T,W,W}}, index::D, cmp::F, ii::Int, neww::W) whe
     # That is all.
     return (heap, index)
 end
-push(p::PHeap{T,W,F,D}, tw::Tuple{S,X}) where {T,W,F,D,S,X<:Number} = begin
-    (t,w) = tw
+function push(p::PHeap{T,W,F,D}, tw::Tuple{S,X}) where {T,W,F,D,S,X<:Number}
+    (t, w) = tw
     (w <= 0) && throw(ArgumentError("Weights must be positive"))
     cmp = p._compare
     heap = p._heap
@@ -176,7 +179,7 @@ push(p::PHeap{T,W,F,D}, tw::Tuple{S,X}) where {T,W,F,D,S,X<:Number} = begin
         # with a weight of 0 (which keeps the tree valid and all of the
         # weight totals in tact) then fix its weight.
         zW = zero(W)
-        heap = push(heap, (t,zW,zW))
+        heap = push(heap, (t, zW, zW))
         ii = length(heap)
         index = setindex(index, ii, t)
     end
@@ -184,8 +187,8 @@ push(p::PHeap{T,W,F,D}, tw::Tuple{S,X}) where {T,W,F,D,S,X<:Number} = begin
     (p._heap === heap && p._index === index) && return p
     return PHeap{T,W,F,D}(heap, index, cmp)
 end
-push(p::PHeap{T,W,F,D}, tw::Pair{S,X}) where {T,W,F,D,S,X<:Number} = begin
-    return push(p, (tw[1],tw[2]))
+function push(p::PHeap{T,W,F,D}, tw::Pair{S,X}) where {T,W,F,D,S,X<:Number}
+    return push(p, (tw[1], tw[2]))
 end
 """
     setweight(h, x, w)
@@ -218,7 +221,7 @@ PWSet{Symbol,Float64} with 3 elements:
   :b
 ```
 """
-setweight(p::PHeap{T,W,F,D}, t::S, w::X) where {T,W,F,D,S,X<:Number} = begin
+function setweight(p::PHeap{T,W,F,D}, t::S, w::X) where {T,W,F,D,S,X<:Number}
     (w <= 0) && throw(ArgumentError("Weights must be positive"))
     ii = get(p._index, t, 0)
     (ii == 0) && error("cannot setweight on item that is not in the PHeap")
@@ -261,13 +264,13 @@ getweight(h::PHeap{T,W,F,D}, t::S) where {T,W,F,D,S} = begin
     (ii == 0) && return 0
     return h._heap[ii][2]
 end
-_pheap_delete(p::PHeap{T,W,F,D}, ii::Int) where {T,W,F,D} = begin
+function _pheap_delete(p::PHeap{T,W,F,D}, ii::Int) where {T,W,F,D}
     n = length(p)
     cmp = p._compare
     (n == 1) && return PHeap{T,W,F,D}(pop(p._heap), empty(p._index), cmp)
     # Grab the very last node, then we can prep the removal by updating its
     # weight to be zero (this subtracts its weight from the tree's totals).
-    (tn,wn,totn) = p._heap[n]
+    (tn, wn, totn) = p._heap[n]
     (heap, index) = _pheap_fixw(p._heap, p._index, cmp, n, zero(W))
     # Now we replace the node in slot ii with the last node, but keep the
     # old weight so that the tree's totals are still valid.
@@ -280,50 +283,50 @@ _pheap_delete(p::PHeap{T,W,F,D}, ii::Int) where {T,W,F,D} = begin
     (heap === p._heap && index === p._index) && return p
     return PHeap{T,W,F,D}(heap, index, cmp)
 end
-pop(p::PHeap{T,W,F,D}) where {T,W,F,D} = begin
+function pop(p::PHeap{T,W,F,D}) where {T,W,F,D}
     n = length(p)
     (n == 0) && throw(ArgumentError("PHeap must be non-empty"))
     return _pheap_delete(p, 1)
 end
-delete(p::PHeap{T,W,F,D}, t::S) where {T,W,F,D,S} = begin
+function delete(p::PHeap{T,W,F,D}, t::S) where {T,W,F,D,S}
     # Find this particular node we need to remove
     ii = get(p._index, t, 0)
     return ii == 0 ? p : _pheap_delete(p, ii)
 end
 Base.length(p::PHeap{T,W,F,D}) where {T,W,F,D} = length(p._index)
 Base.iterate(p::PHeap{T,W,F,D}) where {T,W,F,D} = iterate(p, p)
-Base.iterate(::PHeap{T,W,F,D}, p::PHeap{T,W,F,D}) where {T,W,F,D} = begin
+function Base.iterate(::PHeap{T,W,F,D}, p::PHeap{T,W,F,D}) where {T,W,F,D}
     return (length(p) == 0 ? nothing : (first(p), pop(p)))
 end
-Base.first(p::PHeap{T,W,F,D}) where {T,W,F,D} = begin
+function Base.first(p::PHeap{T,W,F,D}) where {T,W,F,D}
     (length(p) == 0) && throw(ArgumentError("PHeap must be non-empty"))
     return p._heap[1][1]
 end
 Base.in(x::S, p::PHeap{T,W,F,D}) where {S,T,W,F,D} = begin
     return (get(p._index, x, 0) != 0)
 end
-Random.rand(p::PHeap{T,W,F,D}) where {T,W,F,D} = begin
+function Random.rand(p::PHeap{T,W,F,D}) where {T,W,F,D}
     n = length(p)
     (n == 0) && throw(ArgumentError("PHeap must be non-empty"))
     x = Random.rand(Float64) * p._heap[1][3]
     ii = 1
-    (t,w,tot) = p._heap[ii]
+    (t, w, tot) = p._heap[ii]
     while true
         (x <= w) && return t
         x -= w
         ii *= 2
-        (t,w,tot) = p._heap[ii]
+        (t, w, tot) = p._heap[ii]
         (x <= tot) && continue
         x -= tot
         ii += 1
-        (t,w,tot) = p._heap[ii]
+        (t, w, tot) = p._heap[ii]
     end
-    error("invalid state reached")
+    return error("invalid state reached")
 end
 
 # ==============================================================================
 # Core Air API methods and related Base methods
-Base.isequal(a::PHeap, b::PHeap) = begin
+function Base.isequal(a::PHeap, b::PHeap)
     (length(a) == length(b)) || return false
     while length(a) > 0
         f = first(a)
@@ -334,9 +337,9 @@ Base.isequal(a::PHeap, b::PHeap) = begin
     end
     return true
 end
-Base.hash(a::PHeap{T,W,F,D}) where {T,W,F,D}  = begin
+Base.hash(a::PHeap{T,W,F,D}) where {T,W,F,D} = begin
     h = 0x11 * UInt(length(a))
-    for (t,w,tot) in a._heap
+    for (t, w, tot) in a._heap
         h += hash(t) ⊻ hash(w)
     end
     return h

@@ -1,7 +1,9 @@
 # Tests for the PSet types.
 # Author: Noah C. Benson <n@nben.net>
 
-function compare_test(p::SIMM, s::SMUT, ks::Vector{T}, n::Int) where {T,SIMM<:AbstractSet{T},SMUT<:AbstractSet{T}}
+function compare_test(
+    p::SIMM, s::SMUT, ks::Vector{T}, n::Int
+) where {T,SIMM<:AbstractSet{T},SMUT<:AbstractSet{T}}
     let k, q, pd = [:push, :delete], ks = collect(ks)
         for i in 1:n
             k = rand(ks)

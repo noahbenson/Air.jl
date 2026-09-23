@@ -8,7 +8,6 @@
 # MIT License
 # Copyright (c) 2020-2021 Noah C. Benson
 
-
 # #Var #########################################################################
 # A tricky thing about Vars is that we want each Var object to be unique (i.e.,
 # to have a unique objectid). However, we also want them to be immutable. To get
@@ -63,7 +62,7 @@ struct Var{T} <: TransactionalRef{T}
         u = convert(T, initval)
         return new{T}(u, VarID())
     end
-    function Var{T}(initval::S) where {T, S <: T}
+    function Var{T}(initval::S) where {T,S<:T}
         return new{T}(initval, VarID())
     end
 end
@@ -272,8 +271,7 @@ let tls_key = gensym("Air_var_bindings")
         end
         return setvars(f, b1)
     end
-    global setvars(f::Function, vs::AbstractDict{<:Var,<:Any}) =
-        setvars(f, VarsDict(vs))
+    global setvars(f::Function, vs::AbstractDict{<:Var,<:Any}) = setvars(f, VarsDict(vs))
     global setvars(f::Function, vs::VarsDict) = begin
         b0 = getbindings()
         task_local_storage(tls_key, vs)
@@ -318,7 +316,7 @@ let tls_key = gensym("Air_var_bindings")
     global wrapsetvars(f::Function, vs::VarsDict) = begin
         # We make a copy in case it changes between now and when the function
         # gets called
-        vs = copy(vs) 
+        vs = copy(vs)
         f2 = (args...; kw...) -> let b0 = getbindings()
             task_local_storage(tls_key, vs)
             try
@@ -329,25 +327,24 @@ let tls_key = gensym("Air_var_bindings")
         end
         return f2
     end
-    global Base.getindex(v::Var{T}) where {T} =
-        get(getbindings(), v, v.initial_value)::T
+    global Base.getindex(v::Var{T}) where {T} = get(getbindings(), v, v.initial_value)::T
     global Base.setindex!(v::Var, u) = begin
         msg = "$(typeof(v)) objects can only be set using withvars"
         throw(DomainError(v, msg))
     end
 end
-Base.show(io::IO, ::MIME"text/plain", d::Var{T}) where {T} = begin
+function Base.show(io::IO, ::MIME"text/plain", d::Var{T}) where {T}
     print(io, "$(typeof(d))(@")
-    print(io, string(objectid(d), base=62))
+    print(io, string(objectid(d); base=62))
     print(io, ": ")
     show(io, d[])
     print(io, "; init=")
     show(io, getfield(d, :initial_value))
-    print(io, ")")
+    return print(io, ")")
 end
 Base.show(io::IO, d::Var{T}) where {T} = begin
     print(io, "$(typeof(d))(@")
-    print(io, string(objectid(d), base=62))
+    print(io, string(objectid(d); base=62))
     print(io, ")")
 end
 """
@@ -376,12 +373,12 @@ Var{Any}(@JIm7aUS2sOl: :start_sym; init=:start_sym)
 ```
 """
 macro var(expr::Expr)
-    (expr.head === :(=)) || throw(
-        ArgumentException("@var macro requires an assigmnet expression"))
+    (expr.head === :(=)) ||
+        throw(ArgumentException("@var macro requires an assigmnet expression"))
     (name, initval) = expr.args
     isa(name, QuoteNode) && (name = name.value)
-    isa(name, Symbol) || throw(
-        ArgumentException("@var macro requires a symbol for the name"))
+    isa(name, Symbol) ||
+        throw(ArgumentException("@var macro requires a symbol for the name"))
     s = gensym()
     if isa(initval, Expr) && initval.head === :(::)
         T = initval.args[2]

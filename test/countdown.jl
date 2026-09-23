@@ -24,8 +24,11 @@ struct ProblemData
     state::Air.Volatile{Symbol}
     actor::Air.Actor{Air.PVector{Tuple{Symbol,Int}}}
     function ProblemData(k::Int, state::Symbol=:okay)
-        return new(Air.Volatile{Int}(k), Air.Volatile(state),
-                   Air.Actor(PVector{Tuple{Symbol,Int}}()))
+        return new(
+            Air.Volatile{Int}(k),
+            Air.Volatile(state),
+            Air.Actor(PVector{Tuple{Symbol,Int}}()),
+        )
     end
 end
 
@@ -49,7 +52,7 @@ function mt_task(pd::ProblemData, onstate, nextstate, op)
 end
 
 # (4) How to solve the problem.
-function mt_solve(k::Int, state::Symbol=:okay)
+function mt_solve(k::Int, state::Symbol=:okay, expected::Int=0)
     pd = ProblemData(k, state)
     t1 = Threads.@spawn mt_task($pd, :pong, :okay, x -> x - 4)
     t2 = Threads.@spawn mt_task($pd, :ping, :pong, x -> x ÷ 2)
@@ -57,13 +60,21 @@ function mt_solve(k::Int, state::Symbol=:okay)
     wait(t1)
     wait(t2)
     wait(t3)
-    sleep(0.1)
+    # Waiting on the tasks is not enough: the actor drains its queue on its own
+    # task, asynchronously, so the messages sent during the transactions may
+    # still be pending. Poll until the actor has recorded all the expected steps
+    # rather than assuming a fixed delay. (The previous `sleep(0.1)` was not
+    # enough on loaded machines, which made this test fail intermittently.)
+    t0 = time()
+    while length(pd.actor[]) < expected && (time() - t0) < 60
+        sleep(0.01)
+    end
     return (pd.actor[], pd.value[])
 end
 
 function countdown_test(k::Int)
     (st_steps, st_val) = st_solve(k)
-    (mt_steps, mt_val) = mt_solve(k)
+    (mt_steps, mt_val) = mt_solve(k, :okay, length(st_steps))
     @test mt_val == st_val
     @test mt_steps == st_steps
 end

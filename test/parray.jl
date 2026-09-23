@@ -41,34 +41,34 @@
     @testset "2D" begin
         # These should be more fleshed out, but for now, we can do just a
         # few simple tests.
-        a = Array(reshape(1:200, (20,10)))
+        a = Array(reshape(1:200, (20, 10)))
         p = PArray(a)
         @test p == a
-        @test p[5,8] == a[5,8]
-        @test p[:,4] == a[:,4]
-        @test p[9,:] == a[9,:]
+        @test p[5, 8] == a[5, 8]
+        @test p[:, 4] == a[:, 4]
+        @test p[9, :] == a[9, :]
         p1 = Air.setindex(p, -5, 15, 8)
         @test p1 != a
-        @test p1[:,4] == a[:,4]
-        @test p1[9,:] == a[9,:]
-        @test p1[:,8] != a[:,8]
-        @test p1[15,:] != a[15,:]
+        @test p1[:, 4] == a[:, 4]
+        @test p1[9, :] == a[9, :]
+        @test p1[:, 8] != a[:, 8]
+        @test p1[15, :] != a[15, :]
     end
     @testset "3D" begin
-        a = Array(reshape(1:1000, (20,10,5)))
+        a = Array(reshape(1:1000, (20, 10, 5)))
         p = PArray(a)
         @test p == a
-        @test p[5,8,2] == a[5,8,2]
-        @test p[:,4,1] == a[:,4,1]
-        @test p[9,:,3] == a[9,:,3]
-        @test p[:,2,4] == a[:,2,4]
+        @test p[5, 8, 2] == a[5, 8, 2]
+        @test p[:, 4, 1] == a[:, 4, 1]
+        @test p[9, :, 3] == a[9, :, 3]
+        @test p[:, 2, 4] == a[:, 2, 4]
         p1 = Air.setindex(p, -5, 15, 8, 5)
         @test p1 != a
-        @test p1[9,:,:] == a[9,:,:]
-        @test p1[:,3,:] == a[:,3,:]
-        @test p1[:,:,4] == a[:,:,4]
-        @test p1[15,:,:] != a[15,:,:]
-        @test p1[:,8,:] != a[:,8,:]
-        @test p1[:,:,5] != a[:,:,5]
+        @test p1[9, :, :] == a[9, :, :]
+        @test p1[:, 3, :] == a[:, 3, :]
+        @test p1[:, :, 4] == a[:, :, 4]
+        @test p1[15, :, :] != a[15, :, :]
+        @test p1[:, 8, :] != a[:, 8, :]
+        @test p1[:, :, 5] != a[:, :, 5]
     end
 end

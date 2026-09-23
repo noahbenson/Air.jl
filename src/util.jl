@@ -47,7 +47,7 @@ julia> # Ensure that it produced the correct value and doesn't run again.
 ```
 """
 mutable struct Delay{T} <: Base.Ref{T}
-    _val::Union{_DelayPending, Some{T}}
+    _val::Union{_DelayPending,Some{T}}
     function Delay{T}(t) where {T}
         return new{T}(Some{T}(t))
     end
@@ -133,7 +133,9 @@ macro delay(e::Expr)
         expr = e
     end
     tmp = expr
-    while tmp.head == :block; tmp = tmp.args[2] end
+    while tmp.head == :block
+        tmp = tmp.args[2]
+    end
     if tmp.head == :(::)
         T = tmp.args[2]
     else
@@ -143,16 +145,26 @@ macro delay(e::Expr)
     isa(syms, Symbol) && (syms = :(($syms,)))
     if isa(syms, Expr)
         syms = [
-            ( isa(sym, Symbol) ? :($sym = $sym)
-              : sym.head == :(::) ? :($(sym.args[1]) = $sym)
-              : throw(ArgumentError("closures must be symbols or tagged-symbols")))
-            for sym in syms.args]
+            (
+                if isa(sym, Symbol)
+                    :($sym = $sym)
+                elseif sym.head == :(::)
+                    :($(sym.args[1]) = $sym)
+                else
+                    throw(ArgumentError("closures must be symbols or tagged-symbols"))
+                end
+            ) for sym in syms.args
+        ]
     end
     # Generate the code
     if length(syms) == 0
         return esc(:(Air.Delay{$T}(() -> $expr)))
     else
-        return esc(:(let $(syms...); Air.Delay{$T}(() -> $expr) end))
+        return esc(:(
+            let $(syms...)
+                Air.Delay{$T}(() -> $expr)
+            end
+        ))
     end
 end
 # Some base functions.
@@ -176,10 +188,12 @@ Base.getindex(d::Delay{T}) where {T} = begin
     end
 end
 Base.isready(d::Delay{T}) where {T} = isa(d._val, Some{T})
-Base.setindex!(d::Delay{T}, x...) where {T} = throw(ArgumentError("setindex!: Delays are immutable"))
+function Base.setindex!(d::Delay{T}, x...) where {T}
+    return throw(ArgumentError("setindex!: Delays are immutable"))
+end
 Base.isequal(a::Delay{T}, b::Delay{S}) where {T,S} = (a === b) || isequal(a[], b[])
 Base.hash(d::Delay{T}) where {T} = 0x26c850a2957fa577 + hash(d[])
-Base.show(io::IO, ::MIME"text/plain", d::Delay{T}) where {T} = begin
+function Base.show(io::IO, ::MIME"text/plain", d::Delay{T}) where {T}
     v = d._val
     if isa(v, Some)
         print(io, "$(typeof(d))($(v.value))")
@@ -192,9 +206,15 @@ export Delay, @delay
 # #memoize #####################################################################
 # First, this is a helper functionthat makes sure than a function-arg
 # declaration has a name.
-_memoize_fixarg(arg::Expr) = (arg.head == :(::) && length(arg.args) == 1
-                              ? Expr(:(::), gensym(), arg.args[1])
-                              : arg)
+function _memoize_fixarg(arg::Expr)
+    return (
+        if arg.head == :(::) && length(arg.args) == 1
+            Expr(:(::), gensym(), arg.args[1])
+        else
+            arg
+        end
+    )
+end
 # Now the memoize macro itself.
 """
     @memoize name(args...) = expr
@@ -245,10 +265,10 @@ Calculating fib(6)...
 ```
 """
 macro memoize(assgn::Expr)
-    (assgn.head == :(=)) || throw(
-        ArgumentError("memconst must be given an assignment expression"))
+    (assgn.head == :(=)) ||
+        throw(ArgumentError("memconst must be given an assignment expression"))
     # Parse the assignment statement.
-    lhs  = assgn.args[1]
+    lhs = assgn.args[1]
     expr = assgn.args[2]
     if lhs.head == :call
         fsym = lhs.args[1]
@@ -261,9 +281,7 @@ macro memoize(assgn::Expr)
         fsig = Expr(:call, fsym, args...)
         lhs = Expr(:where, fsig, lhs.args[2:end]...)
     else
-        ArgumentError(
-            "memconst assignment LHS must be a call or where expression"
-        ) |> throw
+        throw(ArgumentError("memconst assignment LHS must be a call or where expression"))
     end
     # See if the expr is tagged; if so, we have a particular type we can use in
     # the memoization dict.
@@ -274,52 +292,55 @@ macro memoize(assgn::Expr)
     s_cache = gensym("cache")
     s_delay = gensym("delay")
     s_lock = gensym("lock")
-    s_tmp  = gensym("tmp")
-    s_val  = gensym("val")
-    quote
-        let $s_lock  = ReentrantLock(),
-            $s_cache = Dict{Tuple, $MT}(),
-            $s_delay = Dict{Tuple, Delay{$MT}}(),
-            $s_tmp, $s_val
-            global $lhs = begin
-                lock($s_lock)
-                try
-                    $s_tmp = get($s_cache, $argtup, $s_cache)
-                    if $s_tmp === $s_cache
-                        $s_tmp = get!(() -> Delay{$MT}(() -> $expr),
-                                      $s_delay, $argtup)
-                    else
-                        return $s_tmp
+    s_tmp = gensym("tmp")
+    s_val = gensym("val")
+    esc(
+        quote
+            let $s_lock = ReentrantLock(),
+                $s_cache = Dict{Tuple,$MT}(),
+                $s_delay = Dict{Tuple,Delay{$MT}}(),
+                $s_tmp,
+                $s_val
+
+                global $lhs = begin
+                    lock($s_lock)
+                    try
+                        $s_tmp = get($s_cache, $argtup, $s_cache)
+                        if $s_tmp === $s_cache
+                            $s_tmp = get!(() -> Delay{$MT}(() -> $expr), $s_delay, $argtup)
+                        else
+                            return $s_tmp
+                        end
+                    finally
+                        unlock($s_lock)
                     end
-                finally
-                    unlock($s_lock)
-                end
-                # If we get here, we've created or grabbed a delay for the
-                # arguments; go ahead and wait on it (outside of the lock so
-                # that we don't prevent other argument tuples from computing at
-                # the same time).
-                $s_val = $s_tmp[]
-                # Now, re-grab the lock and update the dictionaries.
-                lock($s_lock)
-                try
-                    # Possibly another thread updated things before we got to it.
-                    $s_tmp = get($s_cache, $argtup, $s_cache)
-                    if $s_tmp === $s_cache
-                        # We're the first task to finish the calculation and/or 
-                        # the first to grab the lock. Fix the cache.
-                        $s_cache[$argtup] = $s_val
-                        delete!($s_delay, $argtup)
-                        return $s_val
-                    else
-                        return $s_tmp
+                    # If we get here, we've created or grabbed a delay for the
+                    # arguments; go ahead and wait on it (outside of the lock so
+                    # that we don't prevent other argument tuples from computing at
+                    # the same time).
+                    $s_val = $s_tmp[]
+                    # Now, re-grab the lock and update the dictionaries.
+                    lock($s_lock)
+                    try
+                        # Possibly another thread updated things before we got to it.
+                        $s_tmp = get($s_cache, $argtup, $s_cache)
+                        if $s_tmp === $s_cache
+                            # We're the first task to finish the calculation and/or 
+                            # the first to grab the lock. Fix the cache.
+                            $s_cache[$argtup] = $s_val
+                            delete!($s_delay, $argtup)
+                            return $s_val
+                        else
+                            return $s_tmp
+                        end
+                    finally
+                        unlock($s_lock)
                     end
-                finally
-                    unlock($s_lock)
                 end
+                $fsym
             end
-            $fsym
-        end
-    end |> esc
+        end,
+    )
 end
 export @memoize
 
@@ -363,7 +384,7 @@ julia> p[]
 ```
 """
 mutable struct Promise{T}
-    _val::Union{Threads.Condition, Some{T}}
+    _val::Union{Threads.Condition,Some{T}}
 end
 Promise{T}() where {T} = Promise{T}(Threads.Condition())
 Promise() = Promise{Any}()
@@ -412,15 +433,14 @@ take(d::Promise{T}) where {T} = begin
     end
 end
 Base.getindex(d::Promise{T}) where {T} = take(d)
-Base.put!(d::Promise{T}, x) where {T} = begin
+function Base.put!(d::Promise{T}, x) where {T}
     v = d._val
     if isa(v, Threads.Condition)
         lock(v)
         try
-            (d._val === v) || throw(
-                ArgumentError("given promise is already fulfilled"))
+            (d._val === v) || throw(ArgumentError("given promise is already fulfilled"))
             d._val = Some{T}(x)
-            notify(v, all=true)
+            notify(v; all=true)
             return d._val.value
         finally
             unlock(v)
@@ -432,7 +452,7 @@ end
 Base.isready(d::Promise{T}) where {T} = isa(d._val, Some{T})
 Base.isequal(a::Promise{T}, b::Promise{S}) where {T,S} = (a === b) || isequal(a[], b[])
 Base.hash(d::Promise{T}) where {T} = 0x767127451c1e402a + hash(d[])
-Base.show(io::IO, ::MIME"text/plain", d::Promise{T}) where {T} = begin
+function Base.show(io::IO, ::MIME"text/plain", d::Promise{T}) where {T}
     v = d._val
     if isa(v, Some)
         print(io, "$(typeof(d))(")
@@ -445,7 +465,7 @@ end
 export Promise, take
 
 # #lockall #####################################################################
-_lockall(locks::Vector{T}) where {T} = begin
+function _lockall(locks::Vector{T}) where {T}
     locked = 0
     try
         for l in locks
@@ -463,7 +483,7 @@ _lockall(locks::Vector{T}) where {T} = begin
 end
 _lockall(f::Function, locks::Vector{T}) where {T} = begin
     # This only gets called once we have our own copy of the vector
-    sort!(locks, by=objectid)
+    sort!(locks; by=objectid)
     # This will either lock them all or raise an exception.
     _lockall(locks)
     # Now we can run the function
@@ -542,6 +562,6 @@ _to_pairs(kvs) = begin
         end
         K = typejoin(map(typeof, ks)...)
         V = typejoin(map(typeof, vs)...)
-        return Pair{K,V}[Pair{K,V}(k,v) for (k,v) in zip(ks,vs)]
+        return Pair{K,V}[Pair{K,V}(k, v) for (k, v) in zip(ks, vs)]
     end
 end

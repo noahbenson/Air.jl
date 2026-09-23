@@ -2,7 +2,6 @@
 # Author: Noah C. Benson <n@nben.net>
 
 @testset "TX" begin
-
     @testset "tx1" begin
         vals = Int[]
         vols = Vector{Volatile{Int}}[]
@@ -12,7 +11,7 @@
             global vols
             while vols[end][1][] < 0
                 # Pick a random layer and cell to calculate
-                l = rand((2,3,4,5))
+                l = rand((2, 3, 4, 5))
                 layer = vols[l]
                 k = rand(1:length(layer))
                 # synconize for the rest.
@@ -21,12 +20,14 @@
                     res = layer[k]
                     if res[] < 0
                         up = vols[l - 1]
-                        a = up[k*2 - 1]
-                        b = up[k*2]
+                        a = up[k * 2 - 1]
+                        b = up[k * 2]
                         if a[] >= 0 && b[] >= 0
                             res[] = a[] + b[]
                             send(log) do log
-                                println("Layer $l, item $k complete $(objectid(current_task())).")
+                                println(
+                                    "Layer $l, item $k complete $(objectid(current_task())).",
+                                )
                                 log
                             end
                         end
@@ -43,11 +44,12 @@
             global vols
             vals = rand(0:1000, 16)
             vols = Vector{Volatile{Int}}[
-                [Volatile{Int}(u)   for u in vals],
+                [Volatile{Int}(u) for u in vals],
                 [Volatile{Int}(-1) for _ in 1:8],
                 [Volatile{Int}(-1) for _ in 1:4],
                 [Volatile{Int}(-1) for _ in 1:2],
-                [Volatile{Int}(-1)]]
+                [Volatile{Int}(-1)],
+            ]
             # Spawn n threads.
             threads = [(Threads.@spawn worker()) for _ in 1:n]
             for th in threads
@@ -68,5 +70,4 @@
         @test tx1_run(10)
         @test tx1_run(11)
     end
-    
 end
