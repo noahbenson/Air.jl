@@ -123,24 +123,23 @@ julia> d2[]
 0.5
 ```
 """
-macro delay(e::Expr)
+macro delay(e)
     # First, parse the expression-- is it a function or an expression?
-    if e.head == :->
+    if e isa Expr && e.head == :->
         syms = e.args[1]
         expr = e.args[2]
     else
         syms = ()
         expr = e
     end
+    # Look for an optional trailing type annotation. The expression may be a
+    # block, whose elements include `LineNumberNode`s, or it may not be an
+    # `Expr` at all (e.g. a literal).
     tmp = expr
-    while tmp.head == :block
-        tmp = tmp.args[2]
+    while tmp isa Expr && tmp.head === :block
+        tmp = tmp.args[end]
     end
-    if tmp.head == :(::)
-        T = tmp.args[2]
-    else
-        T = :Any
-    end
+    T = (tmp isa Expr && tmp.head === :(::)) ? tmp.args[2] : :Any
     # If there are symbols, convert them over to expressions
     isa(syms, Symbol) && (syms = :(($syms,)))
     if isa(syms, Expr)

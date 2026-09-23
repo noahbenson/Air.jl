@@ -36,6 +36,21 @@
         @test d[] == 1
         @test d[] == 1
         @test counter[] == 1
+        # The macro used to require an `Expr`: a literal was rejected outright
+        # ("no method matching @delay(::LineNumberNode, ::Module, ::Int64)"),
+        # and a block was unwrapped by index without skipping `LineNumberNode`s,
+        # which threw. All of these forms should work.
+        @test (@delay 10)[] == 10
+        @test (@delay (2 + 3))[] == 5
+        @test (@delay () -> 11)[] == 11
+        @test (@delay () -> 12.0::Float64)[] === 12.0
+        @test (@delay begin
+            20
+        end)[] == 20
+        @test (@delay begin
+            x = 1
+            x + 1
+        end)[] == 2
     end
 
     @testset "@memoize" begin
