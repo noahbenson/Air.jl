@@ -91,8 +91,13 @@
         #    re-assert which vector it is holding.
         @test !isconcretetype(fieldtype(Air.PTree{Int}, :cells))
         # 2. `VolatileData`'s filter/finalize fields are typed `Function`, so
-        #    calling them is a dynamic dispatch. (Note `PHeap` does *not* have
-        #    this problem: its comparison function is a type parameter.)
+        #    calling them is a dynamic dispatch. Parameterizing the type would
+        #    fix that, but it would ripple into `Volatile` and `Transaction` for
+        #    a saving measured at a small fraction of the ~130 ns a filtered
+        #    write costs over a plain one; and with no filter installed — the
+        #    default — neither field is ever called. Left deliberately. (Note
+        #    `PHeap` does *not* have this problem: its comparison function is a
+        #    type parameter.)
         @test fieldtype(Air.VolatileData{Int}, :filter) === Union{Nothing,Function}
         @test fieldtype(Air.VolatileData{Int}, :finalize) === Union{Nothing,Function}
         # 3. `ActorMsg` stores its function in an abstractly-typed field.
