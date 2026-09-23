@@ -8,14 +8,13 @@
 # MIT License
 # Copyright (c) 2020-2021 Noah C. Benson
 
-import DataStructures
+using DataStructures: DataStructures
 
 # The beginning of this file contains the various types and simple functions
 # that depend only on those types (like show). These types end with the
 # Transaction type.
 # The remainder of this file contains methods that depend on transaction
 # details. These include all read and write operations for Actors and Volatiles.
-
 
 # #Actor #######################################################################
 # The (private) type of a message that is queued for an actor to eventually run.
@@ -53,13 +52,13 @@ struct ActorException{T} <: Exception
     queue::Tuple
 end
 export ActorException
-Base.show(io::IO, ::MIME"text/plain", a::ActorException{T}) where {T} = begin
-    print(io, "ActorException{$T}($(typeof(a.error)), $(a.value), ...)")
+function Base.show(io::IO, ::MIME"text/plain", a::ActorException{T}) where {T}
+    return print(io, "ActorException{$T}($(typeof(a.error)), $(a.value), ...)")
 end
-Base.show(io::IO, a::ActorException{T}) where {T} = begin
-    print(io, "ActorException{$T}($(typeof(a.error)))")
+function Base.show(io::IO, a::ActorException{T}) where {T}
+    return print(io, "ActorException{$T}($(typeof(a.error)))")
 end
-const ActorValue{T} = Union{Some{T}, ActorException{T}} where {T}
+const ActorValue{T} = Union{Some{T},ActorException{T}} where {T}
 """
     Actor{T}
 
@@ -122,7 +121,7 @@ julia> sleep(1); a[]
 mutable struct Actor{T} <: TransactionalRef{T}
     mutex::ReentrantLock
     queue::ActorMsgQueue
-    task::Union{Nothing, Task}
+    task::Union{Nothing,Task}
     value::ActorValue{T}
     function Actor{T}(initval) where {T}
         return new{T}(ReentrantLock(), ActorMsgQueue(), nothing, Some{T}(initval))
@@ -130,8 +129,8 @@ mutable struct Actor{T} <: TransactionalRef{T}
 end
 export Actor
 Actor(t::T) where {T} = Actor{T}(t)
-Base.propertynames(::Actor) = (:state,:value,:error)
-Base.getproperty(a::Actor{T}, k::Symbol) where {T} = begin
+Base.propertynames(::Actor) = (:state, :value, :error)
+function Base.getproperty(a::Actor{T}, k::Symbol) where {T}
     if k == :state
         return (geterror(a) === nothing ? :okay : :error)
     elseif k == :value
@@ -142,9 +141,9 @@ Base.getproperty(a::Actor{T}, k::Symbol) where {T} = begin
         error("type $(typeof(a)) has no field $k")
     end
 end
-Base.show(io::IO, ::MIME"text/plain", a::Actor{T}) where {T} = begin
+function Base.show(io::IO, ::MIME"text/plain", a::Actor{T}) where {T}
     print(io, "Actor{$T}(@")
-    print(io, string(objectid(a), base=62))
+    print(io, string(objectid(a); base=62))
     print(io, ": ")
     s = getfield(a, :value)
     if isa(s, ActorException{T})
@@ -152,15 +151,16 @@ Base.show(io::IO, ::MIME"text/plain", a::Actor{T}) where {T} = begin
     else
         show(io, something(s))
     end
-    print(io, ")")
+    return print(io, ")")
 end
 Base.show(io::IO, a::Actor{T}) where {T} = begin
     print(io, "Actor{$T}(@")
-    print(io, string(objectid(a), base=62))
+    print(io, string(objectid(a); base=62))
     print(io, ")")
 end
-Base.setindex!(a::Actor{T}, args...) where {T} = error(
-    "Actor objects cannot be assigned---they can only be sent functions")
+function Base.setindex!(a::Actor{T}, args...) where {T}
+    return error("Actor objects cannot be assigned---they can only be sent functions")
+end
 # The private main-loop that processes an actor's messages.
 """
     actor_main(actor)
@@ -178,7 +178,7 @@ items in the queue (this is done by the `send` function automatically).
 
 This function is part of `Air`'s internal/private implementation details.
 """
-actor_main(a::Actor{T}) where {T} = begin
+function actor_main(a::Actor{T}) where {T}
     mux = getfield(a, :mutex)
     msg = nothing
     args = nothing
@@ -250,7 +250,7 @@ outside of it.
 This function is considered part of `Air`'s internal/private implementation
 details.
 """
-actor_start!(a::Actor{T}) where {T} = begin
+function actor_start!(a::Actor{T}) where {T}
     task = getfield(a, :task)
     (task === nothing) || return task
     queue = getfield(a, :queue)
@@ -295,14 +295,14 @@ actor.
 This function is considered part of `Air`'s internal/private implementation
 details.
 """
-actor_send!(a::Actor{T}, msg::ActorMsg) where {T} = begin
+function actor_send!(a::Actor{T}, msg::ActorMsg) where {T}
     val = getfield(a, :value)
     isa(val, ActorException{T}) && throw(val)
     DataStructures.enqueue!(getfield(a, :queue), msg)
     (getfield(a, :task) === nothing) && actor_start!(a)
     return a
 end
-actor_send!(a::Actor{T}, qq::ActorMsgQueue) where {T} = begin
+function actor_send!(a::Actor{T}, qq::ActorMsgQueue) where {T}
     val = getfield(a, :value)
     isa(val, ActorException{T}) && throw(val)
     if !isempty(qq)
@@ -324,7 +324,7 @@ time this function is called.
 This function is considered part of `Air`'s internal/private implementation
 details.
 """
-actor_reset!(a::Actor{T}, val) where {T} = begin
+function actor_reset!(a::Actor{T}, val) where {T}
     val0 = getfield(a, :value)
     isa(val0, ActorException{T}) || return nothing
     setfield!(a, :value, Some{T}(val))
@@ -333,13 +333,12 @@ actor_reset!(a::Actor{T}, val) where {T} = begin
     return val0
 end
 
-
 # #Volatile ####################################################################
 # Volatile's, like Actor's, have a single immutable state structure.
 struct VolatileData{T}
     value::T
-    filter::Union{Nothing, Function}
-    finalize::Union{Nothing, Function}
+    filter::Union{Nothing,Function}
+    finalize::Union{Nothing,Function}
     function VolatileData{T}(v::S, flt::Function, fin::Function) where {T,S}
         return new{T}(flt(v), flt, fin)
     end
@@ -371,7 +370,7 @@ Calls the finalize function of the given volatile state object (of type
 
 This function is a private/internal implementation detail of the `Air` library.
 """
-voldata_finalize(v::VolatileData{T}) where {T} = begin
+function voldata_finalize(v::VolatileData{T}) where {T}
     (v.finalize === nothing) && return v
     u = v.finalize(v.value)
     return (u === v.value ? v : VolatileData{T}(u, v.filter, v.finalize))
@@ -461,20 +460,23 @@ mutable struct Volatile{T} <: TransactionalRef{T}
 end
 export Volatile
 Volatile(t::T) where {T} = Volatile{T}(t)
-Volatile(t::T, filterfn::Union{Nothing,Function},
-         finfn::Union{Nothing,Function}=nothing) where {T} = Volatile{T}(t, filterfn, finfn)
-Base.show(io::IO, ::MIME"text/plain", v::Volatile) = begin
+function Volatile(
+    t::T, filterfn::Union{Nothing,Function}, finfn::Union{Nothing,Function}=nothing
+) where {T}
+    return Volatile{T}(t, filterfn, finfn)
+end
+function Base.show(io::IO, ::MIME"text/plain", v::Volatile)
     show(io, typeof(v))
     print(io, "(@")
-    print(io, string(objectid(v), base=62))
+    print(io, string(objectid(v); base=62))
     print(io, ": ")
     show(io, v[])
-    print(io, ")")
+    return print(io, ")")
 end
 Base.show(io::IO, v::Volatile) = begin
     show(io, typeof(v))
     print(io, "(@")
-    print(io, string(objectid(v), base=62))
+    print(io, string(objectid(v); base=62))
     print(io, ")")
 end
 Base.propertynames(::Volatile) = (:value,)
@@ -485,7 +487,6 @@ Base.getproperty(v::Volatile, p) = begin
         error("type $(typeof(v)) has no field $p")
     end
 end
-
 
 # #Transaction #################################################################
 """
@@ -500,7 +501,7 @@ of Air and generally should not be used outside of the Air library.
 mutable struct ActorTxData{T}
     start_value::ActorValue{T}
     tx_value::ActorValue{T}
-    reset_value::Union{Nothing, Some{T}}
+    reset_value::Union{Nothing,Some{T}}
     msgs::ActorMsgQueue
     function ActorTxData{T}(w::S) where {T,S}
         return new{T}(w, w, nothing, ActorMsgQueue())
@@ -535,17 +536,20 @@ Transactions have the following propertiies:
 """
 mutable struct Transaction
     state::Symbol
-    reads::IdDict{Volatile, VolatileData}
-    writes::IdDict{Volatile, NTuple{2,VolatileData}}
-    actors::IdDict{Actor, ActorTxData}
-    Transaction() = new(:running,
-                        IdDict{Volatile, VolatileData}(),
-                        IdDict{Volatile, NTuple{2,VolatileData}}(),
-                        IdDict{Actor, ActorTxData}())
+    reads::IdDict{Volatile,VolatileData}
+    writes::IdDict{Volatile,NTuple{2,VolatileData}}
+    actors::IdDict{Actor,ActorTxData}
+    function Transaction()
+        return new(
+            :running,
+            IdDict{Volatile,VolatileData}(),
+            IdDict{Volatile,NTuple{2,VolatileData}}(),
+            IdDict{Actor,ActorTxData}(),
+        )
+    end
 end
 export Transaction
-Base.propertynames(::Transaction) =
-    (:state, :rvolatiles, :wvolatiles, :actors)
+Base.propertynames(::Transaction) = (:state, :rvolatiles, :wvolatiles, :actors)
 Base.getproperty(t::Transaction, p) = begin
     if p == :state
         return getfield(t, :state)
@@ -576,7 +580,7 @@ The `current_tx` constant is a `Var{T}` that stores the current task's running
 
 See also: [`currtx`](@ref)
 """
-@var current_tx = nothing::Union{Nothing, Transaction}
+@var current_tx = nothing::Union{Nothing,Transaction}
 
 """
     currtx()
@@ -619,7 +623,7 @@ const TX_MAX_ATTEMPTS = 2^14
 Runs the given function in a transaction and yields the result. The function
 fn is called as `fn()` without arguments.
 """
-function tx(fn::F) where {F <: Function}
+function tx(fn::F) where {F<:Function}
     success = false
     res = nothing
     the_tx = current_tx[]
@@ -646,7 +650,7 @@ function tx(fn::F) where {F <: Function}
         # executed. Before we do that, we should finalize the volatiles.
         writes = getfield(the_tx, :writes)
         setfield!(the_tx, :state, :finalizing)
-        for (v,(x0,x1)) in writes
+        for (v, (x0, x1)) in writes
             x = voldata_finalize(x1)
             if x !== x1
                 setfield!(the_tx, :state, :running)
@@ -662,15 +666,15 @@ function tx(fn::F) where {F <: Function}
         setfield!(the_tx, :state, :locking)
         nw = length(writes)
         nr = length(reads)
-        n  = nw + nr
-        m  = length(actors)
+        n = nw + nr
+        m = length(actors)
         vols = Vector{Volatile}(undef, n)
         vols[1:nr] .= keys(reads)
-        vols[nr+1:end] .= keys(writes)
-        sort!(vols, by=objectid)
+        vols[(nr + 1):end] .= keys(writes)
+        sort!(vols; by=objectid)
         acts = Vector{Actor}(undef, m)
         acts[1:m] .= keys(actors)
-        sort!(acts, by=objectid)
+        sort!(acts; by=objectid)
         locked = 0
         checked = 0
         success = false
@@ -682,13 +686,13 @@ function tx(fn::F) where {F <: Function}
                     locked += 1
                 end
                 # Now check their values. First do the read volatiles.
-                for (vol,x0) in reads
+                for (vol, x0) in reads
                     (x0 === getfield(vol, :value)) || break
                     checked += 1
                 end
                 (checked == nr) || break
                 # Next, check the written volatiles.
-                for (vol,(x0,x)) in writes
+                for (vol, (x0, x)) in writes
                     (x0 === getfield(vol, :value)) || break
                     checked += 1
                 end
@@ -698,7 +702,7 @@ function tx(fn::F) where {F <: Function}
                     lock(getfield(act, :mutex))
                     locked += 1
                 end
-                for (act,dat) in actors
+                for (act, dat) in actors
                     val = getfield(act, :value)
                     (dat.start_value === val) || break
                     checked += 1
@@ -707,11 +711,11 @@ function tx(fn::F) where {F <: Function}
                 # If we reach this point, then everything checks out and we can
                 # commit all of the changes and complete the transaction.
                 setfield!(the_tx, :state, :committing)
-                for (vol,(x0,x)) in writes
+                for (vol, (x0, x)) in writes
                     setfield!(vol, :value, x)
                 end
                 # We need to commit the actors as well.
-                for (act,dat) in actors
+                for (act, dat) in actors
                     q = dat.msgs
                     r = dat.reset_value
                     (r === nothing) || actor_reset!(act, r.value)
@@ -758,7 +762,7 @@ export @tx
 
 # Now that we have definend transactions, we can define the volatile access
 # methods.
-_volatile_getindex(v::Volatile{T}, t::Transaction) where {T} = begin
+function _volatile_getindex(v::Volatile{T}, t::Transaction) where {T}
     w = get(getfield(t, :writes), v, nothing)
     (w === nothing) || return w[2]
     w = get(getfield(t, :reads), v, nothing)
@@ -769,13 +773,13 @@ _volatile_getindex(v::Volatile{T}, t::Transaction) where {T} = begin
 end
 _volatile_getindex(v::Volatile{T}, ::Nothing) where {T} = getfield(v, :value)
 Base.getindex(v::Volatile{T}) where {T} = _volatile_getindex(v, currtx()).value
-volatile_setindex!(v::Volatile{T}, x::VolatileData{T}, t::Transaction) where {T} = begin
-    (getfield(t, :state) === :running) || error(
-        "volatiles can only be set before finalizing the transaction")
+function volatile_setindex!(v::Volatile{T}, x::VolatileData{T}, t::Transaction) where {T}
+    (getfield(t, :state) === :running) ||
+        error("volatiles can only be set before finalizing the transaction")
     # See if it this ref has already been written to in this transaction.
     w = get(getfield(t, :writes), v, nothing)
     if w !== nothing
-        (x0,x1) = w
+        (x0, x1) = w
         # If this doesn't change anything, don't do aything.
         (x === x1) && return x
         # If this changes the volatile back to its inintial value, we convert
@@ -793,7 +797,7 @@ volatile_setindex!(v::Volatile{T}, x::VolatileData{T}, t::Transaction) where {T}
     if w !== nothing
         # There is a previously-read value already. If it hasn't changed, it's
         # still just a read value.
-        (w === x) && return x 
+        (w === x) && return x
         # Otherwise, we are going to promote it to a written value.
         delete!(getfield(t, :reads), v)
         getfield(t, :writes)[v] = (w, x)
@@ -808,9 +812,10 @@ volatile_setindex!(v::Volatile{T}, x::VolatileData{T}, t::Transaction) where {T}
     end
     return x
 end
-volatile_setindex!(v::Volatile{T}, x::S, ::Nothing) where {T,S} = error(
-    "cannot set volatile outside of transaction")
-Base.setindex!(v::Volatile{T}, x::S) where {T,S} = begin
+function volatile_setindex!(v::Volatile{T}, x::S, ::Nothing) where {T,S}
+    return error("cannot set volatile outside of transaction")
+end
+function Base.setindex!(v::Volatile{T}, x::S) where {T,S}
     value = getfield(v, :value)
     # Run the filter on the new value.
     (value.filter === nothing) || (x = value.filter(x))
@@ -839,7 +844,7 @@ Sets the filter-function associated with the Volatile object vol. Any time that
 the vol is set (`vol[] = x`) the filter-function is called and the value saved
 in `vol` is instead `fn(x)`. This must be called within a transaction.
 """
-setfilter!(vol::Volatile{T}, f::Function) where {T} = begin
+function setfilter!(vol::Volatile{T}, f::Function) where {T}
     value = getfield(v, :value)
     newdat = VolatileData{T}(value.value, f, value.finalize)
     return volatile_setindex!(v, newdat, currtx())
@@ -855,7 +860,7 @@ the value committed to `vol` is instead `fn(x)` where `x` is the value set to
 `vol` in the transaction. This funvtion must also be called within a
 transaction.
 """
-setfinalize!(vol::Volatile{T}, f::Function) where {T} = begin
+function setfinalize!(vol::Volatile{T}, f::Function) where {T}
     value = getfield(v, :value)
     newdat = VolatileData{T}(value.value, value.filter, f)
     return volatile_setindex!(v, newdat, currtx())
@@ -920,9 +925,9 @@ This function is considered part of the internal/private interface of `Air` and
 shouldn't generally be called outside of it.
 """
 actor_reset(a::Actor{T}, x::S) where {T,S} = actor_reset(a, x, currtx())
-actor_reset(a::Actor{T}, newval::S, t::Transaction) where {T,S} = begin
-    (getfield(t, :state) === :running) || error(
-        "actors can only be reset before finalizing the transaction")
+function actor_reset(a::Actor{T}, newval::S, t::Transaction) where {T,S}
+    (getfield(t, :state) === :running) ||
+        error("actors can only be reset before finalizing the transaction")
     w = tx_actordata(a, t)
     val = w.tx_value
     isa(val, ActorException{T}) || return nothing
@@ -931,7 +936,7 @@ actor_reset(a::Actor{T}, newval::S, t::Transaction) where {T,S} = begin
     w.tx_value = newval
     return val
 end
-actor_reset(a::Actor{T}, newval::S, ::Nothing) where {T,S} = begin
+function actor_reset(a::Actor{T}, newval::S, ::Nothing) where {T,S}
     # We're not in a transaction, so we just lock and queue.
     mux = getfield(a, :mutex)
     lock(mux)
@@ -965,15 +970,15 @@ This function is considered part of the internal/private interface of `Air` and
 shouldn't generally be called outside of it.
 """
 actor_send(a::Actor{T}, msg::ActorMsg) where {T} = actor_send(a, msg, currtx())
-actor_send(a::Actor{T}, msg::ActorMsg, t::Transaction) where {T} = begin
-    (getfield(t, :state) === :running) || error(
-        "actors can only be sent functions before finalizing the transaction")
+function actor_send(a::Actor{T}, msg::ActorMsg, t::Transaction) where {T}
+    (getfield(t, :state) === :running) ||
+        error("actors can only be sent functions before finalizing the transaction")
     w = tx_actordata(a, t)
     isa(w.tx_value, ActorException{T}) && throw(w.tx_value)
     DataStructures.enqueue!(w.msgs, msg)
     return nothing
 end
-actor_send(a::Actor{T}, msg::ActorMsg, ::Nothing) where {T} = begin
+function actor_send(a::Actor{T}, msg::ActorMsg, ::Nothing) where {T}
     # We're not in a transaction, so we just lock and queue.
     mux = getfield(a, :mutex)
     lock(mux)
@@ -1086,15 +1091,15 @@ export TxIO
 Base.isreadable(io::TxIO) = false
 Base.iswritable(io::TxIO) = true
 Base.eof(io::TxIO) = eof(io.io)
-Base.write(io::TxIO, x::UInt8) = send(io.actor) do io;
+Base.write(io::TxIO, x::UInt8) = send(io.actor) do io
     write(io, x)
     return io
 end
-Base.write(io::TxIO, x::Char) = send(io.actor) do io;
+Base.write(io::TxIO, x::Char) = send(io.actor) do io
     write(io, x)
     return io
 end
-Base.write(io::TxIO, x::Union{String,SubString{String}}) = send(io.actor) do io;
+Base.write(io::TxIO, x::Union{String,SubString{String}}) = send(io.actor) do io
     write(io, x)
     return io
 end
@@ -1118,24 +1123,27 @@ end
 Base.isreadable(io::AirOut) = false
 Base.iswritable(io::AirOut) = true
 Base.eof(io::AirOut) = eof(stdout)
-Base.write(io::AirOut, x::UInt8) = let so = stdout
-    return send(io.actor) do io;
-        write(so, x)
-        return io
+Base.write(io::AirOut, x::UInt8) =
+    let so = stdout
+        return send(io.actor) do io
+            write(so, x)
+            return io
+        end
     end
-end
-Base.write(io::AirOut, x::Char) = let so = stdout
-    return send(io.actor) do io;
-        write(so, x)
-        return io
+Base.write(io::AirOut, x::Char) =
+    let so = stdout
+        return send(io.actor) do io
+            write(so, x)
+            return io
+        end
     end
-end
-Base.write(io::AirOut, x::Union{String,SubString{String}}) = let so = stdout
-    return send(io.actor) do io;
-        write(so, x)
-        return io
+Base.write(io::AirOut, x::Union{String,SubString{String}}) =
+    let so = stdout
+        return send(io.actor) do io
+            write(so, x)
+            return io
+        end
     end
-end
 
 """
     airout

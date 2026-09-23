@@ -24,8 +24,11 @@ struct ProblemData
     state::Air.Volatile{Symbol}
     actor::Air.Actor{Air.PVector{Tuple{Symbol,Int}}}
     function ProblemData(k::Int, state::Symbol=:okay)
-        return new(Air.Volatile{Int}(k), Air.Volatile(state),
-                   Air.Actor(PVector{Tuple{Symbol,Int}}()))
+        return new(
+            Air.Volatile{Int}(k),
+            Air.Volatile(state),
+            Air.Actor(PVector{Tuple{Symbol,Int}}()),
+        )
     end
 end
 

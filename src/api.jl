@@ -78,7 +78,6 @@ transactions. Transactional refs include `Actor`s and `Volatile`s.
 abstract type TransactionalRef{T} <: ReentrantRef{T} end
 export TransactionalRef
 
-
 # #equalfn and #hashfn #########################################################
 """
     equalfn(x)
@@ -155,9 +154,9 @@ ERROR: ArgumentError: no equalfn for type PArray
 hashfn(x::T) where {T} = hashfn(equalfn(T))
 hashfn(::Type{T}) where {T} = hashfn(equalfn(T))
 # equalfn and hashfn can also be used on their respective functions
-equalfn(::typeof(objectid))  = (===)
-equalfn(::typeof(hash))      = isequal
-hashfn(::typeof(===))     = objectid
+equalfn(::typeof(objectid)) = (===)
+equalfn(::typeof(hash)) = isequal
+hashfn(::typeof(===)) = objectid
 hashfn(::typeof(isequal)) = hash
 export equalfn, hashfn
 
@@ -213,10 +212,8 @@ julia> d1
 Dict{Any,Any}()
 ```
 """
-setindex(u::AbstractArray{T,N}, x::S, I...) where {T,N,S} =
-    Base.setindex!(copy(u), x, I...)
-setindex(d::AbstractDict{K,V}, v::U, k::J) where {K,V,U,J} =
-    Base.setindex!(copy(d), v, k)
+setindex(u::AbstractArray{T,N}, x::S, I...) where {T,N,S} = Base.setindex!(copy(u), x, I...)
+setindex(d::AbstractDict{K,V}, v::U, k::J) where {K,V,U,J} = Base.setindex!(copy(d), v, k)
 export setindex
 
 # #push ========================================================================
@@ -274,12 +271,12 @@ Dict{Symbol,Int64} with 4 entries:
 ```
 """
 function push end
-push(A, a, b, c...) = reduce(push, c, init=push(push(A, a), b))
+push(A, a, b, c...) = reduce(push, c; init=push(push(A, a), b))
 push(u::NTuple{N,T}, val::S) where {T,N,S} = begin
     return NTuple{N+1,T}(T[u..., val])
 end
 push(u::AbstractVector{T}, val::S) where {T,S} = T[u..., val]
-push(d::AbstractDict{K,V}, kv::Pair{J,U}) where {K,V,J,U} = begin
+function push(d::AbstractDict{K,V}, kv::Pair{J,U}) where {K,V,J,U}
     return setindex(d, kv[2], kv[1])
 end
 push(s::AbstractSet{T}, u::S) where {T,S} = push!(copy(s), u)
@@ -339,9 +336,9 @@ julia> d[:c]
 ```
 """
 function pop end
-pop(u::NTuple{N,T}) where {N,T} = (u[end], u[1:end-1])
+pop(u::NTuple{N,T}) where {N,T} = (u[end], u[1:(end - 1)])
 pop(u::Tuple{}) = throw(ArgumentError("n-tuple must be non-empty"))
-pop(u::AbstractArray{T,1}) where {T} = (u[end], copy(u[1:end-1]))
+pop(u::AbstractArray{T,1}) where {T} = (u[end], copy(u[1:(end - 1)]))
 pop(d::AbstractDict{K,V}) where {K,V} = begin
     rem = copy(d)
     v = pop!(rem)
@@ -352,9 +349,8 @@ pop(d::AbstractDict{K,V}, k::J) where {K,V,J} = begin
     v = pop!(rem, k)
     return (v, rem)
 end
-pop(d::AbstractPDict{K,V}) where {K,V} = begin
-    (length(d) == 0) && throw(
-        ArgumentError("cannot pop from an empty collection"))
+function pop(d::AbstractPDict{K,V}) where {K,V}
+    (length(d) == 0) && throw(ArgumentError("cannot pop from an empty collection"))
     kv = iterate(d)[1]
     return (kv, delete(d, kv[1]))
 end
@@ -378,9 +374,8 @@ pop(s::AbstractSet{T}, u::S) where {T,S} = begin
     u = pop!(rem, u)
     return (u, rem)
 end
-pop(s::AbstractPSet{T}) where {T,S} = begin
-    (length(d) == 0) && throw(
-        ArgumentError("cannot pop from an empty collection"))
+function pop(s::AbstractPSet{T}) where {T,S}
+    (length(d) == 0) && throw(ArgumentError("cannot pop from an empty collection"))
     x = iterate(d)[1]
     return (x, delete(d, x))
 end
@@ -508,8 +503,9 @@ julia> length(u)
 ```
 """
 function popat end
-popat(u::NTuple{N,T}, k::K) where {N,T,K<:Integer} =
-    (u[k], (u[1:k-1]..., u[k+1:end]...))
+function popat(u::NTuple{N,T}, k::K) where {N,T,K<:Integer}
+    return (u[k], (u[1:(k - 1)]..., u[(k + 1):end]...))
+end
 popat(u::Tuple{}) = throw(ArgumentError("n-tuple must be non-empty"))
 popat(u::AbstractArray{T,1}, k::K) where {T,K<:Integer} = begin
     c = copy(u)
@@ -570,21 +566,19 @@ false
 ```
 """
 function insert end
-insert(a::AbstractVector{T}, k::K, val::S) where {T,K<:Integer,S} =
-    insert!(copy(a), k, val)
-insert(a::Vector{T}, k::K, val::S) where {T,K<:Integer,S} = begin
+insert(a::AbstractVector{T}, k::K, val::S) where {T,K<:Integer,S} = insert!(copy(a), k, val)
+function insert(a::Vector{T}, k::K, val::S) where {T,K<:Integer,S}
     n = length(a) + 1
-    (k > n) && throw(
-        ArgumentError("insert: $k is out of range for Vector of length $(n-1)"))
+    (k > n) &&
+        throw(ArgumentError("insert: $k is out of range for Vector of length $(n-1)"))
     out = Vector{T}(undef, n)
     (k > 1) && copyto!(out, 1, a, 1, k - 1)
     @inbounds out[k] = val
     (k < n) && copyto!(out, k + 1, a, k, n - k)
     return out
 end
-insert(a::Tuple, idx::II, val::T) where {II<:Integer,T} =
-    (a[1:idx]..., val, a[idx:end]...)
-insert(a::Tuple{}, idx::II, val::T) where {II<:Integer,T} = begin
+insert(a::Tuple, idx::II, val::T) where {II<:Integer,T} = (a[1:idx]..., val, a[idx:end]...)
+function insert(a::Tuple{}, idx::II, val::T) where {II<:Integer,T}
     if idx == 1
         return (val,)
     else
@@ -597,29 +591,32 @@ macro _tuple_insert_gencode(N::Int)
     # We'll want to refer to the tuple elements:
     els = [:(tup[$k]) for k in 1:N]
     # Build up the if-elseif-else expression, starting with the else:
-    ifexpr = :(throw(ArgumentError(
-        "insert: $k if out of range for a Tuple of length $(length(tup))")))
-    ifexpr = Expr(:elseif, :(k == $(N+1)), :(push(tup, el)), ifexpr) 
+    ifexpr = :(throw(
+        ArgumentError("insert: $k if out of range for a Tuple of length $(length(tup))")
+    ))
+    ifexpr = Expr(:elseif, :(k == $(N+1)), :(push(tup, el)), ifexpr)
     for k in N:-1:1
-        ifexpr = Expr(k == 1 ? :if : :elseif,
-                      :(k == $k),
-                      :(($(els[1:k-1]...), el, $(els[k:end]...))),
-                      ifexpr)
+        ifexpr = Expr(
+            k == 1 ? :if : :elseif,
+            :(k == $k),
+            :(($(els[1:(k - 1)]...), el, $(els[k:end]...))),
+            ifexpr,
+        )
     end
-    return quote
+    return esc(quote
         insert(tup::NTuple{$N,T}, k::K, el::S) where {T,K<:Integer,S} = $ifexpr
-    end |> esc
+    end)
 end
 # Now generate functions for up to 64:
-(@_tuple_insert_gencode  1)
-(@_tuple_insert_gencode  2)
-(@_tuple_insert_gencode  3)
-(@_tuple_insert_gencode  4)
-(@_tuple_insert_gencode  5)
-(@_tuple_insert_gencode  6)
-(@_tuple_insert_gencode  7)
-(@_tuple_insert_gencode  8)
-(@_tuple_insert_gencode  9)
+(@_tuple_insert_gencode 1)
+(@_tuple_insert_gencode 2)
+(@_tuple_insert_gencode 3)
+(@_tuple_insert_gencode 4)
+(@_tuple_insert_gencode 5)
+(@_tuple_insert_gencode 6)
+(@_tuple_insert_gencode 7)
+(@_tuple_insert_gencode 8)
+(@_tuple_insert_gencode 9)
 (@_tuple_insert_gencode 10)
 (@_tuple_insert_gencode 11)
 (@_tuple_insert_gencode 12)
@@ -729,47 +726,51 @@ false
 """
 delete(d::AbstractDict{K,V}, k::J) where {K,V,J} = delete!(copy(d), k)
 delete(d::AbstractSet{V}, k::U) where {V,U} = delete!(copy(d), k)
-delete(u::AbstractVector{T}, k::K) where {T,K<:Integer} = begin
+function delete(u::AbstractVector{T}, k::K) where {T,K<:Integer}
     n = length(u)
     V = typeof(u)
-    (n == 0 || k < 0 || k > n) && throw(
-        ArgumentError("delete: $k is out of range for Vector of length $n"))
+    (n == 0 || k < 0 || k > n) &&
+        throw(ArgumentError("delete: $k is out of range for Vector of length $n"))
     out = V(undef, n - 1)
     (k > 1) && copyto!(out, 1, u, 1, k - 1)
     (k < n) && copyto!(out, k, u, k + 1, n - k)
     return out
 end
-delete(a::Tuple, idx::K) where {K<:Integer,T} = (a[1:idx-1]..., a[idx+1:end]...)
-delete(a::Tuple{}, idx::II) where {II<:Integer} =
-    throw(ArgumentError("delete: $idx is out of range for a Tuple{}"))
+delete(a::Tuple, idx::K) where {K<:Integer,T} = (a[1:(idx - 1)]..., a[(idx + 1):end]...)
+function delete(a::Tuple{}, idx::II) where {II<:Integer}
+    return throw(ArgumentError("delete: $idx is out of range for a Tuple{}"))
+end
 # For tuples, we want to generate versions of this for NTuples up to size 64;
 # beyond that we can use a generic function.
 macro _tuple_delete_gencode(N::Int)
     # We'll want to refer to the tuple elements:
     els = [:(tup[$k]) for k in 1:N]
     # Build up the if-elseif-else expression, starting with the else:
-    ifexpr = :(throw(ArgumentError(
-        "delete: $k if out of range for a Tuple of length $(length(tup))")))
+    ifexpr = :(throw(
+        ArgumentError("delete: $k if out of range for a Tuple of length $(length(tup))")
+    ))
     for k in N:-1:1
-        ifexpr = Expr(k == 1 ? :if : :elseif,
-                      :(k == $k),
-                      :(($(els[1:k-1]...), $(els[k+1:end]...))),
-                      ifexpr)
+        ifexpr = Expr(
+            k == 1 ? :if : :elseif,
+            :(k == $k),
+            :(($(els[1:(k - 1)]...), $(els[(k + 1):end]...))),
+            ifexpr,
+        )
     end
-    return quote
+    return esc(quote
         delete(tup::NTuple{$N,T}, k::K) where {T,K<:Integer} = $ifexpr
-    end |> esc
+    end)
 end
 # Now generate functions for up to 64:
-(@_tuple_delete_gencode  1)
-(@_tuple_delete_gencode  2)
-(@_tuple_delete_gencode  3)
-(@_tuple_delete_gencode  4)
-(@_tuple_delete_gencode  5)
-(@_tuple_delete_gencode  6)
-(@_tuple_delete_gencode  7)
-(@_tuple_delete_gencode  8)
-(@_tuple_delete_gencode  9)
+(@_tuple_delete_gencode 1)
+(@_tuple_delete_gencode 2)
+(@_tuple_delete_gencode 3)
+(@_tuple_delete_gencode 4)
+(@_tuple_delete_gencode 5)
+(@_tuple_delete_gencode 6)
+(@_tuple_delete_gencode 7)
+(@_tuple_delete_gencode 8)
+(@_tuple_delete_gencode 9)
 (@_tuple_delete_gencode 10)
 (@_tuple_delete_gencode 11)
 (@_tuple_delete_gencode 12)
@@ -864,10 +865,7 @@ export getpair
 # #isequal #####################################################################
 function _equalfn_isequal(
     l::DL, r::DR
-) where {
-    KL,VL, DL <: AbstractDict{KL,VL},
-    KR,VR, DR <: AbstractDict{KR,VR}
-}
+) where {KL,VL,DL<:AbstractDict{KL,VL},KR,VR,DR<:AbstractDict{KR,VR}}
     # Identical dictionaries are always equal.
     (l === r) && return true
     # Equality functions must match.
@@ -885,10 +883,7 @@ Base.isequal(l::AbstractPDict, r::AbstractDict) = _equalfn_isequal(l, r)
 Base.isequal(l::AbstractPDict, r::AbstractPDict) = _equalfn_isequal(l, r)
 function _equalfn_isequal(
     l::SL, r::SR
-) where {
-    TL, SL <: AbstractSet{TL},
-    TR, SR <: AbstractSet{TR}
-}
+) where {TL,SL<:AbstractSet{TL},TR,SR<:AbstractSet{TR}}
     # Sets must have the same equality base to be equal.
     (equalfn(SL) === equalfn(SR)) || return false
     # Identical sets are always equal.
@@ -906,10 +901,7 @@ Base.isequal(l::AbstractPSet, r::AbstractSet) = _equalfn_isequal(l, r)
 Base.isequal(l::AbstractPSet, r::AbstractPSet) = _equalfn_isequal(l, r)
 function _equalfn_eq(
     l::DL, r::DR
-) where {
-    KL,VL, DL <: AbstractDict{KL,VL},
-    KR,VR, DR <: AbstractDict{KR,VR}
-}
+) where {KL,VL,DL<:AbstractDict{KL,VL},KR,VR,DR<:AbstractDict{KR,VR}}
     # Dictionaries must have the same equality base to be equal.
     (equalfn(DL) === equalfn(DR)) || return false
     # Identical dictionaries are always equal.
@@ -931,12 +923,7 @@ end
 Base.:(==)(l::AbstractDict, r::AbstractPDict) = _equalfn_eq(l, r)
 Base.:(==)(l::AbstractPDict, r::AbstractDict) = _equalfn_eq(l, r)
 Base.:(==)(l::AbstractPDict, r::AbstractPDict) = _equalfn_eq(l, r)
-function _equalfn_eq(
-    l::SL, r::SR
-) where {
-    TL, SL <: AbstractSet{TL},
-    TR, SR <: AbstractSet{TR}
-}
+function _equalfn_eq(l::SL, r::SR) where {TL,SL<:AbstractSet{TL},TR,SR<:AbstractSet{TR}}
     # Sets must have the same equality base to be equal.
     (equalfn(SL) === equalfn(SR)) || return false
     # Identical sets are always equal.
@@ -952,4 +939,3 @@ end
 Base.:(==)(l::AbstractSet, r::AbstractPSet) = _equalfn_eq(l, r)
 Base.:(==)(l::AbstractPSet, r::AbstractSet) = _equalfn_eq(l, r)
 Base.:(==)(l::AbstractPSet, r::AbstractPSet) = _equalfn_eq(l, r)
-

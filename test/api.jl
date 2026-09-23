@@ -2,7 +2,6 @@
 # Author: Noah C. Benson <n@nben.net>
 
 @testset "API" begin
-
     @testset "setindex" begin
         d1 = Dict()
         d2 = setindex(d1, 10, :a)
@@ -23,23 +22,23 @@
         u2 = setindex(u1, :a, 1)
         @test u2[1] == :a
         @test u1[1] == :x
-        u1 = reshape(u1, (1,2))
+        u1 = reshape(u1, (1, 2))
         u2 = setindex(u1, :a, 1, 1)
-        @test u2[1,1] == :a
-        @test u1[1,1] == :x
+        @test u2[1, 1] == :a
+        @test u1[1, 1] == :x
         t1 = (:x, :y, :z)
         t2 = setindex(t1, :a, 1)
         @test t2[1] == :a
         @test length(t2) == 3
-        b1 = BitArray([1,1,1,1,1])
+        b1 = BitArray([1, 1, 1, 1, 1])
         b2 = setindex(b1, 0, 3)
         @test b1[3] == true
         @test b2[3] == false
     end
-    
+
     @testset "PArray" begin
-        a = collect(reshape(1:100, (10,10)))
-        b = convert(Array{Float64,2}, collect(reshape(1:100, (10,10))))
+        a = collect(reshape(1:100, (10, 10)))
+        b = convert(Array{Float64,2}, collect(reshape(1:100, (10, 10))))
         p = PArray(a)
         q = PArray(b)
         @test a == b
@@ -64,9 +63,8 @@
 
     @testset "PDict" begin
         intels = [gensym() => x for x in 1:2000]
-        fltels = [k => Float64(v) for (k,v) in intels]
-        for (DT,PDT) in ((Dict,      PDict),
-                         (IdDict,    PIdDict))
+        fltels = [k => Float64(v) for (k, v) in intels]
+        for (DT, PDT) in ((Dict, PDict), (IdDict, PIdDict))
             a = DT(intels...)
             b = DT(fltels...)
             p = PDT(a)
@@ -103,7 +101,7 @@
     @testset "PSet" begin
         intels = collect(1:1000)
         fltels = [Float64(v) for v in intels]
-        for (ST,PST) in ((Set, PSet), (IdSet, PIdSet))
+        for (ST, PST) in ((Set, PSet), (IdSet, PIdSet))
             if ST === IdSet
                 a = make_idset(intels)
                 b = make_idset(fltels)
@@ -134,8 +132,8 @@
     end
 
     @testset "PWDict" begin
-        intels = [gensym() => (x,rand(Float64)) for x in 1:2000]
-        fltels = [k => (Float64(v),w) for (k,(v,w)) in intels]
+        intels = [gensym() => (x, rand(Float64)) for x in 1:2000]
+        fltels = [k => (Float64(v), w) for (k, (v, w)) in intels]
         p = PWDict{Symbol,Int,Float64}(intels...)
         q = PWDict{Symbol,Float64,Float64}(fltels...)
         @test p == q

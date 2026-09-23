@@ -7,7 +7,6 @@
 # MIT License
 # Copyright (c) 2019 Noah C. Benson
 
-
 # ==============================================================================
 # #TODO List
 
@@ -21,13 +20,12 @@
 # broadcast() method
 # Many others: overload arithmetic operators? reshape, others.
 
-
 # ==============================================================================
 # PArray definition.
 
 # We expand on some sparse array methods with PArrays (which are implemented as
 # efficitn sparse arrays anyway.
-import SparseArrays
+using SparseArrays: SparseArrays
 
 """
     PArray{T,N}
@@ -82,33 +80,33 @@ struct PArray{T,N} <: AbstractPArray{T,N}
     # The data in a long array.
     _tree::PTree{T}
     # The default value, if any (for sparse arrays).
-    _default::Union{Nothing, Tuple{T}}
+    _default::Union{Nothing,Tuple{T}}
 end
-
 
 # ==============================================================================
 # PArray Constructors
 
-PArray{T,N}(default, size::NTuple{N,<:Integer}) where {T,N} = begin
+function PArray{T,N}(default, size::NTuple{N,<:Integer}) where {T,N}
     default = Tuple{T}((default,))
     return PArray{T,N}(0x0, LinearIndices(size), PTree{T}(), default)
 end
-PArray{T,N}(::UndefInitializer, size::NTuple{N,<:Integer}) where {T,N} =
+function PArray{T,N}(::UndefInitializer, size::NTuple{N,<:Integer}) where {T,N}
     return PArray{T,N}(0x0, LinearIndices(size), PTree{T}(), nothing)
-PArray{T,N}(default::S, size::Vararg{<:Integer,N}) where {T,N,S} = begin
+end
+function PArray{T,N}(default::S, size::Vararg{<:Integer,N}) where {T,N,S}
     return PArray{T,N}(default, NTuple{N,Int}(size))
 end
-PArray{T,N}(default::S, size::Vector{<:Integer}) where {T,N,S} = begin
+function PArray{T,N}(default::S, size::Vector{<:Integer}) where {T,N,S}
     return PArray{T,N}(default, NTuple{N,Int}(size))
 end
 PArray(default::T, size::NTuple{N,<:Integer}) where {T,N} = PArray{T,N}(default, size)
-PArray(default::T, size::Vararg{<:Integer,N}) where {T,N} = begin
+function PArray(default::T, size::Vararg{<:Integer,N}) where {T,N}
     return PArray{T,N}(default, NTuple{N,Int}(size))
 end
-PArray(default::T, size::Vector{<:Integer}) where {T,N} = begin
+function PArray(default::T, size::Vector{<:Integer}) where {T,N}
     return PArray{T,N}(default, NTuple{N,Int}(size))
 end
-PArray{T,N}(a::AbstractArray{S,N}) where {T,N,S} = begin
+function PArray{T,N}(a::AbstractArray{S,N}) where {T,N,S}
     tree = PTree{T}(a)
     return PArray{T,N}(HASH_T(0x0), _lindex(size(a)...), tree, nothing)
 end
@@ -121,7 +119,6 @@ PArray() = PArray{Any,1}()
 Base.convert(::Type{PArray{T,N}}, x) where {T,N} = PArray{T,N}(x)
 Base.convert(::Type{PArray{T,N}}, x::PArray{T,N}) where {T,N} = x
 
-
 # ==============================================================================
 # PArray aliases
 
@@ -132,8 +129,7 @@ An alias for `PArray{T,1}`, representing a persistent vector.
 """
 const PVector{T} = PArray{T,1} where {T}
 PVector(default::T, len::II) where {T,II<:Integer} = PArray{T,1}(default, (len,))
-PVector(default::T, len::Tuple{II}) where {T,II<:Integer} =
-    PArray{T,1}(default, len)
+PVector(default::T, len::Tuple{II}) where {T,II<:Integer} = PArray{T,1}(default, len)
 PVector(a::AbstractArray{T,1}) where {T} = PArray{T,1}(a)
 PVector(p::PArray{T,1}) where {T,N} = p
 PVector() = PArray{Any,1}()
@@ -146,10 +142,10 @@ An alias for `PArray{T,2}`, representing a persistent matrix.
 """
 const PMatrix{T} = PArray{T,2} where {T}
 PMatrix(args...) = PArray{Any,2}(args...)
-PMatrix(default::T, rs::II, cs::JJ) where {T,II<:Integer,JJ<:Integer} =
-    PArray{T,2}(default, (rs,cs))
-PMatrix(default::T, sz::Tuple{<:Integer,<:Integer}) where {T} =
-    PArray{T,2}(default, len)
+function PMatrix(default::T, rs::II, cs::JJ) where {T,II<:Integer,JJ<:Integer}
+    return PArray{T,2}(default, (rs, cs))
+end
+PMatrix(default::T, sz::Tuple{<:Integer,<:Integer}) where {T} = PArray{T,2}(default, len)
 PMatrix(a::AbstractArray{T,2}) where {T} = PArray{T,2}(a)
 PMatrix(p::PArray{T,2}) where {T,N} = p
 PMatrix() = PArray{Any,2}()
@@ -201,7 +197,7 @@ SparseArrays.nnz(u::PArray{T,N}) where {T,N} = length(u._tree)
 _dropzeros(p::PTree{T}, ::Nothing) where {T} = p
 _dropzeros(p::PTree{T}, df::Tuple{T}) where {T} = begin
     df = df[1]
-    for (k,v) in p
+    for (k, v) in p
         if v == df
             p = delete(p, k)
         end
@@ -252,13 +248,14 @@ julia> dropzeros(v) === v
 true
 ```
 """
-SparseArrays.dropzeros(p::PArray{T,N}) where {T,N} = begin
+function SparseArrays.dropzeros(p::PArray{T,N}) where {T,N}
     t = _dropzeros(p._tree, p._default)
     (t === p._tree) && return p
     return PArray{T,N}(p._i0, p._index, t, p._default)
 end
-SparseArrays.dropzeros!(p::PArray{T,N}) where {T,N} = error(
-    "dropzeros!: object of type $(typeof(p)) is immutable")
+function SparseArrays.dropzeros!(p::PArray{T,N}) where {T,N}
+    return error("dropzeros!: object of type $(typeof(p)) is immutable")
+end
 """
     findnz(p::PArray)
 
@@ -306,16 +303,16 @@ julia> findnz(u)
 ([2], [20.0])
 ```
 """
-SparseArrays.findnz(p::PArray{T,N}) where {T,N} = begin
+function SparseArrays.findnz(p::PArray{T,N}) where {T,N}
     sz = size(p._index)
     ndims = length(sz)
     n = SparseArrays.nnz(p)
     iilists = [Vector{Int}(undef, n) for _ in 1:N]
     vals = Vector{T}(undef, n)
     cis = CartesianIndices(size(p))
-    for (elno,(k,v)) in enumerate(p._tree)
+    for (elno, (k, v)) in enumerate(p._tree)
         ci = cis[Int(k - p._i0) + 1]
-        for (iilist,oo) in zip(iilists,Tuple(ci))
+        for (iilist, oo) in zip(iilists, Tuple(ci))
             iilist[elno] = oo
         end
         vals[elno] = v
@@ -375,11 +372,9 @@ julia> nonzeros(u)
  20.0
 ```
 """
-SparseArrays.nonzeros(p::PArray{T,N}) where {T,N} =
-    PVector{T}(T[v for (k,v) in p._tree])
+SparseArrays.nonzeros(p::PArray{T,N}) where {T,N} = PVector{T}(T[v for (k, v) in p._tree])
 # PArrays are always considered sparse.
 SparseArrays.issparse(::PArray) = true
-
 
 # ==============================================================================
 # Iterator methods
@@ -392,17 +387,16 @@ Base.size(u::PArray{T,N}) where {T,N} = size(u._index)
 Base.eltype(::Type{PArray{T,N}}) where {T,N} = T
 Base.eltype(u::PArray{T,N}) where {T,N} = T
 
-Base.iterate(u::PArray{T,N}, k::Int) where {T,N} = begin
+function Base.iterate(u::PArray{T,N}, k::Int) where {T,N}
     return k > length(u) ? nothing : (u[k], k+1)
 end
 Base.iterate(u::PArray{T,N}) where {T,N} = iterate(u, 1)
-
 
 # ==============================================================================
 # Indexing methods
 
 IndexStyle(::Type{PArray{T,N}}) where {T,N} = IndexLinear()
-_parray_get(u::PTree{T}, ii::HASH_T, ::Nothing) where {T} = begin
+function _parray_get(u::PTree{T}, ii::HASH_T, ::Nothing) where {T}
     x = get(u, ii, nothing)
     (x === nothing) || return x
     isa(nothing, T) && in(ii => nothing, u) && return x
@@ -412,7 +406,7 @@ end
 _parray_get(u::PTree{T}, ii::HASH_T, d::Tuple{T}) where {T} = begin
     return get(u, ii, d[1])
 end
-Base.getindex(u::PArray{T,N}, k::Vararg{Int,N}) where {T,N} = begin
+function Base.getindex(u::PArray{T,N}, k::Vararg{Int,N}) where {T,N}
     if N > 1
         k = u._index[k...]
     else
@@ -422,26 +416,29 @@ Base.getindex(u::PArray{T,N}, k::Vararg{Int,N}) where {T,N} = begin
     (k > length(u)) && throw(BoundsError(u, k))
     return _parray_get(u._tree, HASH_T(k - 1) + u._i0, u._default)
 end
-Base.setindex!(u::PArray{T,N}, v, k::Int) where {T,N} = error(
-    "setindex!: object of type $(typeof(u)) is immutable; see setindex()")
+function Base.setindex!(u::PArray{T,N}, v, k::Int) where {T,N}
+    return error("setindex!: object of type $(typeof(u)) is immutable; see setindex()")
+end
 Base.firstindex(u::PArray{T,N}) where {T,N} = 1
 Base.lastindex(u::PArray{T,N}) where {T,N} = length(u)
-
 
 # ==============================================================================
 # AbstractArray methods
 
-Base.push!(u::PArray{T,N}, v) where {T,N} = error(
-    "push!: object of type $(typeof(u)) is immutable; see push()")
-Base.pop!(u::PArray{T,N}, v) where {T,N} = error(
-    "pop!: object of type $(typeof(u)) is immutable; see last() and pop()")
+function Base.push!(u::PArray{T,N}, v) where {T,N}
+    return error("push!: object of type $(typeof(u)) is immutable; see push()")
+end
+function Base.pop!(u::PArray{T,N}, v) where {T,N}
+    return error("pop!: object of type $(typeof(u)) is immutable; see last() and pop()")
+end
 #Base.pushfist!(u::PArray{T,N}, v) where {T,N} = error(
 #    "pushfirst!: object of type $(typeof(u)) is immutable; see first() pushfirst()")
 #Base.popfirst!(u::PArray{T,N}, v) where {T,N} = error(
 #    "popfist!: object of type $(typeof(u)) is immutable; see first() and popfist()")
-_lindex(u::Vararg{Int,N}) where {N} = LinearIndices{N,NTuple{N,Base.OneTo{Int}}}(
-    ((Base.OneTo{Int}.(u))...,))
-Base.permutedims(u::PArray{T,N}, dims::NTuple{N,Int}) where {T,N} = begin
+function _lindex(u::Vararg{Int,N}) where {N}
+    return LinearIndices{N,NTuple{N,Base.OneTo{Int}}}(((Base.OneTo{Int}.(u))...,))
+end
+function Base.permutedims(u::PArray{T,N}, dims::NTuple{N,Int}) where {T,N}
     # This is actually pretty easy, code-wise:
     v = PVector{T}(0x0, LinearIndices(()), PTree{T}(), u._default)
     for k in permutedims(u._index, dims)
@@ -463,49 +460,48 @@ _defaultvalue(u::Tuple{T}) where {T} = u[1]
 _eqdefault(::Nothing, x) = false
 _eqdefault(dflt::Tuple{T}, x::S) where {T,S} = (dflt[1] == x)
 defaultvalue(u::PArray{T,N}) where {T,N} = _defaultvalue(u._default)
-setindex(u::PArray{T,N}, v::S, ci::CartesianIndex{N}) where {T,N,S} = begin
+function setindex(u::PArray{T,N}, v::S, ci::CartesianIndex{N}) where {T,N,S}
     return setindex(u, v, u._index[ci])
 end
-setindex(u::PArray{T,N}, v::S, k::Vararg{Idx,N}) where {T,N,S,Idx<:Integer} = begin
+function setindex(u::PArray{T,N}, v::S, k::Vararg{Idx,N}) where {T,N,S,Idx<:Integer}
     if N == 1
         k = k[1]
     else
         k = u._index[k...]
     end
-    (k < 1) && throw(BoundsError(u,k))
+    (k < 1) && throw(BoundsError(u, k))
     n = length(u)
-    (k > n + 1) && throw(BoundsError(u,k))
+    (k > n + 1) && throw(BoundsError(u, k))
     (N == 1) && (k > n) && return push(u, v)
     ii = u._i0 + HASH_T(k - 1)
-    t = (_eqdefault(u._default, v) ? delete(u._tree, ii)
-                                   : setindex(u._tree, v, ii))
+    t = (_eqdefault(u._default, v) ? delete(u._tree, ii) : setindex(u._tree, v, ii))
     return t === u._tree ? u : PArray{T,N}(u._i0, u._index, t, u._default)
 end
-setindex(u::PArray{T,N}, v::S, ii...) where {T,N,S} = begin
+function setindex(u::PArray{T,N}, v::S, ii...) where {T,N,S}
     idcs = getindex(u._index, ii...)
     pp = broadcast(Pair{Int,T}, idcs, v)
     if isa(pp, Pair)
         return setindex(u, pp[2], pp[1])
     else
-        for (k,v) in pp
+        for (k, v) in pp
             u = setindex(u, v, k)
         end
         return u
     end
 end
 # Push and pop methods are only defined for vectors
-push(u::PVector{T}, x::S) where {T,S} = begin
+function push(u::PVector{T}, x::S) where {T,S}
     n = length(u)
     if _eqdefault(u._default, x)
         tree = u._tree
     else
-        ii   = u._i0 + HASH_T(n + 1 - 1)
+        ii = u._i0 + HASH_T(n + 1 - 1)
         tree = setindex(u._tree, x, ii)
     end
     index = _lindex(n+1)
     return PVector{T}(u._i0, index, tree, u._default)
 end
-pushfirst(u::PVector{T}, x::S) where {T,S} = begin
+function pushfirst(u::PVector{T}, x::S) where {T,S}
     n = length(u)
     if _eqdefault(u._default, x)
         tree = u._tree
@@ -515,14 +511,14 @@ pushfirst(u::PVector{T}, x::S) where {T,S} = begin
     index = _lindex(n+1)
     return PVector{T}(u._i0 - 0x1, index, tree, u._default)
 end
-pop(u::PVector{T}) where {T} = begin
+function pop(u::PVector{T}) where {T}
     n = length(u)
     (n == 0) && throw(ArgumentError("PArray must be non-empty"))
     ii = u._i0 + HASH_T(n - 1)
     tree = delete(u._tree, ii)
     return PVector{T}(u._i0, _lindex(n-1), tree, u._default)
 end
-popfirst(u::PVector{T}) where {T} = begin
+function popfirst(u::PVector{T}) where {T}
     n = length(u)
     (n == 0) && throw(ArgumentError("PArray must be non-empty"))
     tree = delete(u._tree, u._i0)

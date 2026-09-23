@@ -100,8 +100,24 @@ macro p(expr::Expr)
     end
 end
 
-export Var, @var, Volatile, Actor, Source, tx, @tx, ReentrantRef,
-    TransactionalRef, AbstractSourceKernel, getfilter, getfinalize,
-    setfilter!, setfinalize!, send, geterror, receive, reset, @p
+export Var,
+    @var,
+    Volatile,
+    Actor,
+    Source,
+    tx,
+    @tx,
+    ReentrantRef,
+    TransactionalRef,
+    AbstractSourceKernel,
+    getfilter,
+    getfinalize,
+    setfilter!,
+    setfinalize!,
+    send,
+    geterror,
+    receive,
+    reset,
+    @p
 
-end 
+end
