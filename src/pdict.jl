@@ -253,27 +253,45 @@ macro _pdict_code(name::Symbol, eq, h, lindict)
             Base.eltype(::Type{$name{K,V}}) where {K,V} = Pair{K,V}
             Base.eltype(::$name{K,V}) where {K,V} = Pair{K,V}
             Base.IteratorSize(::Type{$name{K,V}}) where {K,V} = Base.HasLength()
-            @inline Base.iterate(u::$name{K,V}) where {K,V} = begin
-                x = itervals(getfield(u, :root))
-                (x === nothing) && return nothing
-                (rootel, rootii) = x
-                (el, reliter) = iterate(rootel)
-                return (el, (rootii, reliter, length(rootel)))
-            end
-            @inline Base.iterate(u::$name{K,V}, tup::Tuple{HASH_T,Int,Int}) where {K,V} = begin
-                (rootii, reliter, rellen) = tup
+            # Iteration walks the tree with an explicit stack, carrying the
+            # bucket's key/value vectors along so that continuing within a
+            # bucket needs no lookup at all.
+            @inline function Base.iterate(u::$name{K,V}) where {K,V}
                 root = getfield(u, :root)
-                if reliter < rellen
-                    # There are more in that node:
-                    rootel = get(root, rootii, nothing)::$lindict{K,V}
-                    (el, reliter) = iterate(rootel, reliter)
-                    return (el, (rootii, reliter, rellen))
-                end
-                x = itervals(root, rootii)
+                path, todo = _ptreeiter(root)
+                x = _ptreeiter_next(path, todo)
                 (x === nothing) && return nothing
-                (rootel, rootii) = x
-                (el, reliter) = iterate(rootel)
-                return (el, (rootii, reliter, length(rootel)))
+                ld = (x[2])::$lindict{K,V}
+                ks = getfield(ld, :keys)::Vector{K}
+                vs = getfield(ld, :values)::Vector{V}
+                return (
+                    Pair{K,V}((@inbounds ks[1]), (@inbounds vs[1])),
+                    (path, todo, ks, vs, 2),
+                )
+            end
+            @inline function Base.iterate(
+                u::$name{K,V},
+                st::Tuple{
+                    Vector{PTree{$lindict{K,V}}},Vector{PTREE_BITS_T},Vector{K},Vector{V},Int
+                },
+            ) where {K,V}
+                (path, todo, ks, vs, ii) = st
+                if ii <= length(ks)
+                    return (
+                        Pair{K,V}((@inbounds ks[ii]), (@inbounds vs[ii])),
+                        (path, todo, ks, vs, ii + 1),
+                    )
+                end
+                root = getfield(u, :root)
+                x = _ptreeiter_next(path, todo)
+                (x === nothing) && return nothing
+                ld = (x[2])::$lindict{K,V}
+                ks = getfield(ld, :keys)::Vector{K}
+                vs = getfield(ld, :values)::Vector{V}
+                return (
+                    Pair{K,V}((@inbounds ks[1]), (@inbounds vs[1])),
+                    (path, todo, ks, vs, 2),
+                )
             end
             Base.get(u::$name{K,V}, k, df) where {K,V} = begin
                 ld = get(getfield(u, :root), $h(k), nothing)

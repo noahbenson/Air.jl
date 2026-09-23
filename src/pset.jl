@@ -202,28 +202,29 @@ macro _pset_code(name::Symbol, eq, h, linset)
             Base.IteratorEltype(::Type{$name{T}}) where {T} = Base.HasEltype()
             Base.eltype(::Type{$name{T}}) where {T} = T
             Base.eltype(u::$name{T}) where {T} = T
-            @inline Base.iterate(u::$name{T}) where {T} = begin
-                (getfield(u, :count) == 0) && return nothing
-                (lst, titer) = iterate(getfield(u, :root))
-                lst = lst[2]
-                (el, liter) = iterate(lst)
-                return (el, (lst, liter, titer))
+            # As for PDict, iteration walks the tree with an explicit stack and
+            # carries the current bucket's element vector along with it.
+            @inline function Base.iterate(u::$name{T}) where {T}
+                root = getfield(u, :root)
+                path, todo = _ptreeiter(root)
+                x = _ptreeiter_next(path, todo)
+                (x === nothing) && return nothing
+                ld = (x[2])::$linset{T}
+                els = getfield(ld, :elements)::Vector{T}
+                return ((@inbounds els[1]), (path, todo, els, 2))
             end
-            @inline Base.iterate(u::$name{T}, tup) where {T} = begin
-                (lst, liter, titer) = tup
-                if liter !== nothing
-                    r = iterate(lst, liter)
-                    if r !== nothing
-                        (el, liter) = r
-                        return (el, (lst, liter, titer))
-                    end
-                end
-                q = iterate(getfield(u, :root), titer)
-                (q === nothing) && return q
-                (lst, titer) = q
-                lst = lst[2]
-                (el, liter) = iterate(lst)
-                return (el, (lst, liter, titer))
+            @inline function Base.iterate(
+                u::$name{T},
+                st::Tuple{Vector{PTree{$linset{T}}},Vector{PTREE_BITS_T},Vector{T},Int},
+            ) where {T}
+                (path, todo, els, ii) = st
+                (ii <= length(els)) && return ((@inbounds els[ii]), (path, todo, els, ii + 1))
+                root = getfield(u, :root)
+                x = _ptreeiter_next(path, todo)
+                (x === nothing) && return nothing
+                ld = (x[2])::$linset{T}
+                els = getfield(ld, :elements)::Vector{T}
+                return ((@inbounds els[1]), (path, todo, els, 2))
             end
             Base.in(x::S, u::$name{T}) where {T,S} = begin
                 hh = $h(x)
