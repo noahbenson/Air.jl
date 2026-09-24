@@ -47,6 +47,30 @@ SUITE["pdict"]["push"] = @benchmarkable push($( _pdict(NDICT) ), :new => 0)
 SUITE["pdict"]["delete"] = @benchmarkable delete($( _pdict(NDICT) ), :k1)
 SUITE["pdict"]["iterate"] = @benchmarkable sum(values($( _pdict(NDICT) )))
 
+# Deleting half the entries, and then reading the survivors, is what the
+# minimal-tree invariant is for: a tree that keeps one-child branches behind
+# after a deletion makes each of those reads one level longer than it needs to
+# be, without changing any result.
+const _PDICT_KEYS = [Symbol("k", i) for i in 1:NDICT]
+function _pdict_deleted(n::Int)
+    d = _pdict(n)
+    for i in 1:2:n
+        d = delete(d, _PDICT_KEYS[i])
+    end
+    return d
+end
+function _pdict_read_after_delete(d, n::Int)
+    s = 0
+    for i in 2:2:n
+        s += d[_PDICT_KEYS[i]]
+    end
+    return s
+end
+SUITE["pdict"]["delete_half"] = @benchmarkable _pdict_deleted($NDICT)
+SUITE["pdict"]["read_after_delete"] = @benchmarkable _pdict_read_after_delete(
+    $( _pdict_deleted(NDICT) ), $NDICT
+)
+
 # ==============================================================================
 # Persistent sets
 

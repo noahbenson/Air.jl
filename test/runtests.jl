@@ -11,6 +11,7 @@ Random.seed!(0x5eed)
 
 @testset "Air.jl" begin
     include("api.jl")
+    include("ptree.jl")
     include("util.jl")
     include("regressions.jl")
     include("parray.jl")

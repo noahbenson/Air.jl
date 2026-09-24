@@ -326,7 +326,8 @@ ptree_cellkey(id::HASH_T, k::HASH_T) = begin
     mn = ptree_minleaf(id)
     return mn | k
 end
-ptree_cellkey(id::HASH_T, k::II) where {II<:Integer} = ptree_cellkey(id, (HASH_T(k)))
+ptree_cellkey(id::HASH_T, k::II) where {II<:Integer} =
+    ptree_cellkey(id, (HASH_T(k)))
 function ptree_cellkey(u::PTree{T}, k::II) where {T,II<:Integer}
     return ptree_cellkey(getfield(u, :id), HASH_T(k))
 end
@@ -741,10 +742,19 @@ function delete(u::PTree{T}, k::HASH_T) where {T}
         newn = getfield(newc, :numel)
         numel += newn - oldn
         (numel == 0) && return newc
+        # A branch that keeps only one child carries no information: the child
+        # already covers exactly the same leaves, and keeping the branch around
+        # would only lengthen every later lookup and insertion by one level. So
+        # a branch is replaced by that child rather than being left with one
+        # cell. (This is the AMT "minimal tree" invariant; it is also why
+        # `setindex` can build a new ancestor at the highest differing bit
+        # instead of always at the root.)
         if newn == 0
             newcells = delete(cells, idx)
+            (length(newcells) == 1) && return newcells[1]
             return PTree{T}(id, bits & ~(BITS_ONE << bitidx), numel, newcells)
         else
+            (length(cells) == 1) && return newc
             newcells = setindex(cells, newc, idx)
             return PTree{T}(id, bits, numel, newcells)
         end
