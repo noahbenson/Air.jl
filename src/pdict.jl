@@ -56,16 +56,12 @@ macro _plindict_code(name::Symbol, eq, h)
             $name(d::AbstractDict{K,V}) where {K,V} = $name{K,V}(d)
             $name(ps::Pair...) = begin
                 ps = _to_pairs(ps)
-                T = Base.eltype(ps)
-                K = T.parameters[1]
-                V = T.parameters[2]
+                K, V = _pairtypes(Base.eltype(ps))
                 return $name{K,V}(ps...)
             end
             $name(itr) = begin
                 ps = _to_pairs(itr)
-                T = Base.eltype(ps)
-                K = T.parameters[1]
-                V = T.parameters[2]
+                K, V = _pairtypes(Base.eltype(ps))
                 return $name{K,V}(ps...)
             end
             # Base methods.
@@ -233,16 +229,12 @@ macro _pdict_code(name::Symbol, eq, h, lindict)
             $name(d::AbstractDict{K,V}) where {K,V} = $name{K,V}(d)
             $name(ps::Pair...) = begin
                 ps = _to_pairs(ps)
-                T = Base.eltype(ps)
-                K = T.parameters[1]
-                V = T.parameters[2]
+                K, V = _pairtypes(Base.eltype(ps))
                 return $name{K,V}(ps...)
             end
             $name(itr) = begin
                 ps = _to_pairs(itr)
-                T = Base.eltype(ps)
-                K = T.parameters[1]
-                V = T.parameters[2]
+                K, V = _pairtypes(Base.eltype(ps))
                 return $name{K,V}(ps...)
             end
             # Base methods.
