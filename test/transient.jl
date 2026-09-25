@@ -37,7 +37,7 @@ function _owned_count(u::Air.PTree{T}) where {T}
     return n
 end
 _owned_count(v::PVector) = _owned_count(Air.getfield(v, :_tree))
-
+_owned_count(d::Air.AbstractPDict) = _owned_count(Air.getfield(d, :root))
 @testset "transients" begin
     @testset "a transient equals the persistent equivalent" begin
         for n in (0, 1, 64, 65, 1000)
@@ -126,6 +126,92 @@ _owned_count(v::PVector) = _owned_count(Air.getfield(v, :_tree))
         tlarge = transient(large)
         @test (@allocated transient(large)) <= (@allocated transient(small)) + 64
         @test (@allocated persistent!(tlarge)) <= (@allocated persistent!(tsmall)) + 64
+    end
+
+    @testset "TDict" begin
+        for n in (0, 1, 100, 1000)
+            base = PDict{Symbol,Int}()
+            for i in 1:n
+                base = push(base, Symbol("k", i) => i)
+            end
+            # a batch of updates, half overwriting and half new
+            t = transient(base)
+            @test t isa TDict{Symbol,Int}
+            for i in 1:n
+                t[Symbol("k", i)] = 1000 + i
+            end
+            for i in 1:n
+                push!(t, Symbol("new", i) => i)
+            end
+            out = persistent!(t)
+            @test out isa PDict{Symbol,Int}
+            @test length(out) == 2n
+            @test all(out[Symbol("k", i)] == 1000 + i for i in 1:n)
+            @test all(out[Symbol("new", i)] == i for i in 1:n)
+            # and it matches the persistent equivalent
+            ref = base
+            for i in 1:n
+                ref = push(ref, Symbol("k", i) => 1000 + i)
+                ref = push(ref, Symbol("new", i) => i)
+            end
+            @test length(out) == length(ref)
+            @test all(out[k] == v for (k, v) in ref)
+        end
+    end
+
+    @testset "TDict leaves the source alone, and no node owned" begin
+        base = PDict{Symbol,Int}()
+        for i in 1:500
+            base = push(base, Symbol("k", i) => i)
+        end
+        t = transient(base)
+        for i in 1:500
+            t[Symbol("k", i)] = -i
+            delete!(t, Symbol("k", i + 250))
+        end
+        out = persistent!(t)
+        @test all(base[Symbol("k", i)] == i for i in 1:500)
+        @test length(base) == 500
+        @test _owned_count(out) == 0
+        # a second transient over the result cannot write through to it
+        before = Dict(out)
+        t2 = transient(out)
+        for i in 1:100
+            t2[Symbol("t2", i)] = i
+        end
+        @test Dict(out) == before
+    end
+
+    @testset "TDict accessors" begin
+        t = transient(PDict{Symbol,Int}(:a => 1))
+        @test length(t) == 1
+        @test t[:a] == 1
+        @test haskey(t, :a)
+        @test !haskey(t, :b)
+        @test get(t, :b, -1) == -1
+        @test_throws KeyError t[:b]
+        t[:b] = 2
+        @test t[:b] == 2 && length(t) == 2
+        t[:b] = 3                        # overwrite, not insert
+        @test t[:b] == 3 && length(t) == 2
+        delete!(t, :b)
+        @test !haskey(t, :b) && length(t) == 1
+        delete!(t, :nothere)             # deleting a missing key is a no-op
+        @test length(t) == 1
+    end
+
+    @testset "TIdDict keeps keys by identity" begin
+        t = transient(PIdDict{Any,Int}())
+        @test t isa TIdDict{Any,Int}
+        x, y = [1], [1]                  # equal but not identical
+        t[x] = 10
+        t[y] = 20
+        @test length(t) == 2
+        @test t[x] == 10 && t[y] == 20
+        out = persistent!(t)
+        @test out isa PIdDict{Any,Int}
+        @test length(out) == 2
+        @test out[x] == 10 && out[y] == 20
     end
 
     @testset "pop!" begin

@@ -252,4 +252,118 @@ function Base.pop!(t::TArray{T,1}) where {T}
     t.n -= 1
     return t
 end
+
+# #TDict ======================================================================
+# The persistent dictionaries are generated from a macro so that the hash and
+# identity flavours stay in step; the transients mirror them the same way. The
+# tree operations are the same `_ptree_tsetindex` the array transient uses — it
+# is generic in the leaf type, which here is a collision bucket.
+macro _tdict_code(tname::Symbol, pname::Symbol, hashfn::Symbol, dicttype::Symbol)
+    return esc(
+        quote
+            mutable struct $tname{K,V} <: AbstractPDict{K,V}
+                count::Int
+                root::PTree{$dicttype{K,V}}
+            end
+            Base.length(t::$tname) = getfield(t, :count)
+            transient(u::$pname{K,V}) where {K,V} =
+                $tname{K,V}(getfield(u, :count), getfield(u, :root))
+            persistent!(t::$tname{K,V}) where {K,V} =
+                $pname{K,V}(getfield(t, :count), _ptree_clean(getfield(t, :root)))
+            Base.get(t::$tname{K,V}, k, df) where {K,V} = begin
+                ld = get(getfield(t, :root), $hashfn(k), nothing)
+                return ld === nothing ? df : get(ld, k, df)
+            end
+            Base.getindex(t::$tname{K,V}, k) where {K,V} = begin
+                ld = get(getfield(t, :root), $hashfn(k), nothing)
+                (ld === nothing) && throw(KeyError(k))
+                return ld[k]
+            end
+            Base.haskey(t::$tname{K,V}, k) where {K,V} = begin
+                ld = get(getfield(t, :root), $hashfn(k), nothing)
+                return ld === nothing ? false : haskey(ld, k)
+            end
+            Base.push!(t::$tname{K,V}, kv::Pair) where {K,V} = setindex!(t, kv.second, kv.first)
+            function Base.setindex!(t::$tname{K,V}, v, k) where {K,V}
+                hh = $hashfn(k)
+                root = getfield(t, :root)
+                ld0 = get(root, hh, nothing)
+                if ld0 === nothing
+                    t.count += 1
+                    t.root = _ptree_tsetindex(root, $dicttype{K,V}(Pair{K,V}(k, v)), hh)
+                else
+                    ld1 = setindex(ld0, v, k)
+                    (ld1 === ld0) && return t
+                    t.count += length(ld1) - length(ld0)
+                    t.root = _ptree_tsetindex(root, ld1, hh)
+                end
+                return t
+            end
+            function Base.delete!(t::$tname{K,V}, k) where {K,V}
+                hh = $hashfn(k)
+                root = getfield(t, :root)
+                ld0 = get(root, hh, nothing)
+                (ld0 === nothing) && return t
+                ld1 = delete(ld0, k)
+                (ld1 === ld0) && return t
+                t.count -= 1
+                # An emptied bucket goes away; otherwise the bucket replaces the
+                # old one. (The bucket itself is copied rather than claimed: a
+                # bucket has no ownership flag, and one is usually touched once
+                # per batch anyway.)
+                t.root =
+                    length(ld1) == 0 ? delete(root, hh) :
+                    _ptree_tsetindex(root, ld1, hh)
+                return t
+            end
+        end,
+    )
+end
+@_tdict_code TDict PDict hash PLinearDict
+@_tdict_code TIdDict PIdDict objectid PIdLinearDict
+export TDict, TIdDict
+@doc """
+    TDict{K,V}
+
+A mutable counterpart of `PDict{K,V}`, for batch updates: make many updates
+through it, then take the persistent result with `persistent!`. See
+[`transient`](@ref) and the `transient.jl` file comment for the contract;
+[`TIdDict`](@ref) is the identity-keyed counterpart of `PIdDict`.
+
+# When a transient is worth it
+
+A batch update costs `N + 1` allocations fewer through a `TDict` than through a
+`PDict` for every node on the path from the root that the transient has already
+claimed, but it also pays for making the transient and for the walk
+`persistent!` does to clear the ownership flags. So the gain is proportional to
+the *batch* and constant in the dictionary, and small batches lose:
+
+| entries in the dictionary | entries updated | `PDict` | `TDict` | |
+|---|---|---|---|---|
+| 1000 | 1 | 19 allocs | 24 allocs | 0.79x |
+| 1000 | 10 | 181 | 184 | 0.98x |
+| 100 | 100 | 1612 | 1276 | 1.26x |
+| 1000 | 1000 | 18451 | 13673 | 1.35x |
+| 10000 | 1000 | 19948 | 15665 | 1.27x |
+
+The crossover is around **ten updates**: below it a transient costs more than it
+saves (about 20% more allocations for a single update), and above it the gain
+grows slowly to roughly a third fewer allocations by a few hundred updates. The
+time gain is smaller than the allocation gain — about 1.1x at the sizes above —
+because the transient does a little more work per update.
+
+Note that this is the *overwrite* case, which is what a batch update usually
+means. Two things bound the gain: a collision bucket has no ownership flag, so
+bucket updates are copied as before (a bucket is usually touched once per batch
+anyway), and the ceiling is the tree path, which is most but not all of an
+update's allocations. For appending to a `TArray` the gain is much larger
+(2.9x fewer allocations), because consecutive appends claim the *same* twig.
+""" TDict
+@doc """
+    TIdDict{K,V}
+
+A mutable counterpart of `PIdDict{K,V}`, otherwise as [`TDict`](@ref). Keys are
+compared by identity, as in `IdDict`.
+""" TIdDict
+
 export transient, persistent!

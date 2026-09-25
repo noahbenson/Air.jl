@@ -132,6 +132,37 @@ end
 SUITE["transient"]["persistent"] = @benchmarkable _persistent_batch($NVEC)
 SUITE["transient"]["transient"] = @benchmarkable _transient_batch($NVEC)
 
+# A batch update to an existing dictionary — the case a `TDict` is for. The gain
+# is proportional to the batch, not the dictionary, and the crossover is around
+# ten updates (see the `TDict` docstring), so this measures a batch in the
+# regime where a transient wins.
+const TDICT_BATCH = 200
+function _tdict_base()
+    d = PDict{Symbol,Int}()
+    for i in 1:NDICT
+        d = push(d, _PDICT_KEYS[i] => i)
+    end
+    return d
+end
+const _TDICT_BASE = _tdict_base()
+function _persistent_update()
+    d = _TDICT_BASE
+    for i in 1:TDICT_BATCH
+        d = push(d, _PDICT_KEYS[i] => 1000 + i)
+    end
+    return d
+end
+function _transient_update()
+    t = transient(_TDICT_BASE)
+    for i in 1:TDICT_BATCH
+        t[_PDICT_KEYS[i]] = 1000 + i
+    end
+    return persistent!(t)
+end
+SUITE["tdict"] = BenchmarkGroup(["batch update"])
+SUITE["tdict"]["persistent"] = @benchmarkable _persistent_update()
+SUITE["tdict"]["transient"] = @benchmarkable _transient_update()
+
 # ==============================================================================
 # Weighted collections
 
