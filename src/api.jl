@@ -275,7 +275,7 @@ push(A, a, b, c...) = reduce(push, c; init=push(push(A, a), b))
 push(u::NTuple{N,T}, val::S) where {T,N,S} = begin
     return NTuple{N+1,T}(T[u..., val])
 end
-push(u::AbstractVector{T}, val::S) where {T,S} = T[u..., val]
+push(u::AbstractVector{T}, val::S) where {T,S} = insert(u, length(u) + 1, val)
 function push(d::AbstractDict{K,V}, kv::Pair{J,U}) where {K,V,J,U}
     return setindex(d, kv[2], kv[1])
 end
