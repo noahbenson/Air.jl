@@ -93,6 +93,17 @@ highmask(bitno::K, ::Type{T}) where {T<:Unsigned,K<:Integer} = ~lowmask(bitno, T
 highmask(bitno::K) where {K<:Integer} = highmask(bitno, HASH_T)
 # The mask of the bits that represent the depth of the node-id in a PTree.
 const PTREE_DEPTH_MASK = lowmask(PTREE_TWIG_SHIFT)
+# A node id stores its depth in the low PTREE_TWIG_SHIFT bits (the same bits hold
+# a twig's key offset, which is why one constant serves both purposes).
+# PTREE_LEVELS depths need only PTREE_DEPTH_BITS of them, so the next bit up is
+# unoccupied and is used to mark a node as *owned* by a transient: an owned node
+# is reachable only from the transient that made it, so the transient may change
+# its cells in place. A persistent node must never carry the flag — that is the
+# invariant that keeps the mutation safe — which is why it is only ever set by
+# the transient's own code (see PTNode/TransientPTree in transient.jl).
+const PTREE_DEPTH_BITS = ndigits(PTREE_LEVELS - 1, base=2)
+const PTREE_DEPTH_VALUE_MASK = lowmask(PTREE_DEPTH_BITS)
+const PTREE_OWNED_FLAG = HASH_T(0x1) << PTREE_DEPTH_BITS
 # The pair type for the dict interface.
 const HASHPAIR_T{T} = Pair{HASH_T,T} where {T}
 
@@ -103,7 +114,17 @@ const HASHPAIR_T{T} = Pair{HASH_T,T} where {T}
 Yields the depth of the node with the given node address. This depth is in the
 theoretical complete tree, not in the reified tree represented with memory.
 """
-ptree_depth(nodeid::HASH_T) = nodeid & PTREE_DEPTH_MASK
+ptree_depth(nodeid::HASH_T) = nodeid & PTREE_DEPTH_VALUE_MASK
+"""
+    ptree_owned(nodeid)
+    ptree_owned(id, owned)
+
+Whether the node with the given id is owned by a transient (see
+`PTREE_OWNED_FLAG`), or the same id with that flag set or cleared.
+"""
+ptree_owned(nodeid::HASH_T) = (nodeid & PTREE_OWNED_FLAG) != HASH_ZERO
+ptree_owned(id::HASH_T, owned::Bool) =
+    (owned ? (id | PTREE_OWNED_FLAG) : (id & ~PTREE_OWNED_FLAG))
 """
     depth_to_bitshift(depth)
 

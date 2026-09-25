@@ -35,6 +35,10 @@ function _ptree_check(u::Air.PTree{T}) where {T}
     bits = Air.getfield(u, :bits)
     n = Air.getfield(u, :numel)
     nocc = count_ones(bits)
+    # No node reachable from a persistent collection may be marked as owned by a
+    # transient: that flag is what licenses an in-place change, so a persistent
+    # node carrying it could be mutated out from under its other holders.
+    @test !Air.ptree_owned(id)
     # The canonical empty node holds no cells at all.
     if n == 0
         @test getfield(u, :cells) === nothing
