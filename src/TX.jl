@@ -646,7 +646,8 @@ fn is called as `fn()` without arguments.
 """
 function tx(fn::F) where {F<:Function}
     success = false
-    res = nothing
+    # NOTE: there is deliberately no `res = nothing` here; the transaction's
+    # result is bound inside the retry loop, for the reason given there.
     the_tx = current_tx[]
     # If there's already a transaction running, we needn't make a new one---
     # This transaction function will just get rolled up into the current one.
@@ -657,8 +658,13 @@ function tx(fn::F) where {F<:Function}
     for attempt in 1:TX_MAX_ATTEMPTS
         # Clear the transaction
         tx_clear!(the_tx)
-        try
-            res = withvars(fn, current_tx => the_tx)
+        # Bind the result with the `try` expression rather than assigning to a
+        # `res` that was initialised to `nothing` before the loop: the latter
+        # makes the inferred return type `Union{Nothing,T}`, and a transaction's
+        # value is read on every `tx` call. The `catch` arm never falls through,
+        # so the value of this expression is exactly the value of `fn`.
+        res = try
+            withvars(fn, current_tx => the_tx)
         catch e
             if isa(e, TxRetryException)
                 continue
@@ -758,15 +764,11 @@ function tx(fn::F) where {F<:Function}
                 end
             end
         end
-        success && break
+        success && return res
     end
-    # It's possible we got here because we were suceessful, but it might be that
-    # we failed too many times.
-    if success
-        return res
-    else
-        error("transaction aborted after failing $TX_MAX_ATTEMPTS times")
-    end
+    # We only reach this point by exhausting the retries: a successful attempt
+    # returns from inside the loop.
+    error("transaction aborted after failing $TX_MAX_ATTEMPTS times")
 end
 export tx
 

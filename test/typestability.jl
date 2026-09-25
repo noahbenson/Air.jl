@@ -4,12 +4,12 @@
 # Type-stability baselines. Each check asserts that a call's return type can be
 # inferred, which is what lets the compiler generate specialised (fast) code.
 #
-# `@test_broken` marks a call that is currently *not* inferred. Those are not
-# accidents: they come from structural choices in the data types — an
-# unparameterised `Union` field, an abstractly-typed `Function` field, or a
-# dictionary whose values are not concrete — and fixing them means changing the
-# layout of those types. They are recorded here so the work is visible and so
-# that a later change that fixes one shows up as an unexpected pass.
+# There are no `@test_broken` calls left here: every call below is inferred. The
+# structural non-concreteness that does remain — an unparameterised `Union`
+# field, an abstractly-typed `Function` field — is pinned in the "deferred:
+# representation changes" testset as `fieldtype` assertions rather than as
+# broken inference tests, since fixing it means changing the layout of those
+# types.
 #
 # @author Noah C. Benson
 #
@@ -70,15 +70,38 @@
         # `Any` and every read was boxed.
         @test @inferred(Volatile{Int}(0)[]) === 0
 
-        # Reading inside a transaction is inferred too, but the *transaction*
-        # itself still returns a small union.
+        # Reading inside a transaction is inferred, and so is the transaction's
+        # own result. `tx` used to return `Union{Nothing,T}`: the result was
+        # assigned to a `res` initialised to `nothing` before the retry loop, so
+        # every transaction's value was a small union. Binding the result with
+        # the `try` expression fixed it (the `catch` arm never falls through).
         readintx() = begin
             v = Volatile{Int}(0)
             tx() do
                 v[]
             end
         end
-        @test_broken @inferred(readintx()) === 0
+        @test @inferred(readintx()) === 0
+        # The nested case returns the value too, through the enclosing
+        # transaction rather than a new one.
+        readnested() = begin
+            v = Volatile{Int}(0)
+            tx() do
+                tx() do
+                    v[]
+                end
+            end
+        end
+        @test @inferred(readnested()) === 0
+        # A transaction whose body returns a non-Int is equally concrete, so the
+        # fix is not specific to the Integer case.
+        readstr() = begin
+            v = Volatile{String}("x")
+            tx() do
+                v[]
+            end
+        end
+        @test @inferred(readstr()) == "x"
     end
 
     @testset "deferred: representation changes" begin
