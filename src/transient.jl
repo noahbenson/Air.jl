@@ -421,4 +421,88 @@ A mutable counterpart of `PIdDict{K,V}`, otherwise as [`TDict`](@ref). Keys are
 compared by identity, as in `IdDict`.
 """ TIdDict
 
+# #TSet =======================================================================
+# The sets are generated the same way the dictionaries are, and for the same
+# reason: the hash and identity flavours must stay in step. A set has no values,
+# so its bucket is a `PLinearSet` and there is one operation fewer to write.
+macro _tset_code(tname::Symbol, pname::Symbol, hashfn::Symbol, linset::Symbol)
+    return esc(
+        quote
+            mutable struct $tname{T} <: AbstractPSet{T}
+                count::Int
+                root::PTree{$linset{T}}
+            end
+            Base.length(t::$tname) = getfield(t, :count)
+            transient(u::$pname{T}) where {T} =
+                $tname{T}(getfield(u, :count), getfield(u, :root))
+            persistent!(t::$tname{T}) where {T} =
+                $pname{T}(getfield(t, :count), _ptree_clean(getfield(t, :root)))
+            Base.in(x::S, t::$tname{T}) where {S,T} = begin
+                uu = get(getfield(t, :root), $hashfn(x), nothing)
+                return uu === nothing ? false : in(x, uu::$linset{T})
+            end
+            function Base.push!(t::$tname{T}, x::S) where {T,S}
+                hh = $hashfn(x)
+                root = getfield(t, :root)
+                uu = get(root, hh, nothing)
+                if uu === nothing
+                    uu = $linset{T}(T[x], Val{:safe}())
+                else
+                    in(x, uu) && return t
+                    uu = push(uu, x)
+                end
+                t.count += 1
+                t.root = _ptree_tsetindex(root, uu, hh)
+                return t
+            end
+            function Base.delete!(t::$tname{T}, x::S) where {T,S}
+                hh = $hashfn(x)
+                uu = get(getfield(t, :root), hh, nothing)
+                (uu === nothing) && return t
+                vv = delete(uu, x)
+                (uu === vv) && return t
+                t.count -= 1
+                t.root =
+                    length(vv) == 0 ? _ptree_tdelete(getfield(t, :root), hh) :
+                    _ptree_tsetindex(getfield(t, :root), vv, hh)
+                return t
+            end
+        end,
+    )
+end
+@_tset_code TSet PSet hash PLinearSet
+@_tset_code TIdSet PIdSet objectid PIdLinearSet
+export TSet, TIdSet
+@doc """
+    TSet{T}
+
+A mutable counterpart of `PSet{T}`, for batch updates: make many updates through
+it, then take the persistent result with `persistent!`. See [`transient`](@ref)
+and the `transient.jl` file comment for the contract; [`TIdSet`](@ref) is the
+identity-keyed counterpart of `PIdSet`.
+
+A set is a dictionary with no values, so the shape of the trade-off is the same
+as for [`TDict`](@ref) — the gain is proportional to the batch and constant in
+the set — but the numbers are not, so they were measured separately. Adding
+elements, which is the analogous batch:
+
+| set entries | added | `PSet` | `TSet` | |
+|---|---|---|---|---|
+| 1000 | 1 | 20 allocs | 25 allocs | 0.80x |
+| 1000 | 10 | 191 | 214 | 0.89x |
+| 1000 | 100 | 1901 | 1772 | 1.07x |
+| 1000 | 1000 | 19331 | 16852 | 1.15x |
+
+A batch of a few additions therefore still costs more through a transient, and
+the gain reaches only about 15% by a thousand. Pushing an element that is already
+present changes nothing and costs the same either way (measured at 1.0x), so a
+batch of no-op updates neither helps nor hurts.
+""" TSet
+@doc """
+    TIdSet{T}
+
+A mutable counterpart of `PIdSet{T}`, otherwise as [`TSet`](@ref). Elements are
+compared by identity, as in `IdSet`.
+""" TIdSet
+
 export transient, persistent!

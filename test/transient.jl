@@ -37,7 +37,8 @@ function _owned_count(u::Air.PTree{T}) where {T}
     return n
 end
 _owned_count(v::PVector) = _owned_count(Air.getfield(v, :_tree))
-_owned_count(d::Air.AbstractPDict) = _owned_count(Air.getfield(d, :root))
+_owned_count(d::Union{Air.AbstractPDict,Air.AbstractPSet}) =
+    _owned_count(Air.getfield(d, :root))
 @testset "transients" begin
     @testset "a transient equals the persistent equivalent" begin
         for n in (0, 1, 64, 65, 1000)
@@ -243,6 +244,84 @@ _owned_count(d::Air.AbstractPDict) = _owned_count(Air.getfield(d, :root))
         @test out isa PIdDict{Any,Int}
         @test length(out) == 2
         @test out[x] == 10 && out[y] == 20
+    end
+
+    @testset "TSet" begin
+        function _mkset(n)
+            s = PSet{Symbol}()
+            for i in 1:n
+                s = push(s, Symbol("k", i))
+            end
+            return s
+        end
+        for n in (0, 1, 100, 1000)
+            base = _mkset(n)
+            t = transient(base)
+            @test t isa TSet{Symbol}
+            @test length(t) == n
+            for i in 1:n
+                delete!(t, Symbol("k", i))          # remove half...
+                i <= n ÷ 2 && push!(t, Symbol("k", i))  # ...and put half back
+            end
+            for i in 1:n
+                push!(t, Symbol("new", i))
+            end
+            out = persistent!(t)
+            @test out isa PSet{Symbol}
+            @test length(out) == n + n ÷ 2
+            @test all(Symbol("new", i) in out for i in 1:n)
+            @test all(Symbol("k", i) in out for i in 1:(n ÷ 2))
+            @test all(!(Symbol("k", i) in out) for i in ((n ÷ 2) + 1):n)
+            # matches the persistent equivalent
+            ref = base
+            for i in 1:n
+                ref = delete(ref, Symbol("k", i))
+                i <= n ÷ 2 && (ref = push(ref, Symbol("k", i)))
+            end
+            for i in 1:n
+                ref = push(ref, Symbol("new", i))
+            end
+            @test length(out) == length(ref)
+            @test all(x in ref for x in out)
+            # the source is untouched, no node is left owned, and the result has
+            # the same structure a persistent build would
+            @test length(base) == n
+            @test _owned_count(out) == 0
+            @test _ptree_check(Air.getfield(out, :root)) == n + n ÷ 2
+        end
+
+        # duplicates are no-ops, and a second transient cannot write through
+        t = transient(PSet{Symbol}())
+        push!(t, :a)
+        push!(t, :a)
+        @test length(t) == 1
+        b = persistent!(t)
+        t2 = transient(b)
+        for i in 1:100
+            push!(t2, Symbol("x", i))
+        end
+        @test length(b) == 1 && :a in b
+        @test length(persistent!(t2)) == 101
+    end
+
+    @testset "TIdSet keeps elements by identity" begin
+        t = transient(PIdSet{Any}())
+        @test t isa TIdSet{Any}
+        x, y = [1], [1]                     # equal but not identical
+        push!(t, x)
+        push!(t, y)
+        @test length(t) == 2
+        @test x in t && y in t
+        out = persistent!(t)
+        @test out isa PIdSet{Any}
+        @test length(out) == 2
+        # deleting one of two equal-but-distinct elements through a transient
+        t3 = transient(out)
+        delete!(t3, x)
+        out2 = persistent!(t3)
+        @test length(out2) == 1
+        @test !(x in out2) && y in out2
+        @test length(out) == 2               # the original is untouched
     end
 
     @testset "pop!" begin

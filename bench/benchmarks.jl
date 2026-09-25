@@ -163,6 +163,35 @@ SUITE["tdict"] = BenchmarkGroup(["batch update"])
 SUITE["tdict"]["persistent"] = @benchmarkable _persistent_update()
 SUITE["tdict"]["transient"] = @benchmarkable _transient_update()
 
+# The same for a set, adding elements. Its crossover is later than the
+# dictionary's (see the TSet docstring), so this uses a longer batch.
+const TSET_BATCH = 1000
+function _tset_base()
+    s = PSet{Symbol}()
+    for i in 1:NDICT
+        s = push(s, _PDICT_KEYS[i])
+    end
+    return s
+end
+const _TSET_BASE = _tset_base()
+function _persistent_add()
+    s = _TSET_BASE
+    for i in 1:TSET_BATCH
+        s = push(s, Symbol("added", i))
+    end
+    return s
+end
+function _transient_add()
+    t = transient(_TSET_BASE)
+    for i in 1:TSET_BATCH
+        push!(t, Symbol("added", i))
+    end
+    return persistent!(t)
+end
+SUITE["tset"] = BenchmarkGroup(["batch add"])
+SUITE["tset"]["persistent"] = @benchmarkable _persistent_add()
+SUITE["tset"]["transient"] = @benchmarkable _transient_add()
+
 # ==============================================================================
 # Weighted collections
 
