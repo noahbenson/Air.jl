@@ -182,6 +182,37 @@ _owned_count(d::Air.AbstractPDict) = _owned_count(Air.getfield(d, :root))
         @test Dict(out) == before
     end
 
+    @testset "transient delete matches persistent delete" begin
+        function _mkdict(n)
+            d = PDict{Symbol,Int}()
+            for i in 1:n
+                d = push(d, Symbol("k", i) => i)
+            end
+            return d
+        end
+        for n in (0, 1, 100, 1000)
+            base = _mkdict(n)
+            t = transient(base)
+            for i in 1:(n ÷ 2)
+                delete!(t, Symbol("k", i))
+            end
+            out = persistent!(t)
+            ref = base
+            for i in 1:(n ÷ 2)
+                ref = delete(ref, Symbol("k", i))
+            end
+            @test length(out) == length(ref) == n - n ÷ 2
+            @test all(out[k] == v for (k, v) in ref)
+            @test all(!haskey(out, Symbol("k", i)) for i in 1:(n ÷ 2))
+            @test all(base[Symbol("k", i)] == i for i in 1:n)  # source untouched
+            @test _owned_count(out) == 0
+            # The result must satisfy the same structural invariants a
+            # persistently-built tree does, the minimal-tree collapse included —
+            # `_ptree_check` walks it and asserts them.
+            @test _ptree_check(Air.getfield(out, :root)) == n - n ÷ 2
+        end
+    end
+
     @testset "TDict accessors" begin
         t = transient(PDict{Symbol,Int}(:a => 1))
         @test length(t) == 1

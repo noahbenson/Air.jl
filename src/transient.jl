@@ -139,6 +139,54 @@ function _ptree_tsetindex(u::PTree{T}, v::V, k::HASH_T) where {T,V}
 end
 
 """
+    _ptree_tdelete(u, k)
+
+`PTree.delete`, except that the nodes it touches end up owned by the calling
+transient and their cells vectors are shortened in place rather than copied. The
+minimal-tree collapse `delete` does — a branch left with one child becomes that
+child — is preserved; the node handed back for a collapsed branch is a child,
+which the parent then claims in the ordinary way.
+"""
+function _ptree_tdelete(u::PTree{T}, k::HASH_T) where {T}
+    (getfield(u, :numel) == 0) && return u
+    id = getfield(u, :id)
+    bits = getfield(u, :bits)
+    (inq, bitidx, idx) = ptree_cellindex(id, bits, k)
+    inq || return u
+    numel = getfield(u, :numel)
+    oid = ptree_owned(id, true)
+    if ptree_depth(id) == PTREE_TWIG_DEPTH
+        # The last leaf leaves the canonical empty node, which holds no cells and
+        # so has nothing for a transient to own.
+        (numel == 1) && return PTree{T}()
+        cells = getfield(u, :cells)::Vector{T}
+        cells = _ptree_claimcells(u, cells)
+        deleteat!(cells, idx)
+        return PTree{T}(oid, bits & ~(BITS_ONE << bitidx), numel - 1, cells)
+    else
+        cells = getfield(u, :cells)::Vector{PTree{T}}
+        oldc = @inbounds cells[idx]
+        oldn = getfield(oldc, :numel)
+        newc = _ptree_tdelete(oldc, k)
+        (newc === oldc) && return u
+        newn = getfield(newc, :numel)
+        numel += newn - oldn
+        (numel == 0) && return newc
+        if newn == 0
+            cells = _ptree_claimcells(u, cells)
+            deleteat!(cells, idx)
+            (length(cells) == 1) && return @inbounds cells[1]
+            return PTree{T}(oid, bits & ~(BITS_ONE << bitidx), numel, cells)
+        else
+            (length(cells) == 1) && return newc
+            cells = _ptree_claimcells(u, cells)
+            @inbounds cells[idx] = newc
+            return PTree{T}(oid, bits, numel, cells)
+        end
+    end
+end
+
+"""
     _ptree_clean(u)
 
 Yields a tree equal to `u` with every node's ownership flag cleared, visiting
@@ -248,7 +296,7 @@ function Base.push!(t::TArray{T,1}, x::S) where {T,S}
 end
 function Base.pop!(t::TArray{T,1}) where {T}
     (t.n == 0) && throw(ArgumentError("PArray must be non-empty"))
-    t.tree = delete(t.tree, t.i0 + HASH_T(t.n - 1))
+    t.tree = _ptree_tdelete(t.tree, t.i0 + HASH_T(t.n - 1))
     t.n -= 1
     return t
 end
@@ -311,8 +359,15 @@ macro _tdict_code(tname::Symbol, pname::Symbol, hashfn::Symbol, dicttype::Symbol
                 # old one. (The bucket itself is copied rather than claimed: a
                 # bucket has no ownership flag, and one is usually touched once
                 # per batch anyway.)
+                #
+                # TODO (after the 1.0 release): a `TLinearDict`/`TLinearSet` —
+                # a transient form of the collision bucket itself — would let a
+                # bucket be claimed and changed in place, as the tree nodes are
+                # here. Test whether the gain is worth it first: buckets are
+                # small, and a batch usually touches a given bucket once, so the
+                # ceiling on this is the per-bucket copy of two short vectors.
                 t.root =
-                    length(ld1) == 0 ? delete(root, hh) :
+                    length(ld1) == 0 ? _ptree_tdelete(root, hh) :
                     _ptree_tsetindex(root, ld1, hh)
                 return t
             end
