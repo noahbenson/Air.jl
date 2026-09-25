@@ -182,20 +182,33 @@ function _ptree_clean(u::PTree{T}) where {T}
     return PTree{T}(clean, getfield(u, :bits), getfield(u, :numel), cs)
 end
 
-# #TransientPVector ============================================================
+# #TArray =====================================================================
 """
-    TransientPVector{T}
+    TArray{T,N}
 
-A mutable counterpart of `PVector{T}`, for batch updates. See the file comment
+A mutable counterpart of `PArray{T,N}`, for batch updates. See the file comment
 for the contract; use [`transient`](@ref) to make one and
-[`persistent!`](@ref) to get a `PVector` back.
+[`persistent!`](@ref) to get a `PArray` back.
+
+So far only the vector operations are provided — `push!` and `pop!`, both on
+`TArray{T,1}` — so a `TArray` is made from and yields a `PVector`.
+N-dimensional updates, which change entries without changing the shape, will
+follow.
 """
-mutable struct TransientPVector{T}
+mutable struct TArray{T,N}
     i0::HASH_T
+    index::LinearIndices{N,NTuple{N,Base.OneTo{Int}}}
     tree::PTree{T}
     default::Union{Nothing,Tuple{T}}
     n::Int
 end
+"""
+    TVector{T}
+
+An alias for `TArray{T,1}`, the transient counterpart of a [`PVector`](@ref).
+"""
+const TVector{T} = TArray{T,1} where {T}
+export TArray, TVector
 
 """
     transient(coll)
@@ -205,9 +218,9 @@ and is O(1). Make updates through the transient, then take the persistent result
 with `persistent!`. `coll` is not modified, and must not be used afterwards if
 you keep updating the transient.
 """
-transient(u::PVector{T}) where {T} =
-    TransientPVector{T}(getfield(u, :_i0), getfield(u, :_tree), getfield(u, :_default),
-                        length(u))
+transient(u::PArray{T,N}) where {T,N} =
+    TArray{T,N}(getfield(u, :_i0), getfield(u, :_index), getfield(u, :_tree),
+                getfield(u, :_default), length(u))
 
 """
     persistent!(t)
@@ -215,11 +228,16 @@ transient(u::PVector{T}) where {T} =
 Yields a persistent collection holding what the transient `t` currently holds,
 in O(1). `t` must not be used afterwards.
 """
-persistent!(t::TransientPVector{T}) where {T} =
-    PVector{T}(t.i0, _lindex(t.n), _ptree_clean(t.tree), t.default)
+function persistent!(t::TArray{T,N}) where {T,N}
+    # A vector's shape follows its length, which the transient has been tracking;
+    # any other shape is unchanged, since nothing outside the vector operations
+    # can change a transient's length.
+    index = N == 1 ? _lindex(t.n) : t.index
+    return PArray{T,N}(t.i0, index, _ptree_clean(t.tree), t.default)
+end
 
-Base.length(t::TransientPVector) = t.n
-function Base.push!(t::TransientPVector{T}, x::S) where {T,S}
+Base.length(t::TArray) = t.n
+function Base.push!(t::TArray{T,1}, x::S) where {T,S}
     # As in `push` for a PVector: a value equal to the array's default needs no
     # entry in the tree at all.
     if !_eqdefault(t.default, x)
@@ -228,7 +246,7 @@ function Base.push!(t::TransientPVector{T}, x::S) where {T,S}
     t.n += 1
     return t
 end
-function Base.pop!(t::TransientPVector{T}) where {T}
+function Base.pop!(t::TArray{T,1}) where {T}
     (t.n == 0) && throw(ArgumentError("PArray must be non-empty"))
     t.tree = delete(t.tree, t.i0 + HASH_T(t.n - 1))
     t.n -= 1

@@ -140,6 +140,27 @@ _owned_count(v::PVector) = _owned_count(Air.getfield(v, :_tree))
         @test_throws ArgumentError pop!(t2)
     end
 
+    @testset "the shape survives a round trip" begin
+        # A `TArray` carries its source's shape, so an array that is not a vector
+        # comes back as the same shape. Only the vector operations can change a
+        # transient's length, so nothing else can invalidate the shape.
+        m = PMatrix(0.0, (5, 7))
+        m = setindex(m, 2.5, 3, 4)
+        tm = transient(m)
+        @test tm isa TArray{Float64,2}
+        @test length(tm) == 35
+        @test persistent!(tm) == m
+        # and a vector's shape follows the length it was pushed to
+        t = transient(PVector(collect(1:10)))
+        @test t isa TVector{Int}
+        for i in 1:90
+            push!(t, i)
+        end
+        out = persistent!(t)
+        @test size(out) == (100,)
+        @test all(out[i] == i for i in 1:10)
+    end
+
     @testset "appending equal to the default needs no entry" begin
         # PVector's own push skips the tree when the value equals the array's
         # default; the transient must do the same, or it would build a tree of

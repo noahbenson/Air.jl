@@ -100,7 +100,8 @@ const PTREE_DEPTH_MASK = lowmask(PTREE_TWIG_SHIFT)
 # is reachable only from the transient that made it, so the transient may change
 # its cells in place. A persistent node must never carry the flag — that is the
 # invariant that keeps the mutation safe — which is why it is only ever set by
-# the transient's own code (see PTNode/TransientPTree in transient.jl).
+# the transients' own code (see transient.jl), and why `persistent!` walks the
+# nodes it owns to clear the flag before handing the tree back.
 const PTREE_DEPTH_BITS = ndigits(PTREE_LEVELS - 1, base=2)
 const PTREE_DEPTH_VALUE_MASK = lowmask(PTREE_DEPTH_BITS)
 const PTREE_OWNED_FLAG = HASH_T(0x1) << PTREE_DEPTH_BITS
