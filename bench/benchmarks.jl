@@ -107,6 +107,32 @@ SUITE["pvector"]["setindex"] = @benchmarkable setindex($( _pvector(NVEC) ), 0, N
 SUITE["pvector"]["iterate"] = @benchmarkable sum($( _pvector(NVEC) ))
 
 # ==============================================================================
+# Transients
+#
+# The same batch of appends, done persistently and through a transient. This is
+# the comparison a transient has to win: the transient path must allocate less
+# per update than the persistent one, including the walk that `persistent!` does
+# to hand the structure back.
+
+SUITE["transient"] = BenchmarkGroup(["vector"])
+function _persistent_batch(n::Int)
+    v = PVector{Int}()
+    for i in 1:n
+        v = push(v, i)
+    end
+    return v
+end
+function _transient_batch(n::Int)
+    t = transient(PVector{Int}())
+    for i in 1:n
+        push!(t, i)
+    end
+    return persistent!(t)
+end
+SUITE["transient"]["persistent"] = @benchmarkable _persistent_batch($NVEC)
+SUITE["transient"]["transient"] = @benchmarkable _transient_batch($NVEC)
+
+# ==============================================================================
 # Weighted collections
 
 function _pwset(n::Int)
