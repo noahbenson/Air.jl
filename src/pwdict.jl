@@ -117,6 +117,13 @@ macro _pwdict_code(name::Symbol, dicttype::Symbol)
                 return (k => u.dict[k], b)
             end
             Base.get(u::$name{K,V,W}, k, df) where {K,V,W} = get(u.dict, k, df)
+            # Delegate as `get` does. The inner dictionary is a `PDict`, which has
+            # non-allocating versions of these; Base's would take a sentinel value
+            # and box the result of every lookup.
+            Base.getindex(u::$name{K,V,W}, k) where {K,V,W} =
+                getindex(getfield(u, :dict), k)
+            Base.haskey(u::$name{K,V,W}, k) where {K,V,W} =
+                haskey(getfield(u, :dict), k)
             Base.in(kv::Pair, u::$name{K,V,W}, eqfn::Function) where {K,V,W} =
                 in(kv, u.dict, eqfn)
             Base.in(kv::Pair, u::$name{K,V,W}) where {K,V,W} = in(kv, u.dict)
