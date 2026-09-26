@@ -50,12 +50,11 @@ DocTestSetup = quote
 end
 ```
 
-```jldoctest; filter=r"PDict{Symbol, ?Int64} with 3 entries:"
-julia> @p{:a => 1, :b => 2, :c => 3}
-PDict{Symbol,Int64} with 3 entries:
-  :c => 3
-  :a => 1
-  :b => 2
+```jldoctest
+julia> d = @p{:a => 1, :b => 2, :c => 3};
+
+julia> (d[:a], d[:b], d[:c])
+(1, 2, 3)
 ```
 
 ```jldoctest; filter=r"4-element (PArray{Int64, ?1}|PVector{Int64}):"
@@ -75,11 +74,10 @@ julia> @p[:q2 :q1; :q3 :q4]
 ```
 
 ```jldoctest
-julia> @p(:a, :b, :a, :c)
-PSet{Symbol} with 3 elements:
-  :c
-  :a
-  :b
+julia> s = @p(:a, :b, :a, :c);
+
+julia> (length(s), :a in s, :b in s, :c in s, :d in s)
+(3, true, true, true, false)
 ```
 """
 macro p(exprs...)

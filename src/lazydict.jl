@@ -182,20 +182,18 @@ julia> LazyDict()
 LazyDict{Any,Any}()
 ```
 
-```jldoctest; filter=r"LazyDict{Symbol, ?Real} with 3 entries:"
-julia> LazyDict(:a => 1, :b => 2, :c => 12.8)
-LazyDict{Symbol,Real} with 3 entries:
-  :c => 12.8
-  :a => 1
-  :b => 2
+```jldoctest
+julia> d = LazyDict(:a => 1, :b => 2, :c => 12.8);
+
+julia> (d[:a], d[:b], d[:c])
+(1, 2, 12.8)
 ```
 
-```jldoctest; filter=r"LazyDict{Symbol, ?Float64} with 3 entries:"
-julia> d = LazyDict{Symbol,Float64}(:a => 1, :b => 2, :c => 12.8)
-LazyDict{Symbol,Float64} with 3 entries:
-  :c => 12.8
-  :a => 1.0
-  :b => 2.0
+```jldoctest
+julia> d = LazyDict{Symbol,Float64}(:a => 1, :b => 2, :c => 12.8);
+
+julia> (d[:a], d[:c])
+(1.0, 12.8)
 
 julia> d2 = push(d, :d => Delay{Real}(() -> (println("Running..."); 0.5))); haskey(d2, :d)
 true
@@ -232,20 +230,18 @@ julia> LazyIdDict()
 LazyIdDict{Any,Any}()
 ```
 
-```jldoctest; filter=r"LazyIdDict{Symbol, ?Real} with 3 entries:"
-julia> LazyIdDict(:a => 1, :b => 2, :c => 12.8)
-LazyIdDict{Symbol,Real} with 3 entries:
-  :b => 2
-  :a => 1
-  :c => 12.8
+```jldoctest
+julia> d = LazyIdDict(:a => 1, :b => 2, :c => 12.8);
+
+julia> (d[:a], d[:b], d[:c])
+(1, 2, 12.8)
 ```
 
-```jldoctest; filter=r"LazyIdDict{Symbol, ?Float64} with 3 entries:"
-julia> d = LazyIdDict{Symbol,Float64}(:a => 1, :b => 2, :c => 12.8)
-LazyIdDict{Symbol,Float64} with 3 entries:
-  :b => 2.0
-  :a => 1.0
-  :c => 12.8
+```jldoctest
+julia> d = LazyIdDict{Symbol,Float64}(:a => 1, :b => 2, :c => 12.8);
+
+julia> (d[:a], d[:c])
+(1.0, 12.8)
 
 julia> d2 = push(d, :d => Delay{Real}(() -> (println("Running..."); 0.5)));
 
