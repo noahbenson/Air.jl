@@ -10,15 +10,18 @@
 # ==============================================================================
 # #TODO List
 
+# This list is a snapshot; several of the entries it used to carry are done.
+# Done: `pzeros`/`pones`/`pfill`; `broadcast` (see broadcast.jl); `reshape` and
+# the elementwise arithmetic operators (see arrayops.jl); and every array
+# operation that used to fall back to a mutable `Array` — `copy`, `map`,
+# `filter`, `reverse`, indexed selection and `vcat`/`hcat` (also arrayops.jl).
+# Still open:
 # psparse() method for making PArrays similar to SparseArrays.sparse().
-# pzeros() similar to zeros() and spzeros()
-# prand() similar to rand() and sprand()
-# prandn() similar to randn() and sprandn()
-# pdiagm() similar to spdiagm()
-# blockdiag() method instance.
-# permute() method
-# broadcast() method
-# Many others: overload arithmetic operators? reshape, others.
+# prand() and prandn() similar to rand()/randn() and sprand()/sprandn().
+# pdiagm() similar to spdiagm(), and a blockdiag() method instance.
+# permute() method.
+# Matrix multiplication and the rest of linear algebra are deliberately left to
+# Base, which answers with a mutable `Array` — the right answer for them.
 
 # ==============================================================================
 # PArray definition.
