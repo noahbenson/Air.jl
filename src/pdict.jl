@@ -56,16 +56,12 @@ macro _plindict_code(name::Symbol, eq, h)
             $name(d::AbstractDict{K,V}) where {K,V} = $name{K,V}(d)
             $name(ps::Pair...) = begin
                 ps = _to_pairs(ps)
-                T = Base.eltype(ps)
-                K = T.parameters[1]
-                V = T.parameters[2]
+                K, V = _pairtypes(Base.eltype(ps))
                 return $name{K,V}(ps...)
             end
             $name(itr) = begin
                 ps = _to_pairs(itr)
-                T = Base.eltype(ps)
-                K = T.parameters[1]
-                V = T.parameters[2]
+                K, V = _pairtypes(Base.eltype(ps))
                 return $name{K,V}(ps...)
             end
             # Base methods.
@@ -79,7 +75,7 @@ macro _plindict_code(name::Symbol, eq, h)
             Base.eltype(::Type{$name{K,V}}) where {K,V} = Pair{K,V}
             Base.eltype(::$name{K,V}) where {K,V} = Pair{K,V}
             Base.IteratorSize(::Type{$name{K,V}}) where {K,V} = Base.HasLength()
-            Base.iterate(u::$name{K,V}, ii::Int) where {K,V} = begin
+            @inline Base.iterate(u::$name{K,V}, ii::Int) where {K,V} = begin
                 (ii > length(u)) && return nothing
                 ks = getfield(u, :keys)::Vector{K}
                 vs = getfield(u, :values)::Vector{V}
@@ -88,7 +84,7 @@ macro _plindict_code(name::Symbol, eq, h)
                     ii + 1,
                 )
             end
-            Base.iterate(u::$name{K,V}) where {K,V} = iterate(u, 1)
+            @inline Base.iterate(u::$name{K,V}) where {K,V} = iterate(u, 1)
             Base.get(u::$name{K,V}, kk, df) where {K,V} = begin
                 ks = getfield(u, :keys)
                 (ks === nothing) && return df
@@ -233,16 +229,12 @@ macro _pdict_code(name::Symbol, eq, h, lindict)
             $name(d::AbstractDict{K,V}) where {K,V} = $name{K,V}(d)
             $name(ps::Pair...) = begin
                 ps = _to_pairs(ps)
-                T = Base.eltype(ps)
-                K = T.parameters[1]
-                V = T.parameters[2]
+                K, V = _pairtypes(Base.eltype(ps))
                 return $name{K,V}(ps...)
             end
             $name(itr) = begin
                 ps = _to_pairs(itr)
-                T = Base.eltype(ps)
-                K = T.parameters[1]
-                V = T.parameters[2]
+                K, V = _pairtypes(Base.eltype(ps))
                 return $name{K,V}(ps...)
             end
             # Base methods.
@@ -253,27 +245,45 @@ macro _pdict_code(name::Symbol, eq, h, lindict)
             Base.eltype(::Type{$name{K,V}}) where {K,V} = Pair{K,V}
             Base.eltype(::$name{K,V}) where {K,V} = Pair{K,V}
             Base.IteratorSize(::Type{$name{K,V}}) where {K,V} = Base.HasLength()
-            Base.iterate(u::$name{K,V}) where {K,V} = begin
-                x = itervals(getfield(u, :root))
-                (x === nothing) && return nothing
-                (rootel, rootii) = x
-                (el, reliter) = iterate(rootel)
-                return (el, (rootii, reliter, length(rootel)))
-            end
-            Base.iterate(u::$name{K,V}, tup::Tuple{HASH_T,Int,Int}) where {K,V} = begin
-                (rootii, reliter, rellen) = tup
+            # Iteration walks the tree with an explicit stack, carrying the
+            # bucket's key/value vectors along so that continuing within a
+            # bucket needs no lookup at all.
+            @inline function Base.iterate(u::$name{K,V}) where {K,V}
                 root = getfield(u, :root)
-                if reliter < rellen
-                    # There are more in that node:
-                    rootel = get(root, rootii, nothing)::$lindict{K,V}
-                    (el, reliter) = iterate(rootel, reliter)
-                    return (el, (rootii, reliter, rellen))
-                end
-                x = itervals(root, rootii)
+                path, todo = _ptreeiter(root)
+                x = _ptreeiter_next(path, todo)
                 (x === nothing) && return nothing
-                (rootel, rootii) = x
-                (el, reliter) = iterate(rootel)
-                return (el, (rootii, reliter, length(rootel)))
+                ld = (x[2])::$lindict{K,V}
+                ks = getfield(ld, :keys)::Vector{K}
+                vs = getfield(ld, :values)::Vector{V}
+                return (
+                    Pair{K,V}((@inbounds ks[1]), (@inbounds vs[1])),
+                    (path, todo, ks, vs, 2),
+                )
+            end
+            @inline function Base.iterate(
+                u::$name{K,V},
+                st::Tuple{
+                    Vector{PTree{$lindict{K,V}}},Vector{PTREE_BITS_T},Vector{K},Vector{V},Int
+                },
+            ) where {K,V}
+                (path, todo, ks, vs, ii) = st
+                if ii <= length(ks)
+                    return (
+                        Pair{K,V}((@inbounds ks[ii]), (@inbounds vs[ii])),
+                        (path, todo, ks, vs, ii + 1),
+                    )
+                end
+                root = getfield(u, :root)
+                x = _ptreeiter_next(path, todo)
+                (x === nothing) && return nothing
+                ld = (x[2])::$lindict{K,V}
+                ks = getfield(ld, :keys)::Vector{K}
+                vs = getfield(ld, :values)::Vector{V}
+                return (
+                    Pair{K,V}((@inbounds ks[1]), (@inbounds vs[1])),
+                    (path, todo, ks, vs, 2),
+                )
             end
             Base.get(u::$name{K,V}, k, df) where {K,V} = begin
                 ld = get(getfield(u, :root), $h(k), nothing)

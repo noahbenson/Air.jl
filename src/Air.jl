@@ -18,6 +18,7 @@ include("pset.jl")
 include("pdict.jl")
 include("lazydict.jl")
 include("parray.jl")
+include("transient.jl")
 include("pheap.jl")
 include("pwdict.jl")
 include("pwset.jl")
@@ -104,19 +105,16 @@ export Var,
     @var,
     Volatile,
     Actor,
-    Source,
     tx,
     @tx,
     ReentrantRef,
     TransactionalRef,
-    AbstractSourceKernel,
     getfilter,
     getfinalize,
     setfilter!,
     setfinalize!,
     send,
     geterror,
-    receive,
     reset,
     @p
 

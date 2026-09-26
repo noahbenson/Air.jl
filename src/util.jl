@@ -123,24 +123,23 @@ julia> d2[]
 0.5
 ```
 """
-macro delay(e::Expr)
+macro delay(e)
     # First, parse the expression-- is it a function or an expression?
-    if e.head == :->
+    if e isa Expr && e.head == :->
         syms = e.args[1]
         expr = e.args[2]
     else
         syms = ()
         expr = e
     end
+    # Look for an optional trailing type annotation. The expression may be a
+    # block, whose elements include `LineNumberNode`s, or it may not be an
+    # `Expr` at all (e.g. a literal).
     tmp = expr
-    while tmp.head == :block
-        tmp = tmp.args[2]
+    while tmp isa Expr && tmp.head === :block
+        tmp = tmp.args[end]
     end
-    if tmp.head == :(::)
-        T = tmp.args[2]
-    else
-        T = :Any
-    end
+    T = (tmp isa Expr && tmp.head === :(::)) ? tmp.args[2] : :Any
     # If there are symbols, convert them over to expressions
     isa(syms, Symbol) && (syms = :(($syms,)))
     if isa(syms, Expr)
@@ -215,6 +214,9 @@ function _memoize_fixarg(arg::Expr)
         end
     )
 end
+# Arguments without a type annotation, e.g. `x` in `f(x)`, arrive as plain
+# symbols rather than expressions.
+_memoize_fixarg(arg) = arg
 # Now the memoize macro itself.
 """
     @memoize name(args...) = expr
@@ -285,7 +287,7 @@ macro memoize(assgn::Expr)
     end
     # See if the expr is tagged; if so, we have a particular type we can use in
     # the memoization dict.
-    MT = expr.head === :(::) ? expr.head : :Any
+    MT = expr.head === :(::) ? expr.args[2] : :Any
     # Make an expression for the tuple of arguments.
     argtup = Expr(:tuple, args...)
     # Symbols we will need in the generated code.
@@ -524,44 +526,51 @@ julia> lockall((r1, r2, r3)) do; :success end
 ```
 """
 function lockall end
-lockall(f::Function, locks::Vector{T}) where {T,N} = _lockall(f, copy(locks))
+lockall(f::Function, locks::Vector{T}) where {T} = _lockall(f, copy(locks))
 lockall(f::Function, locks::NTuple{N,T}) where {T,N} = _lockall(f, [locks...])
 lockall(f::Function, locks::Vararg{T,N}) where {T,N} = _lockall(f, [locks...])
 export lockall
 
 # #_to_pairs ###################################################################
+"""
+    _pairtypes(::Type)
+
+Yields the key and value types `(K, V)` of a two-parameter `Pair` or `Tuple`
+type, or `nothing` if the type is not one. Reading a pair type's parameters by
+dispatch rather than through the `parameters` field keeps this off the runtime
+reflection path.
+"""
+@inline _pairtypes(::Type{<:Pair{K,V}}) where {K,V} = (K, V)
+@inline _pairtypes(::Type{<:Tuple{K,V}}) where {K,V} = (K, V)
+@inline _pairtypes(::Type) = nothing
 # A utility function for turning a list of pairs/tuples into a list of pairs.
+#
+# The key and value types come from the container's declared `eltype` whenever
+# that is a two-parameter pair or tuple type. That is both cheaper than looking
+# at the elements — it avoids a `Vector{Any}` of keys and values and a
+# `typejoin` over them — and equivalent, because `eltype` of a heterogeneous
+# tuple is already the join of its element types. Only a container that declares
+# no element type, or too vague a one, falls through to inspecting the elements.
 _to_pairs(kvs) = begin
-    if length(kvs) == 0
-        K = Any
-        V = Any
-        if Base.IteratorEltype(kvs) isa Base.HasEltype
-            ET = Base.eltype(itr)
-            if isa(ET, DataType)
-                if ET <: Pair
-                    K = ET.parameters[1]
-                    V = ET.parameters[2]
-                elseif ET <: Tuple && length(ET.parameters) == 2
-                    K = ET.parameters[1]
-                    V = ET.parameters[2]
-                end
-            end
+    if Base.IteratorEltype(kvs) isa Base.HasEltype
+        kv = _pairtypes(Base.eltype(kvs))
+        if kv !== nothing
+            K, V = kv
+            return Pair{K,V}[Pair{K,V}(t[1], t[2]) for t in kvs]
         end
-        return Pair{K,V}[]
-    else
-        ks = []
-        vs = []
-        for kv in kvs
-            if kv isa Pair || (kv isa Tuple && length(kv) == 2)
-                push!(ks, kv[1])
-                push!(vs, kv[2])
-            else
-                msg = "EquivDict: arg must be iterator of tuples or pairs"
-                throw(ArgumentError(msg))
-            end
-        end
-        K = typejoin(map(typeof, ks)...)
-        V = typejoin(map(typeof, vs)...)
-        return Pair{K,V}[Pair{K,V}(k, v) for (k, v) in zip(ks, vs)]
     end
+    ks = Any[]
+    vs = Any[]
+    for kv in kvs
+        if kv isa Pair || (kv isa Tuple && length(kv) == 2)
+            push!(ks, kv[1])
+            push!(vs, kv[2])
+        else
+            throw(ArgumentError("EquivDict: arg must be iterator of tuples or pairs"))
+        end
+    end
+    isempty(ks) && return Pair{Any,Any}[]
+    K = typejoin(map(typeof, ks)...)
+    V = typejoin(map(typeof, vs)...)
+    return Pair{K,V}[Pair{K,V}(k, v) for (k, v) in zip(ks, vs)]
 end

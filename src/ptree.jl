@@ -93,6 +93,18 @@ highmask(bitno::K, ::Type{T}) where {T<:Unsigned,K<:Integer} = ~lowmask(bitno, T
 highmask(bitno::K) where {K<:Integer} = highmask(bitno, HASH_T)
 # The mask of the bits that represent the depth of the node-id in a PTree.
 const PTREE_DEPTH_MASK = lowmask(PTREE_TWIG_SHIFT)
+# A node id stores its depth in the low PTREE_TWIG_SHIFT bits (the same bits hold
+# a twig's key offset, which is why one constant serves both purposes).
+# PTREE_LEVELS depths need only PTREE_DEPTH_BITS of them, so the next bit up is
+# unoccupied and is used to mark a node as *owned* by a transient: an owned node
+# is reachable only from the transient that made it, so the transient may change
+# its cells in place. A persistent node must never carry the flag — that is the
+# invariant that keeps the mutation safe — which is why it is only ever set by
+# the transients' own code (see transient.jl), and why `persistent!` walks the
+# nodes it owns to clear the flag before handing the tree back.
+const PTREE_DEPTH_BITS = ndigits(PTREE_LEVELS - 1, base=2)
+const PTREE_DEPTH_VALUE_MASK = lowmask(PTREE_DEPTH_BITS)
+const PTREE_OWNED_FLAG = HASH_T(0x1) << PTREE_DEPTH_BITS
 # The pair type for the dict interface.
 const HASHPAIR_T{T} = Pair{HASH_T,T} where {T}
 
@@ -103,7 +115,17 @@ const HASHPAIR_T{T} = Pair{HASH_T,T} where {T}
 Yields the depth of the node with the given node address. This depth is in the
 theoretical complete tree, not in the reified tree represented with memory.
 """
-ptree_depth(nodeid::HASH_T) = nodeid & PTREE_DEPTH_MASK
+ptree_depth(nodeid::HASH_T) = nodeid & PTREE_DEPTH_VALUE_MASK
+"""
+    ptree_owned(nodeid)
+    ptree_owned(id, owned)
+
+Whether the node with the given id is owned by a transient (see
+`PTREE_OWNED_FLAG`), or the same id with that flag set or cleared.
+"""
+ptree_owned(nodeid::HASH_T) = (nodeid & PTREE_OWNED_FLAG) != HASH_ZERO
+ptree_owned(id::HASH_T, owned::Bool) =
+    (owned ? (id | PTREE_OWNED_FLAG) : (id & ~PTREE_OWNED_FLAG))
 """
     depth_to_bitshift(depth)
 
@@ -143,7 +165,11 @@ ptree_firstbit(nodeid::HASH_T) = ptree_bitshift(nodeid)[1]
 
 Yields the minimum child leaf index associated with the given nodeid.
 """
-ptree_minleaf(nodeid::HASH_T) = nodeid & ~PTREE_DEPTH_MASK
+ptree_minleaf(nodeid::HASH_T) = begin
+    (b0, s) = ptree_bitshift(nodeid)
+    mask = (HASH_ONE << (b0 + s)) - HASH_ONE
+    return nodeid & ~mask
+end
 """
     ptree_maxleaf(nodeid)
 
@@ -160,7 +186,6 @@ end
 Yields the (min, max) child leaf index assiciated with the given nodeid.
 """
 ptree_minmaxleaf(nodeid::HASH_T) = begin
-    mn = ptree_minleaf(nodeid)
     (bit0, shift) = ptree_bitshift(nodeid)
     mask = (HASH_ONE << (bit0+shift)) - HASH_ONE
     return (nodeid & ~mask, nodeid | mask)
@@ -323,7 +348,8 @@ ptree_cellkey(id::HASH_T, k::HASH_T) = begin
     mn = ptree_minleaf(id)
     return mn | k
 end
-ptree_cellkey(id::HASH_T, k::II) where {II<:Integer} = ptree_cellkey(id, (HASH_T(k)))
+ptree_cellkey(id::HASH_T, k::II) where {II<:Integer} =
+    ptree_cellkey(id, (HASH_T(k)))
 function ptree_cellkey(u::PTree{T}, k::II) where {T,II<:Integer}
     return ptree_cellkey(getfield(u, :id), HASH_T(k))
 end
@@ -434,19 +460,19 @@ end
 Base.convert(::Type{PTree{T}}, u::PTree{T}) where {T} = u
 Base.convert(::Type{PTree{T}}, u::PTree{U}) where {T,U} = PTree{T}(u)
 Base.convert(::Type{PTree{T}}, u::AbstractDict{HASH_T,U}) where {T,U} = PTree{T}(u)
-Base.convert(::Type{PTree{T}}, u::AbstractArray{1,U}) where {T,U} = PTree{T}(u)
+Base.convert(::Type{PTree{T}}, u::AbstractArray{U,1}) where {T,U} = PTree{T}(u)
 
 # ==============================================================================
 # Methods
 #
 # Definitions of methods of the above type.
-Base.empty(u::PTree{T}) where {T} = PTree{T}(r)
+Base.empty(u::PTree{T}) where {T} = PTree{T}()
 Base.empty(u::PTree{T}, S::Type) where {T} = PTree{S}()
 Base.isempty(u::PTree{T}) where {T} = (getfield(u, :numel) == 0)
 Base.length(u::PTree{T}) where {T} = getfield(u, :numel)
 function Base.isequal(t::PTree{T}, s::PTree{S}) where {T,S}
     bits = getfield(t, :bits)
-    (bits == getfiield(s, :bits)) || return false
+    (bits == getfield(s, :bits)) || return false
     (getfield(t, :id) == getfield(s, :id)) || return false
     tcells = getfield(t, :cells)
     scells = getfield(s, :cells)
@@ -509,7 +535,7 @@ function getpair(u::PTree{T}, k::HASH_T) where {T}
         id = getfield(u, :id)
     end
 end
-function Base.get(u::PTree{T}, k::HASH_T, df) where {T}
+@inline function Base.get(u::PTree{T}, k::HASH_T, df) where {T}
     # Start by making sure that the address spaces are compatible:
     # we want to make sure (once) that k is beneath u.
     id = getfield(u, :id)
@@ -534,15 +560,16 @@ function Base.get(u::PTree{T}, k::HASH_T, df) where {T}
     end
 end
 function Base.in(kv::Pair{HASH_T,T}, u::PTree{T}, f::F) where {T,F<:Function}
+    k = kv[1]
     id = getfield(u, :id)
-    ptree_isbeneath(id, k) || return df
+    ptree_isbeneath(id, k) || return false
     # Also, if we are empty, we need to return right away.
-    (getfield(u, :numel) == 0) && return df
+    (getfield(u, :numel) == 0) && return false
     # Okay, let's try to find the child.
     while true
         # Is it in this Tree?
         (inq, bitidx, idx) = ptree_cellindex!(u, k)
-        inq || return df
+        inq || return false
         # Are we a twig?
         #if isa(getfield(u, :cells), Vector{T})
         if ptree_depth(id) == PTREE_TWIG_DEPTH
@@ -557,149 +584,90 @@ function Base.in(kv::Pair{HASH_T,T}, u::PTree{T}, f::F) where {T,F<:Function}
 end
 Base.in(kv::Pair{HASH_T,T}, u::PTree{T}) where {T} = in(kv, u, (===))
 
-Base.iterate(u::PTree{T}) where {T} = begin
-    (getfield(u, :numel) == 0) && return nothing
-    id = getfield(u, :id)
-    d = ptree_depth(id)
-    while d < PTREE_TWIG_DEPTH
-        cells = getfield(u, :cells)::Vector{PTree{T}}
-        u = cells[1]
-        id = getfield(u, :id)
-        d = ptree_depth(id)
-    end
-    leaves = getfield(u, :cells)::Vector{T}
-    bits = getfield(u, :bits)
-    bitno = trailing_zeros(bits)
-    k = ptree_cellkey(id, bitno)
-    v = leaves[1] # @inbounds leaves[1]
-    return (Pair{HASH_T,T}(k, v), k)
+@inline function Base.iterate(u::PTree{T}) where {T}
+    path, todo = _ptreeiter(u)
+    x = _ptreeiter_next(path, todo)
+    (x === nothing) && return nothing
+    return (Pair{HASH_T,T}(x[1], x[2]), (path, todo))
 end
-iterkeys(u::PTree{T}) where {T} = begin
-    (getfield(u, :numel) == 0) && return nothing
-    id = getfield(u, :id)
-    d = ptree_depth(id)
-    while d < PTREE_TWIG_DEPTH
-        cells = getfield(u, :cells)::Vector{PTree{T}}
-        u = cells[1]
-        id = getfield(u, :id)
-        d = ptree_depth(id)
-    end
-    leaves = getfield(u, :cells)::Vector{T}
-    bits = getfield(u, :bits)
-    bitno = trailing_zeros(bits)
-    k = ptree_cellkey(id, bitno)
-    v = leaves[1] # @inounds leaves[1]
-    return (k, k)
+@inline function Base.iterate(
+    ::PTree{T}, st::Tuple{Vector{PTree{T}},Vector{PTREE_BITS_T}}
+) where {T}
+    (path, todo) = st
+    x = _ptreeiter_next(path, todo)
+    (x === nothing) && return nothing
+    return (Pair{HASH_T,T}(x[1], x[2]), (path, todo))
 end
-itervals(u::PTree{T}) where {T} = begin
-    (getfield(u, :numel) == 0) && return nothing
-    id = getfield(u, :id)
-    d = ptree_depth(id)
-    while d < PTREE_TWIG_DEPTH
-        cells = getfield(u, :cells)::Vector{PTree{T}}
-        u = cells[1]
-        id = getfield(u, :id)
-        d = ptree_depth(id)
+# # Iteration ==================================================================
+# Iterating a PTree uses an explicit stack, so that each step costs O(1)
+# amortised rather than re-descending from the root for every leaf.
+#
+# The state is a node path plus a parallel vector of bitmasks:
+#
+#   * `path[i]` is the node at level `i` of the descent, from the root down to
+#     the twig currently being drained;
+#   * `todo[i]` is the set of that node's children not yet visited, using the
+#     same bitmask representation as the node's `bits` field. The next child to
+#     visit is therefore `trailing_zeros(todo[i])`, and its position in the
+#     node's compact `cells` vector is its rank among the set bits of `bits`.
+#
+# A twig stores leaves rather than children, but the same mask drives it, which
+# is what lets one routine walk both kinds of node. Each set bit is consumed
+# exactly once and each edge is crossed at most twice per full traversal, so the
+# amortised cost per yielded leaf is constant.
+"""
+    _ptreeiter(u)
+
+Yields the initial iteration state for the `PTree` `u`. The root is pushed
+immediately, so that an empty path means "exhausted" rather than "not yet
+started" — with a lazily-seeded stack those two states would be
+indistinguishable, and an exhausted iterator would start over.
+"""
+@inline function _ptreeiter(u::PTree{T}) where {T}
+    path = Vector{PTree{T}}()
+    todo = Vector{PTREE_BITS_T}()
+    if getfield(u, :numel) > 0
+        push!(path, u)
+        push!(todo, getfield(u, :bits))
     end
-    leaves = getfield(u, :cells)::Vector{T}
-    bits = getfield(u, :bits)
-    bitno = trailing_zeros(bits)
-    k = ptree_cellkey(id, bitno)
-    v = leaves[1] # @inounds leaves[1]
-    return (v, k)
+    return (path, todo)
+end
+"""
+    _ptreeiter_next(path, todo)
+
+Yields `(leafid, value)` for the next leaf in ascending leaf order, advancing
+the state in place, or `nothing` once the tree is exhausted.
+"""
+@inline function _ptreeiter_next(
+    path::Vector{PTree{T}}, todo::Vector{PTREE_BITS_T}
+) where {T}
+    while true
+        isempty(path) && return nothing
+        lvl = length(path)
+        b = todo[lvl]
+        if b == BITS_ZERO
+            # This level is exhausted; back up and try the next one.
+            pop!(path)
+            pop!(todo)
+            continue
+        end
+        node = path[lvl]
+        bits = getfield(node, :bits)
+        bitidx = trailing_zeros(b)
+        todo[lvl] = b & ~(BITS_ONE << bitidx)
+        rank = 1 + count_ones(bits & lowmask(bitidx))
+        cells = getfield(node, :cells)
+        if ptree_depth(getfield(node, :id)) == PTREE_TWIG_DEPTH
+            leaves = cells::Vector{T}
+            return (ptree_cellkey(getfield(node, :id), bitidx), (@inbounds leaves[rank]))
+        end
+        # Descend into this child; the loop then yields its leftmost leaf.
+        child = (cells::Vector{PTree{T}})[rank]
+        push!(path, child)
+        push!(todo, getfield(child, :bits))
+    end
 end
 
-macro _ptree_iterate_gencode(rtype::Symbol)
-    cids = [gensym("cid") for _ in 1:(PTREE_LEVELS - 1)]
-    cels = [gensym("cel") for _ in 1:(PTREE_LEVELS - 1)]
-    bits = [gensym("bit") for _ in 1:(PTREE_LEVELS - 1)]
-    if rtype == :keys
-        rexpr = :(k)
-        fn = :iterkeys
-    elseif rtype == :vals
-        rexpr = :(v)
-        fn = :itervals
-    else
-        rexpr = :(Pair{HASH_T,T}(k, v))
-        fn = :(Base.iterate)
-    end
-    twigexpr = quote
-        # We must be a twig at this point.
-        leaves = getfield(u, :cells)::Vector{T}
-        id = getfield(u, :id)
-        bits = getfield(u, :bits)
-        (inq, bitno, idx) = ptree_cellindex(id, bits, k0)
-        mask = (BITS_ONE << (bitno + 1)) - BITS_ONE
-        nextbitno = trailing_zeros(bits & ~mask)
-        if nextbitno < PTREE_BITS_BITCOUNT
-            k = ptree_cellkey(id, nextbitno)
-            idx = count_ones(bits & mask) + 1
-            v = (@inbounds leaves[idx])
-            return ($rexpr, k)
-        end
-        # If we reach here, we did not find a next leaf.
-    end
-    # At the lowest level, the try and twig expressions are the same.
-    tryexpr = twigexpr
-    for ii in (PTREE_LEVELS - 1):-1:1
-        cel = cels[ii]
-        cid = cids[ii]
-        bit = bits[ii]
-        tryexpr = quote
-            if d == PTREE_TWIG_DEPTH
-                $twigexpr
-            else
-                $cel = getfield(u, :cells)::Vector{PTree{T}}
-                $bit = getfield(u, :bits)
-                (inq, bitno, $cid) = ptree_cellindex(id, $bit, k0)
-                u = $cel[$cid]
-                id = getfield(u, :id)
-                d = ptree_depth(id)
-                $tryexpr
-                # If we reach this point, we haven't found a next pair yet.
-                n = count_ones($bit)
-                if $cid < n
-                    u = $cel[$cid + 1]
-                    break
-                end
-            end
-        end
-    end
-    # Put these together into the functions.
-    return esc(
-        quote
-            $fn(u::PTree{T}, k0::HASH_T) where {T} = begin
-                id = getfield(u, :id)
-                d = ptree_depth(id)
-                while true
-                    $tryexpr
-                    # If we reach the end of the loop, there's nothing past k0.
-                    return nothing
-                end
-                # Upon finding a cell that hasn't been iterated, the code breaks
-                # from the abbove loop and brings us here.
-                id = getfield(u, :id)
-                d = ptree_depth(id)
-                while d < PTREE_TWIG_DEPTH
-                    cells = getfield(u, :cells)::Vector{PTree{T}}
-                    u = (@inbounds cells[1])
-                    id = getfield(u, :id)
-                    d = ptree_depth(id)
-                end
-                leaves = getfield(u, :cells)::Vector{T}
-                bits = getfield(u, :bits)
-                nextbitno = trailing_zeros(bits)
-                k = ptree_cellkey(id, nextbitno)
-                v = (@inbounds leaves[1])
-                return ($rexpr, k)
-            end
-        end,
-    )
-end
-# Run the macro to generate the iteration functions:
-(@_ptree_iterate_gencode keys)
-(@_ptree_iterate_gencode vals)
-(@_ptree_iterate_gencode pairs)
 
 function setindex(u::PTree{T}, v::V, k::HASH_T) where {T,V}
     # First of all, if this node is empty, we just return a new node
@@ -796,10 +764,19 @@ function delete(u::PTree{T}, k::HASH_T) where {T}
         newn = getfield(newc, :numel)
         numel += newn - oldn
         (numel == 0) && return newc
+        # A branch that keeps only one child carries no information: the child
+        # already covers exactly the same leaves, and keeping the branch around
+        # would only lengthen every later lookup and insertion by one level. So
+        # a branch is replaced by that child rather than being left with one
+        # cell. (This is the AMT "minimal tree" invariant; it is also why
+        # `setindex` can build a new ancestor at the highest differing bit
+        # instead of always at the root.)
         if newn == 0
             newcells = delete(cells, idx)
+            (length(newcells) == 1) && return newcells[1]
             return PTree{T}(id, bits & ~(BITS_ONE << bitidx), numel, newcells)
         else
+            (length(cells) == 1) && return newc
             newcells = setindex(cells, newc, idx)
             return PTree{T}(id, bits, numel, newcells)
         end

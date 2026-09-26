@@ -36,17 +36,17 @@ macro _plinset_code(name::Symbol, eq, h)
                     for ii in 1:length(u)
                         ui = u[ii]
                         found = false
-                        for jj in 1:k
-                            if v[ii] == ui
+                        for jj in 1:kk
+                            if v[jj] == ui
                                 found = true
                                 break
                             end
                         end
                         found && continue
-                        k += 1
-                        v[k] = ui
+                        kk += 1
+                        v[kk] = ui
                     end
-                    resize!(v, k)
+                    resize!(v, kk)
                     return new{T}(v)
                 end
             end
@@ -83,12 +83,12 @@ macro _plinset_code(name::Symbol, eq, h)
             Base.eltype(::Type{$name{T}}) where {T} = T
             Base.eltype(::$name{T}) where {T} = T
             Base.IteratorSize(::Type{$name{T}}) where {T} = Base.HasLength()
-            Base.iterate(u::$name{T}) where {T} = begin
+            @inline Base.iterate(u::$name{T}) where {T} = begin
                 els = getfield(u, :elements)
                 (els === nothing) && return nothing
                 return iterate(els)
             end
-            Base.iterate(u::$name{T}, state) where {T} = begin
+            @inline Base.iterate(u::$name{T}, state) where {T} = begin
                 els = getfield(u, :elements)
                 return iterate(els, state)
             end
@@ -124,7 +124,7 @@ macro _plinset_code(name::Symbol, eq, h)
                 else
                     for ii in 1:n
                         if $eq(els[ii], x)
-                            return $name{T}(delete(elss, ii), Val{:safe}())
+                            return $name{T}(delete(els, ii), Val{:safe}())
                         end
                     end
                 end
@@ -200,30 +200,31 @@ macro _pset_code(name::Symbol, eq, h, linset)
             Base.length(s::$name) = getfield(s, :count)
             Base.IteratorSize(::Type{$name{T}}) where {T} = Base.HasLength()
             Base.IteratorEltype(::Type{$name{T}}) where {T} = Base.HasEltype()
-            Base.eltype(::Type{$name{T}}) where {T,N} = T
-            Base.eltype(u::$name{T}) where {T,N} = T
-            Base.iterate(u::$name{T}) where {T} = begin
-                (getfield(u, :count) == 0) && return nothing
-                (lst, titer) = iterate(getfield(u, :root))
-                lst = lst[2]
-                (el, liter) = iterate(lst)
-                return (el, (lst, liter, titer))
+            Base.eltype(::Type{$name{T}}) where {T} = T
+            Base.eltype(u::$name{T}) where {T} = T
+            # As for PDict, iteration walks the tree with an explicit stack and
+            # carries the current bucket's element vector along with it.
+            @inline function Base.iterate(u::$name{T}) where {T}
+                root = getfield(u, :root)
+                path, todo = _ptreeiter(root)
+                x = _ptreeiter_next(path, todo)
+                (x === nothing) && return nothing
+                ld = (x[2])::$linset{T}
+                els = getfield(ld, :elements)::Vector{T}
+                return ((@inbounds els[1]), (path, todo, els, 2))
             end
-            Base.iterate(u::$name{T}, tup) where {T} = begin
-                (lst, liter, titer) = tup
-                if liter !== nothing
-                    r = iterate(lst, liter)
-                    if r !== nothing
-                        (el, liter) = r
-                        return (el, (lst, liter, titer))
-                    end
-                end
-                q = iterate(getfield(u, :root), titer)
-                (q === nothing) && return q
-                (lst, titer) = q
-                lst = lst[2]
-                (el, liter) = iterate(lst)
-                return (el, (lst, liter, titer))
+            @inline function Base.iterate(
+                u::$name{T},
+                st::Tuple{Vector{PTree{$linset{T}}},Vector{PTREE_BITS_T},Vector{T},Int},
+            ) where {T}
+                (path, todo, els, ii) = st
+                (ii <= length(els)) && return ((@inbounds els[ii]), (path, todo, els, ii + 1))
+                root = getfield(u, :root)
+                x = _ptreeiter_next(path, todo)
+                (x === nothing) && return nothing
+                ld = (x[2])::$linset{T}
+                els = getfield(ld, :elements)::Vector{T}
+                return ((@inbounds els[1]), (path, todo, els, 2))
             end
             Base.in(x::S, u::$name{T}) where {T,S} = begin
                 hh = $h(x)
