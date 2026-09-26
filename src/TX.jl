@@ -913,9 +913,9 @@ export setfinalize!
 """
     tx_actordata(a)
 
-Yields the in-transaction data for the `Actor` object `a`. If `a` is in an
-error-state, then throws an `ActorException`. If there is no transaction
-currently running, yields `nothing`.
+Yields the in-transaction data for the `Actor` object `a`, or `nothing` if no
+transaction is running. An actor in an error state yields data whose `tx_value`
+is the `ActorException`; it is `getindex` that raises on it, not this function.
 
 This function is considered part of the internal/private interface of `Air` and
 shouldn't generally be called outside of it.
@@ -930,7 +930,13 @@ tx_actordata(a::Actor{T}, t::Transaction) where {T} = begin
         w = ActorTxData{T}(val)
         actors[a] = w
     end
-    return w
+    # The assertion is what keeps this function's result inferable: the actors
+    # dictionary is keyed by `Actor` and valued by unparameterised `ActorTxData`
+    # (a transaction can touch differently-typed actors), so without it the result
+    # is `ActorTxData` with `T` free, and everything downstream — including a
+    # plain `a[]` — infers as `Any`. Every value stored for this actor is an
+    # `ActorTxData{T}`, because that is the only thing ever inserted.
+    return w::ActorTxData{T}
 end
 tx_actordata(a::Actor{T}, ::Nothing) where {T} = nothing
 
@@ -949,7 +955,12 @@ actor_value(a::Actor{T}, t::Transaction) where {T} = tx_actordata(a, t).tx_value
 actor_value(a::Actor{T}, ::Nothing) where {T} = getfield(a, :value)
 Base.getindex(a::Actor{T}) where {T} = begin
     x = actor_value(a, currtx())
-    isa(x, ActorException{T}) && throw(x)
+    # Narrowing *to* `Some{T}` rather than testing for the exception: reading an
+    # `Actor` in an error state raises, so the exception branch never returns, and
+    # a positive `isa` is what leaves `x`'s type as `Some{T}` — from which `.value`
+    # is `T`. Testing `isa(x, ActorException{T})` and falling through instead
+    # leaves the field read on the whole two-member `Union`, which infers as `Any`.
+    isa(x, Some{T}) || throw(x)
     return x.value
 end
 
