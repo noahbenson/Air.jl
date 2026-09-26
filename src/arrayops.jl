@@ -115,6 +115,46 @@ function Base.getindex(u::PVector{T}, I::AbstractVector{<:Integer}) where {T}
     return PVector{T}(HASH_T(0x0), _lindex(length(I)), tree, dflt)
 end
 
+# The same for any number of dimensions, where a scalar index drops its dimension
+# exactly as it does for an `Array`: `m[1:2, [1, 3]]` is a 2×2 `PArray` while
+# `m[1:3, 3]` is a `PVector`. As in the vector case above, the result carries the
+# operand's default, so a selected element equal to the default is not stored —
+# selecting a sparsely-set matrix yields a sparsely-set result.
+#
+# A call whose indices are all integers is handled by the `Vararg{Int,N}` method
+# above, which is the narrower of the two, so this one sees at least one vector
+# index and the result is always an array rather than a scalar.
+function Base.getindex(
+    u::PArray{T,N}, I::Vararg{Union{Integer,AbstractVector{<:Integer}},N}
+) where {T,N}
+    dims = Tuple(length(i) for i in I if !(i isa Integer))
+    tree = PTree{T}()
+    dflt = getfield(u, :_default)
+    li = LinearIndices(dims)
+    for ci in CartesianIndices(dims)
+        x = u[_air_select(I, ci)...]                # bounds-checks each index
+        _eqdefault(dflt, x) && continue
+        tree = setindex(tree, x, HASH_T(li[ci] - 1))
+    end
+    return PArray{T,length(dims)}(HASH_T(0x0), _lindex(dims...), tree, dflt)
+end
+
+# The index tuple of `u` that a result position selects: a vector index takes its
+# position from `ci`, and a scalar index is used as it stands.
+function _air_select(I::Tuple, ci::CartesianIndex)
+    sel = Vector{Int}(undef, length(I))
+    d = 0
+    for (n, i) in enumerate(I)
+        if i isa Integer
+            sel[n] = i
+        else
+            d += 1
+            sel[n] = i[ci[d]]
+        end
+    end
+    return sel
+end
+
 # ==============================================================================
 # Concatenation
 

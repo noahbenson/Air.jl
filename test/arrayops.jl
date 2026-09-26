@@ -80,6 +80,46 @@
         @test_throws BoundsError u[[0]]
     end
 
+    @testset "indexing a matrix with vector positions" begin
+        m = setindex(PMatrix(0.0, (3, 4)), 7.0, 2, 3)
+        s = m[1:2, [1, 3]]
+        @test s isa PArray{Float64,2}
+        @test size(s) == (2, 2)
+        @test Air.defaultvalue(s) == 0.0
+        @test nnz(s) == 1                     # only the one entry it selects
+        @test s[2, 2] == 7.0
+        @test collect(s) == collect(m)[1:2, [1, 3]]
+        # a scalar index drops its dimension, as it does for an `Array`
+        r = m[1:3, 3]
+        @test r isa PVector{Float64}
+        @test length(r) == 3
+        @test nnz(r) == 1
+        @test collect(r) == collect(m)[1:3, 3]
+        c = m[2, 1:4]
+        @test c isa PVector{Float64}
+        @test collect(c) == collect(m)[2, 1:4]
+        # selecting positions that are not set stores nothing, and so does
+        # selecting a position that holds the default
+        @test nnz(m[1:2, [1, 2]]) == 0
+        @test nnz(m[1:1, [1]]) == 0
+        # agreement with Base, both for a sparsely-set matrix and a dense one
+        d = PMatrix(0.0, (3, 3))
+        for k in 1:3
+            d = setindex(d, float(k), k, k)
+        end
+        @test collect(d[[3, 1], [2, 3]]) == collect(d)[[3, 1], [2, 3]]
+        @test collect(d[2:3, 2:3]) == collect(d)[2:3, 2:3]
+        @test collect(d[3, [1, 3]]) == collect(d)[3, [1, 3]]
+        @test collect(d[[2], 1:2]) == collect(d)[[2], 1:2]
+        # an out-of-range position is an error
+        @test_throws BoundsError m[1:4, 1:4]
+        @test_throws BoundsError m[1:2, [6]]
+        # a transient still answers with a transient
+        t = transient(m)
+        @test t[1:2, [1, 3]] isa TArray{Float64,2}
+        @test collect(t[1:2, [1, 3]]) == collect(m)[1:2, [1, 3]]
+    end
+
     @testset "a transient answers with a transient" begin
         t = transient(u)
         @test map(x -> x + 1, t) isa TVector{Int}
