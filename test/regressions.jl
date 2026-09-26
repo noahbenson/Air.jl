@@ -178,4 +178,73 @@
             @test !isdefined(Air, s)
         end
     end
+
+    @testset "dictionary reads do not allocate" begin
+        # `PDict` and `PWDict` had no `getindex` or `haskey` of their own, so both
+        # went to Base's `AbstractDict` methods — which compare the result against
+        # a sentinel *value*, routing it through a `Union` of the value type and
+        # the sentinel's type. At the size where the root stops being a single
+        # bucket that union stops splitting, and every lookup allocated a box.
+        # Reading through a transient was unaffected, which is how the discrepancy
+        # first showed up: a transient lookup was faster than the dictionary's own.
+        #
+        # Sizes 10 and 100 never allocated; 1000 and 10000 did.
+        function _mkdict(n)
+            d = PDict{Int,Int}()
+            for i in 1:n
+                d = push(d, i => i)
+            end
+            return d
+        end
+        d = _mkdict(1000)
+        tp = transient(d)
+        w = PWDict{Int,Int,Float64}(1 => (1, 1.0), 2 => (2, 2.0))
+        # Compile every measured call site first: `@allocated` on a call that is
+        # being compiled for the first time measures the compilation.
+        acc = 0
+        acc += d[1]
+        acc += haskey(d, 1) ? 1 : 0
+        acc += get(d, 1, 0)
+        acc += (1 => 1) in d ? 1 : 0
+        acc += tp[1]
+        acc += haskey(tp, 1) ? 1 : 0
+        acc += w[1]
+        acc += haskey(w, 1) ? 1 : 0
+        @test acc > 0
+        @test (@allocated d[2]) == 0
+        @test (@allocated haskey(d, 2)) == 0
+        @test (@allocated get(d, 2, 0)) == 0
+        @test (@allocated (2 => 2) in d) == 0
+        # the same reads, through a transient, which never allocated
+        @test (@allocated tp[2]) == 0
+        @test (@allocated haskey(tp, 2)) == 0
+        # and a missing key still throws
+        @test d[2] == 2
+        @test_throws KeyError d[0]
+        @test !haskey(d, 0)
+        @test_throws KeyError tp[0]
+        # the weighted dictionaries delegate to an inner `PDict`, so they had it
+        # too
+        @test w[1] == 1
+        @test (@allocated w[2]) == 0
+        @test (@allocated haskey(w, 2)) == 0
+        @test_throws KeyError w[0]
+    end
+
+    @testset "copy of a persistent collection is the collection" begin
+        # It is immutable, so a copy has nothing to be independent *of*, and what
+        # matters is that the result is the same kind — as `copy(::PArray)` does.
+        # Base's `AbstractDict` fallback instead builds a new dictionary with
+        # `merge!` and so raised a `MethodError` for these types, which have no
+        # `setindex!`.
+        d = PDict(1 => 1, 2 => 2)
+        s = PSet([1, 2])
+        wd = PWDict{Int,Int,Float64}(1 => (1, 1.0))
+        ws = PWSet{Int,Float64}(1 => 1.0)
+        idd = PIdDict{Any,Int}([1] => 1)
+        ids = PIdSet{Any}([1])
+        for u in (d, s, wd, ws, idd, ids)
+            @test copy(u) === u
+        end
+    end
 end

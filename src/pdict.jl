@@ -289,6 +289,23 @@ macro _pdict_code(name::Symbol, eq, h, lindict)
                 ld = get(getfield(u, :root), $h(k), nothing)
                 return (ld === nothing ? df : get(ld, k, df))
             end
+            # `getindex` and `haskey` of our own, rather than Base's. Base's take a
+            # sentinel value and compare the result against it, which routes the
+            # value through a `Union` of the value type and the sentinel's type:
+            # from the size at which the root is a trie rather than a single
+            # bucket, every `d[k]` and every `haskey(d, k)` allocates a box. These
+            # mirror the `get` above, and the transient's versions in
+            # `transient.jl`, which are why reading through a transient did not
+            # have the problem.
+            Base.getindex(u::$name{K,V}, k) where {K,V} = begin
+                ld = get(getfield(u, :root), $h(k), nothing)
+                (ld === nothing) && throw(KeyError(k))
+                return ld[k]
+            end
+            Base.haskey(u::$name{K,V}, k) where {K,V} = begin
+                ld = get(getfield(u, :root), $h(k), nothing)
+                return ld === nothing ? false : haskey(ld, k)
+            end
             Base.in(kv::Pair, u::$name{K,V}, eqfn::F) where {K,V,F<:Function} = begin
                 ld = get(getfield(u, :root), $h(kv[1]), nothing)
                 return (ld === nothing ? false : in(kv, ld, eqfn))
