@@ -27,3 +27,29 @@
     @test 28.5 < counts[:c] < 32.5
     @test 38.5 < counts[:d] < 42.5
 end
+
+# As for `PWDict`: a `PWSet` weighs each element, so it is never `isequal` to a
+# `PSet` with the same elements. `isequal(::PSet, ::PWSet)` was ambiguous rather
+# than false before, so both orders are covered below.
+@testset "PWSet equality" begin
+    a = PWSet{Symbol,Float64}(:x => 2.0, :y => 3.0)
+    b = PWSet{Symbol,Float64}(:y => 3.0, :x => 2.0)
+    @test isequal(a, b)
+    @test isequal(b, a)
+    @test isequal(a, a)
+    # same elements, one weight different: not equal, in both directions
+    c = PWSet{Symbol,Float64}(:x => 2.0, :y => 9.0)
+    @test !isequal(a, c)
+    @test !isequal(c, a)
+    # same elements, no weights at all: not equal, in both directions
+    # (note that `PSet` has no element-vararg constructor, unlike `PSet{T,W}`)
+    d = PSet([:x, :y])
+    @test !isequal(a, d)
+    @test !isequal(d, a)
+    # and neither equal to something that is not a set
+    @test !isequal(a, nothing)
+    @test !isequal(nothing, a)
+    @test !isequal(a, missing)
+    @test !isequal(missing, a)
+    @test !isequal(a, :x)
+end

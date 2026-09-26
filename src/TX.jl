@@ -166,6 +166,9 @@ end
 function Base.setindex!(a::Actor{T}, args...) where {T}
     return error("Actor objects cannot be assigned---they can only be sent functions")
 end
+# As with `Delay`: an `Actor` is a `Ref`, so Base's 0-dimensional `a[i] = x`
+# form (with a `CartesianIndex{0}`) is otherwise ambiguous with the method above.
+Base.setindex!(a::Actor{T}, x, ::CartesianIndex{0}) where {T} = setindex!(a, x)
 # The private main-loop that processes an actor's messages.
 """
     actor_main(actor)
