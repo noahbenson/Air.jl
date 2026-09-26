@@ -41,7 +41,13 @@ macro _pwset_code(name::Symbol, dicttype::Symbol)
             function $name{T,W}() where {T,W<:Number}
                 return $name{T,W}(PHeap{T,W,typeof(>),$dicttype{T,Int}}(>))
             end
-            function $name{T,W}(d::$name{T,W}) where {T,W}
+            # The copy constructor needs the same `W<:Number` bound as the
+            # iteration constructors above. Without it, `$name{T,W}(d)` is
+            # ambiguous with `$name{T,W}(itr::AbstractSet)`: the latter is the
+            # more specific method in `W` and the former in its argument.
+            # The bound costs nothing, since the struct cannot be instantiated
+            # with a non-`Number` weight in the first place.
+            function $name{T,W}(d::$name{T,W}) where {T,W<:Number}
                 return d
             end
             function $name{T,W}(ps::Union{Tuple,Pair}...) where {T,W<:Number}
@@ -194,15 +200,25 @@ PWIdSet{Symbol,Float64} with 3 elements:
 # A few functions needed here instead of inside the macro.
 Base.empty(s::PWSet{T,W}, ::Type{S}=T, ::Type{X}=W) where {T,W,S,X} = PWSet{S,X}()
 Base.empty(s::PWIdSet{T,W}, ::Type{S}=T, ::Type{X}=W) where {T,W,S,X} = PWIdSet{S,X}()
-Base.isequal(s::ST, t) where {ST<:AbstractPWSet} = false
-Base.isequal(t, s::ST) where {ST<:AbstractPWSet} = false
-function Base.isequal(s::SS, t::ST) where {S,T,SS<:AbstractPWSet{S},ST<:AbstractPWSet{T}}
+# As in `pwdict.jl`: a weighted set is never equal to an unweighted one, and
+# these fallbacks take `AbstractSet` rather than `Any` so that they do not
+# overlap every other `isequal` method and turn it ambiguous.
+Base.isequal(s::ST, t::AbstractSet) where {ST<:AbstractPWSet} = false
+Base.isequal(t::AbstractSet, s::ST) where {ST<:AbstractPWSet} = false
+# The mixed cases; see the analogous note in `pwdict.jl`. Without these,
+# `isequal(::PSet, ::PWSet)` — one argument from each side — is ambiguous.
+Base.isequal(s::AbstractPSet, t::AbstractPWSet) = false
+Base.isequal(s::AbstractPWSet, t::AbstractPSet) = false
+# As in `pwdict.jl`: the abstract `AbstractPWSet` in the signature is what makes
+# this the most specific method for two weighted sets, rather than a
+# parameterised form that `api.jl`'s set `isequal` overlaps.
+function Base.isequal(s::AbstractPWSet, t::AbstractPWSet)
     (length(t) == length(s)) || return false
     for x in s
         (x in t) || return false
         (getweight(s, x) == getweight(t, x)) || return false
     end
-    (equalfn(SS) === equalfn(ST)) && return true
+    (equalfn(typeof(s)) === equalfn(typeof(t))) && return true
     for x in t
         (x in s) || return false
     end

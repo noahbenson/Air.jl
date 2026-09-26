@@ -190,6 +190,11 @@ Base.isready(d::Delay{T}) where {T} = isa(d._val, Some{T})
 function Base.setindex!(d::Delay{T}, x...) where {T}
     return throw(ArgumentError("setindex!: Delays are immutable"))
 end
+# A `Delay` is a `Ref`, so Base also offers the 0-dimensional `d[i] = x` form,
+# which takes a `CartesianIndex{0}`; without this method the two signatures are
+# ambiguous. Dropping the index delegates to the method above, so it errors for
+# the same reason.
+Base.setindex!(d::Delay{T}, x, ::CartesianIndex{0}) where {T} = setindex!(d, x)
 Base.isequal(a::Delay{T}, b::Delay{S}) where {T,S} = (a === b) || isequal(a[], b[])
 Base.hash(d::Delay{T}) where {T} = 0x26c850a2957fa577 + hash(d[])
 function Base.show(io::IO, ::MIME"text/plain", d::Delay{T}) where {T}

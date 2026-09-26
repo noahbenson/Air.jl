@@ -263,11 +263,28 @@ function Base.empty(
     return PWIdDict{J,U,X}()
 end
 # Equality functions also.
-Base.isequal(s::DS, t) where {DS<:AbstractPWDict} = false
-Base.isequal(t, s::DS) where {DS<:AbstractPWDict} = false
-function Base.isequal(
-    s::DS, t::DT
-) where {KT,VT,KS,VS,DS<:AbstractPWDict{KS,VS},DT<:AbstractPWDict{KT,VT}}
+# A weighted dictionary is never equal to an unweighted one, because the weights
+# are part of its value. These fallbacks take `AbstractDict` rather than `Any`:
+# with `Any` they overlap every other `isequal` method that could be called on
+# one (including this package's own, and Base's for `Missing`), which makes the
+# call *ambiguous* rather than false. For a non-dictionary, the generic
+# `isequal` already yields false.
+Base.isequal(s::DS, t::AbstractDict) where {DS<:AbstractPWDict} = false
+Base.isequal(t::AbstractDict, s::DS) where {DS<:AbstractPWDict} = false
+# The mixed cases. `api.jl`'s `isequal(::AbstractPDict, ::AbstractPDict)` and the
+# two fallbacks above overlap on a pair with one argument from each side —
+# `isequal(::PDict, ::PWDict)` and its mirror — and neither is more specific
+# there, so the call is ambiguous and in fact throws. The answer is false: a
+# weighted dictionary is never equal to an unweighted one.
+Base.isequal(s::AbstractPDict, t::AbstractPWDict) = false
+Base.isequal(s::AbstractPWDict, t::AbstractPDict) = false
+# The arguments are typed as the abstract `AbstractPWDict` rather than as type
+# variables bounded by the parameterised form. That is what makes this the most
+# specific method for two weighted dictionaries: against a parameterised
+# signature, `api.jl`'s `isequal(::AbstractPDict, ::AbstractPDict)` is neither
+# narrower nor wider, so the call is ambiguous. Calls still specialise on the
+# concrete types, so nothing is lost by writing the abstract type here.
+function Base.isequal(s::AbstractPWDict, t::AbstractPWDict)
     (length(t) == length(s)) || return false
     for (k, v) in s
         tt = get(t, k, t)
@@ -275,7 +292,7 @@ function Base.isequal(
         isequal(tt, v) || return false
         (getweight(s, k) == getweight(t, k)) || return false
     end
-    (equalfn(DS) === equalfn(DT)) && return true
+    (equalfn(typeof(s)) === equalfn(typeof(t))) && return true
     for (k, v) in t
         ss = get(s, k, s)
         (ss === s) && return false

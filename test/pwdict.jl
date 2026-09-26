@@ -34,3 +34,31 @@
     @test 28.5 < vcounts[3] < 32.5
     @test 38.5 < vcounts[4] < 42.5
 end
+
+# Equality is where the weighted dictionaries part company with the unweighted
+# ones: the weight is part of the value, so a `PWDict` is never `isequal` to a
+# `PDict` holding the same pairs. Comparing the two used to be *ambiguous* rather
+# than false — `isequal(::PDict, ::PWDict)` raised a `MethodError` — so both
+# argument orders are checked here. The ambiguity itself is now caught by
+# `Aqua.test_all` with `ambiguities` enabled.
+@testset "PWDict equality" begin
+    a = PWDict{Symbol,Int,Float64}(:x => (1, 2.0), :y => (2, 3.0))
+    b = PWDict{Symbol,Int,Float64}(:y => (2, 3.0), :x => (1, 2.0))
+    @test isequal(a, b)
+    @test isequal(b, a)
+    @test isequal(a, a)
+    # same pairs, one weight different: not equal, in both directions
+    c = PWDict{Symbol,Int,Float64}(:x => (1, 2.0), :y => (2, 9.0))
+    @test !isequal(a, c)
+    @test !isequal(c, a)
+    # same pairs, no weights at all: not equal, in both directions
+    d = PDict{Symbol,Int}(:x => 1, :y => 2)
+    @test !isequal(a, d)
+    @test !isequal(d, a)
+    # and neither equal to something that is not a dictionary
+    @test !isequal(a, nothing)
+    @test !isequal(nothing, a)
+    @test !isequal(a, missing)
+    @test !isequal(missing, a)
+    @test !isequal(a, :x)
+end
