@@ -11,7 +11,10 @@
 #     uses `task_local_storage`, which that check flags.
 #   * `unbound_args` — Aqua reports false positives for `NTuple{N,T}` and
 #     `Vararg{T,N}` signatures; see the note at the call below.
-#   * `piracies`, `stale_deps` — not yet triaged.
+#
+# `piracies` and `stale_deps` are on now as well. The two piracies Air had were
+# both `setindex` methods, and they went away when `setindex` became Air's own
+# verb rather than an extension of Base's — see the note in `api.jl`.
 #
 # @author Noah C. Benson
 #
@@ -31,8 +34,6 @@ using Aqua
         # "declares type variable ... but does not use it" warnings at
         # precompilation time — have been removed.
         unbound_args=false,
-        stale_deps=false,
         persistent_tasks=false,
-        piracies=false,
     )
 end
