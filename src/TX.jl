@@ -641,6 +641,44 @@ aborting the transaction.
 """
 const TX_MAX_ATTEMPTS = 2^14
 
+# Task-local scratch buffers for the commit's lock ordering; see the note in
+# `tx`. One per task, grown as needed. A transaction's commit runs once and never
+# re-enters, so a given buffer is never in use twice at once — including across
+# the retry loop, whose attempts are sequential.
+const _VOLS_KEY = :AirLockVols
+const _ACTS_KEY = :AirLockActs
+const _TXPOOL_KEY = :AirTxPool
+
+# The transaction to reuse, held per task, so that `tx` does not construct a
+# `Transaction` and its three dictionaries on every call.
+#
+# Reuse is safe because `tx_clear!` resets every field of a `Transaction` — the
+# state and all three dictionaries — and `tx` calls it at the top of every
+# attempt. It is in fact better than safe: `empty!` keeps a dictionary's
+# capacity, so a reused transaction does not re-grow its tables each time. An
+# attempt that aborts or raises simply leaves the object dirty for the next
+# `tx_clear!` to deal with.
+#
+# A second `tx` on the same task cannot see the pooled object mid-flight: while a
+# transaction is running, `current_tx[]` is set, and `tx` returns early through
+# `fn()` rather than starting another one.
+function _transaction()
+    d = task_local_storage()
+    t = get(d, _TXPOOL_KEY, nothing)
+    (t isa Transaction) && return t
+    t = Transaction()
+    task_local_storage(_TXPOOL_KEY, t)
+    return t
+end
+function _lockbuf(key::Symbol, ::Type{T}) where {T}
+    d = task_local_storage()
+    buf = get(d, key, nothing)
+    (buf isa Vector{T}) && return buf
+    buf = Vector{T}()
+    task_local_storage(key, buf)
+    return buf
+end
+
 """
     tx(fn)
 
@@ -655,7 +693,7 @@ function tx(fn::F) where {F<:Function}
     # If there's already a transaction running, we needn't make a new one---
     # This transaction function will just get rolled up into the current one.
     (the_tx === nothing) || return fn()
-    the_tx = Transaction()
+    the_tx = _transaction()
     # We need to make a new transaction for this task. We might have to do
     # this a few times if the transaction fails.
     for attempt in 1:TX_MAX_ATTEMPTS
@@ -698,12 +736,28 @@ function tx(fn::F) where {F<:Function}
         nr = length(reads)
         n = nw + nr
         m = length(actors)
-        vols = Vector{Volatile}(undef, n)
-        vols[1:nr] .= keys(reads)
-        vols[(nr + 1):end] .= keys(writes)
+        # The lock-order buffers are task-local scratch space rather than fresh
+        # vectors. Note that `keys(::IdDict)` materialises a vector of its own, so
+        # the obvious version — two arrays filled from three `keys` calls — is five
+        # allocations on every commit. The commit runs once per transaction and
+        # never re-enters, so a per-task buffer is safe (it does not even need to
+        # be cleared between uses: it is `resize!`d and filled from the start).
+        vols = _lockbuf(_VOLS_KEY, Volatile)
+        resize!(vols, n)
+        i = 0
+        for (v, _) in reads
+            vols[i += 1] = v
+        end
+        for (v, _) in writes
+            vols[i += 1] = v
+        end
         sort!(vols; by=objectid)
-        acts = Vector{Actor}(undef, m)
-        acts[1:m] .= keys(actors)
+        acts = _lockbuf(_ACTS_KEY, Actor)
+        resize!(acts, m)
+        i = 0
+        for (a, _) in actors
+            acts[i += 1] = a
+        end
         sort!(acts; by=objectid)
         locked = 0
         checked = 0
