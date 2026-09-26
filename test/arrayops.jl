@@ -185,4 +185,109 @@
         @test collect(vcat(t1, b)) == collect(vcat(a, b))
         @test length(t1) == 3                # the transient is unchanged
     end
+
+    @testset "arithmetic" begin
+        # a sparse vector: default 1.0, with one stored entry
+        a = setindex(PVector{Float64}(1.0, (4,)), 5.0, 2)
+        b = setindex(PVector{Float64}(2.0, (4,)), 7.0, 4)
+        @test collect(a) == [1.0, 5.0, 1.0, 1.0]
+        s = a + b
+        @test s isa PVector{Float64}
+        @test Air.defaultvalue(s) == 3.0          # the defaults are added too
+        @test s[2] == 7.0 && s[4] == 8.0          # 5 + 2, and 1 + 7
+        @test nnz(s) == 2
+        @test collect(s) == collect(a) + collect(b)
+        for (r, expect) in ((a - b, collect(a) - collect(b)),)
+            @test r isa PVector{Float64}
+            @test collect(r) == expect
+        end
+        @test (-a) isa PVector{Float64}
+        @test collect(-a) == -collect(a)
+        @test Air.defaultvalue(-a) == -1.0
+        # scaling and division by a number are elementwise
+        for (r, expect) in (
+            (2a, 2 .* collect(a)), (a * 2, collect(a) .* 2), (a / 2, collect(a) ./ 2)
+        )
+            @test r isa PVector{Float64}
+            @test collect(r) == expect
+        end
+        @test Air.defaultvalue(2a) == 2.0
+        # with a scalar, on either side
+        for (r, expect) in (
+            (a + 1, collect(a) .+ 1), (1 + a, 1 .+ collect(a)),
+            (a - 1, collect(a) .- 1), (1 - a, 1 .- collect(a)),
+        )
+            @test r isa PVector{Float64}
+            @test collect(r) == expect
+        end
+        # with a plain array, on either side: materialised, as in a broadcast
+        for (r, expect) in (
+            (a + [1.0, 1, 1, 1], collect(a) + [1, 1, 1, 1]),
+            ([1.0, 1, 1, 1] + a, [1, 1, 1, 1] + collect(a)),
+        )
+            @test r isa PVector{Float64}
+            @test collect(r) == expect
+        end
+        # matrices are elementwise the same
+        m = setindex(PMatrix(0.0, (2, 2)), 1.0, 1, 1)
+        @test (m + m) isa PMatrix{Float64}
+        @test collect(m + m) == collect(m) + collect(m)
+        @test (2m) isa PMatrix{Float64}
+        # ... but multiplication by a matrix is not elementwise, so it stays
+        # Base's, which answers with a mutable `Matrix`
+        @test (m * m) isa Matrix{Float64}
+        @test collect(m * m) == collect(m) * collect(m)
+        # a transient operand makes a transient result
+        t = transient(a)
+        @test (t + t) isa TVector{Float64}
+        @test (2t) isa TVector{Float64}
+        @test collect(t + t) == collect(a) + collect(a)
+        # the operands are unchanged
+        @test collect(a) == [1.0, 5.0, 1.0, 1.0]
+        @test length(a) == 4 && Air.defaultvalue(a) == 1.0
+    end
+
+    @testset "reshape" begin
+        u = setindex(PVector{Float64}(1.0, (6,)), 9.0, 4)
+        m = reshape(u, (2, 3))
+        @test m isa PArray{Float64,2}
+        @test size(m) == (2, 3)
+        @test Air.defaultvalue(m) == 1.0
+        @test nnz(m) == 1
+        @test collect(m) == reshape(collect(u), 2, 3)
+        @test m[2, 2] == 9.0                    # the linear order is preserved
+        # reshape changes only the shape: it is the same tree
+        @test Air.getfield(m, :_tree) === Air.getfield(u, :_tree)
+        @test collect(reshape(m, (6,))) == collect(u)
+        # dimensions by tuple and by vararg
+        @test size(reshape(u, (6,))) == (6,)
+        @test size(reshape(u, 2, 3)) == (2, 3)
+        # `:` takes up the slack, as it does for an Array
+        for dims in ((2, 3), (3, :), (:, 2), (1, 6), (6, 1), (2, 3, 1), (1, :, 2))
+            @test size(reshape(u, dims)) == size(reshape(collect(u), dims))
+            @test collect(reshape(u, dims)) == reshape(collect(u), dims)
+        end
+        # a shape that does not fit is an error, as for an Array
+        for dims in ((4, 2), (:, :), (5, :), (0, :), (2, 2))
+            @test_throws DimensionMismatch reshape(u, dims)
+        end
+        # The empty cases are asserted directly rather than against Base, because
+        # Base is not consistent across the versions Air supports: Julia 1.10 and
+        # 1.11 raise a `DivideError` for `reshape(Int[], (0, :))` and 1.13 gives
+        # `(0, 0)`. Air follows the latter on every version — a zero among the
+        # known dimensions pins the colon to zero, provided there is nothing to
+        # hold — so its own answers are what is checked.
+        e = PVector{Int}()
+        @test size(reshape(e, (0,))) == (0,)
+        @test size(reshape(e, (0, 1))) == (0, 1)
+        @test size(reshape(e, (0, :))) == (0, 0)
+        @test size(reshape(e, (:, 0))) == (0, 0)
+        @test size(reshape(e, (1, :))) == (1, 0)
+        # a transient keeps Base's mutable view, as an Array does
+        t = transient(u)
+        r = reshape(t, (2, 3))
+        @test parent(r) === t
+        r[1, 1] = -1.0
+        @test t[1] == -1.0
+    end
 end
