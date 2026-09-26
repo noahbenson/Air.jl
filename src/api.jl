@@ -11,7 +11,13 @@
 # MIT License
 # Copyright (c) 2020-2021 Noah C. Benson
 
-import Base.setindex
+# `setindex` is deliberately *not* imported from `Base`. It is defined here as
+# Air's own verb, alongside `push`, `pop` and `delete`: the methods below extend
+# it to Base's own `AbstractArray` and `AbstractDict`, and extending a function
+# Base owns to types Base owns is type piracy — only one package can do it, and
+# neither the one that does nor any other can see the conflict. `Base.setindex`
+# is not exported and nothing in Air calls it. See `test/aqua.jl`, which checks
+# for piracy.
 import Base.delete!
 
 ################################################################################
@@ -214,6 +220,12 @@ Dict{Any,Any}()
 """
 setindex(u::AbstractArray{T,N}, x::S, I...) where {T,N,S} = Base.setindex!(copy(u), x, I...)
 setindex(d::AbstractDict{K,V}, v::U, k::J) where {K,V,U,J} = Base.setindex!(copy(d), v, k)
+# `Base` has `setindex` for its own immutable containers, with the same meaning
+# this verb has — a copy with one position changed — so Air's covers the same
+# ground rather than a narrower one, and these delegate rather than duplicate it.
+setindex(t::Tuple, v, i::Integer) = Base.setindex(t, v, i)
+setindex(nt::NamedTuple, v, i::Symbol) = Base.setindex(nt, v, i)
+setindex(ci::CartesianIndex, v, i) = Base.setindex(ci, v, i)
 export setindex
 
 # #push ========================================================================
