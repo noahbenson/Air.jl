@@ -27,6 +27,7 @@ Random.seed!(0x5eed)
     include("transient.jl")
     # after `transient.jl`, which defines `_owned_count`
     include("broadcast.jl")
+    include("arrayops.jl")
     include("variables.jl")
     include("TX.jl")
     include("countdown.jl")
