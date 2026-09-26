@@ -1,6 +1,9 @@
 using Air
 using Test
 using Random.Random
+# `Air` extends SparseArrays' functions (`nnz`, for one), so the tests that check
+# that interop need the functions themselves in scope, not just Air.
+using SparseArrays: nnz
 import Base.IdSet
 import Base.delete!
 import Base.isready
@@ -15,6 +18,7 @@ Random.seed!(0x5eed)
     include("util.jl")
     include("regressions.jl")
     include("parray.jl")
+    include("broadcast.jl")
     include("pset.jl")
     include("pdict.jl")
     include("lazydict.jl")
