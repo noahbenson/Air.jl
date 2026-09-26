@@ -131,4 +131,29 @@
         u = PVector{Int}(0, (3,))
         @test_throws Exception (u .= 1)
     end
+
+    @testset "a transient operand makes a transient result" begin
+        t = transient(PVector{Float64}(1.0, (5,)))
+        t[2] = 5.0
+        r = t .+ 1
+        @test r isa TVector{Float64}
+        @test !(r isa PArray)
+        @test Air.defaultvalue(r) == 2.0
+        @test collect(r) == collect(t) .+ 1
+        # the operands are left alone
+        @test length(t) == 5 && t[2] == 5.0
+        # the result owns its own tree: persisting it hands back a collection
+        # with no node still marked as owned
+        @test _owned_count(persistent!(r)) == 0
+        # a persistent operand alongside a transient one is still a transient
+        # result, since the result is what a batch update continues to update
+        p = PVector{Float64}(3.0, (5,))
+        r2 = t .+ p
+        @test r2 isa TVector{Float64}
+        @test collect(r2) == collect(t) .+ collect(p)
+        # writing into the result does not reach the transient it came from
+        r2[1] = -1.0
+        @test t[1] == 1.0
+        @test length(t) == 5
+    end
 end

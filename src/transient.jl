@@ -238,12 +238,15 @@ A mutable counterpart of `PArray{T,N}`, for batch updates. See the file comment
 for the contract; use [`transient`](@ref) to make one and
 [`persistent!`](@ref) to get a `PArray` back.
 
-So far only the vector operations are provided — `push!` and `pop!`, both on
-`TArray{T,1}` — so a `TArray` is made from and yields a `PVector`.
-N-dimensional updates, which change entries without changing the shape, will
-follow.
+A `TArray` is an `AbstractArray` with the interface of an `Array` — it indexes,
+iterates, broadcasts, and assigns in place — but it is deliberately not an
+`AbstractPArray`, which is the hierarchy for persistent collections, since a
+method dispatching on that could build a persistent collection out of nodes the
+transient owns. Operations over a transient return `TArray`s. The operations
+that change the length are `push!` and `pop!`, on `TArray{T,1}`; for other
+shapes, `setindex!` changes entries without changing the shape.
 """
-mutable struct TArray{T,N}
+mutable struct TArray{T,N} <: AbstractArray{T,N}
     i0::HASH_T
     index::LinearIndices{N,NTuple{N,Base.OneTo{Int}}}
     tree::PTree{T}
@@ -284,7 +287,73 @@ function persistent!(t::TArray{T,N}) where {T,N}
     return PArray{T,N}(t.i0, index, _ptree_clean(t.tree), t.default)
 end
 
-Base.length(t::TArray) = t.n
+# #The array interface =========================================================
+# A `TArray` is an `AbstractArray`, and deliberately *not* an `AbstractPArray`.
+# The persistent hierarchy is for persistent data: a method dispatching on it can
+# be handed any collection and build a persistent one from it, which for a
+# transient would put nodes the transient owns into a collection that
+# `persistent!` never scrubs. What a transient shares with `Array` is the
+# interface — it indexes, iterates and broadcasts, and updates happen in place —
+# while the collections it produces are `TArray`s.
+Base.IndexStyle(::Type{TArray{T,N}}) where {T,N} = IndexCartesian()
+Base.size(t::TArray) = size(getfield(t, :index))
+Base.length(t::TArray) = getfield(t, :n)
+Base.eltype(::Type{TArray{T,N}}) where {T,N} = T
+Base.eltype(t::TArray{T,N}) where {T,N} = T
+Base.IteratorSize(::Type{TArray{T,N}}) where {T,N} = Base.HasShape{N}()
+Base.IteratorEltype(::Type{TArray{T,N}}) where {T,N} = Base.HasEltype()
+function Base.iterate(t::TArray{T,N}, k::Int) where {T,N}
+    return k > length(t) ? nothing : (t[k], k + 1)
+end
+Base.iterate(t::TArray) = iterate(t, 1)
+# The tree index of a position, bounds-checked.
+function _tarray_index(t::TArray{T,N}, k::Vararg{Int,N}) where {T,N}
+    kk = (N == 1) ? k[1] : getfield(t, :index)[k...]
+    (1 <= kk <= length(t)) || throw(BoundsError(t, k))
+    return getfield(t, :i0) + HASH_T(kk - 1)
+end
+function Base.getindex(t::TArray{T,N}, k::Vararg{Int,N}) where {T,N}
+    return _parray_get(
+        getfield(t, :tree), _tarray_index(t, k...), getfield(t, :default)
+    )
+end
+# Assignment through a transient is in place and returns the transient, as it is
+# for an `Array`. This is the counterpart of the `push!`/`pop!` pair for updates
+# that do not change the shape. As in `setindex` for a `PArray`, a value equal to
+# the array's default needs no entry at all.
+function Base.setindex!(t::TArray{T,N}, v, k::Vararg{Int,N}) where {T,N}
+    ii = _tarray_index(t, k...)
+    if _eqdefault(getfield(t, :default), v)
+        t.tree = _ptree_tdelete(getfield(t, :tree), ii)
+    else
+        t.tree = _ptree_tsetindex(getfield(t, :tree), T(v), ii)
+    end
+    return t
+end
+# An independent transient. The tree is rebuilt with the persistent operation,
+# which leaves no node marked as owned, so neither the copy nor the original can
+# write through the other.
+# The sparse-default accessors, with the same meanings as for a `PArray`.
+defaultvalue(t::TArray{T,N}) where {T,N} = _defaultvalue(getfield(t, :default))
+SparseArrays.nnz(t::TArray{T,N}) where {T,N} = length(getfield(t, :tree))
+function Base.copy(t::TArray{T,N}) where {T,N}
+    tree = PTree{T}()
+    for (ii, v) in getfield(t, :tree)
+        tree = setindex(tree, v, ii)
+    end
+    return TArray{T,N}(
+        getfield(t, :i0), getfield(t, :index), tree, getfield(t, :default),
+        getfield(t, :n),
+    )
+end
+# Scratch space of the same kind. A transient is mutable, so unlike `similar` of
+# a `PArray` there is no reason to hand back a different type. The result is
+# dense: there is no default to inherit from a shape.
+Base.similar(t::TArray{T,N}, ::Type{S}, dims::Dims{N}) where {T,N,S} =
+    TArray{S,N}(HASH_T(0x0), _lindex(dims...), PTree{S}(), nothing, prod(dims))
+Base.similar(t::TArray{T,N}, ::Type{S}) where {T,N,S} = similar(t, S, size(t))
+
+# #Vector operations ===========================================================
 function Base.push!(t::TArray{T,1}, x::S) where {T,S}
     # As in `push` for a PVector: a value equal to the array's default needs no
     # entry in the tree at all.
@@ -300,6 +369,16 @@ function Base.pop!(t::TArray{T,1}) where {T}
     t.n -= 1
     return t
 end
+
+# #The persistent verbs, applied to a transient ================================
+# These are the persistent `Air` operations — `setindex`, `push`, `pop` — given
+# the meaning they have for a mutable array: update in place, return the
+# transient. Without them the generic fallbacks would copy the transient first,
+# which is still safe (`copy` yields a `TArray`, never a `PArray`) but wasteful,
+# and `push` would return a new transient instead of updating the one given.
+setindex(t::TArray{T,N}, v, k::Vararg{Int,N}) where {T,N} = setindex!(t, v, k...)
+push(t::TArray{T,1}, x) where {T} = push!(t, x)
+pop(t::TArray{T,1}) where {T} = pop!(t)
 
 # #TDict ======================================================================
 # The persistent dictionaries are generated from a macro so that the hash and

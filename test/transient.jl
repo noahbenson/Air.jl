@@ -370,4 +370,69 @@ _owned_count(d::Union{Air.AbstractPDict,Air.AbstractPSet}) =
         @test isempty(Air.getfield(Air.getfield(out, :_tree), :cells) === nothing ? () :
                       Air.getfield(Air.getfield(out, :_tree), :cells))
     end
+
+    @testset "a transient is an array" begin
+        t = transient(PVector(collect(1:10)))
+        @test t isa AbstractArray
+        # The design decision worth pinning: a transient is an `AbstractArray`,
+        # for the interface, but *not* an `AbstractPArray`, which is the
+        # hierarchy for persistent collections. A method dispatching on that
+        # could be handed a transient and build a persistent collection out of
+        # nodes the transient owns — which `persistent!` would never scrub.
+        @test !(TArray{Int,1} <: Air.AbstractPArray)
+        @test size(t) == (10,) && length(t) == 10
+        @test Base.IndexStyle(typeof(t)) === IndexCartesian()
+        @test t[3] == 3
+        @test collect(t) == collect(1:10)
+        @test sum(t) == sum(1:10)
+        @test [x for x in t] == collect(1:10)
+        @test_throws BoundsError t[11]
+        # assignment is in place, as it is for an `Array`
+        @test setindex!(t, -3, 3) === t
+        @test t[3] == -3 && length(t) == 10
+        # and the persistent verbs have the mutable meaning
+        @test setindex(t, 99, 1) === t
+        @test push(t, 11) === t
+        @test length(t) == 11 && t[11] == 11
+        @test pop(t) === t
+        @test length(t) == 10
+        # a value equal to the default is not stored
+        d = transient(PVector{Float64}(0.0, (4,)))
+        @test Air.defaultvalue(d) == 0.0
+        @test nnz(d) == 0
+        d[2] = 1.5
+        @test nnz(d) == 1
+        @test d[2] == 1.5
+        d[2] = 0.0
+        @test nnz(d) == 0
+        # multi-dimensional transients index as their persistent counterparts do
+        m = transient(PMatrix(0.0, (2, 3)))
+        @test size(m) == (2, 3)
+        m[2, 3] = 5.0
+        @test m[2, 3] == 5.0 && m[1, 1] == 0.0
+        @test_throws BoundsError m[3, 1]
+        @test collect(m) == [0.0 0.0 0.0; 0.0 0.0 5.0]
+        @test persistent!(m) == setindex(PMatrix(0.0, (2, 3)), 5.0, 2, 3)
+        # `copy` is an independent transient: a write to either is invisible to
+        # the other, in both directions
+        a = transient(PVector(collect(1:5)))
+        b = copy(a)
+        b[1] = -1
+        push!(b, 6)
+        @test a[1] == 1 && length(a) == 5
+        a[2] = -2
+        @test b[2] == 2
+        @test collect(persistent!(a)) == [1, -2, 3, 4, 5]
+        @test collect(persistent!(b)) == [-1, 2, 3, 4, 5, 6]
+        # no operation over a transient can hand back a persistent collection
+        t2 = transient(PVector(collect(1:3)))
+        @test push(t2, 4) isa TArray
+        @test setindex(t2, 9, 1) isa TArray
+        @test copy(t2) isa TArray
+        @test similar(t2) isa TArray
+        # ... and the result of `copy` is unowned, so persisting it finds
+        # nothing to scrub and leaves nothing behind
+        @test _owned_count(persistent!(copy(t2))) == 0
+        @test _owned_count(persistent!(t2)) == 0
+    end
 end
