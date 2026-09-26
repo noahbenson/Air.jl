@@ -2,9 +2,9 @@ name: Docs
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     tags: ['*']
-  # Deliberately not restricted to PRs targeting `master`: PRs stacked on
+  # Deliberately not restricted to PRs targeting `main`: PRs stacked on
   # another feature branch need CI too.
   pull_request:
   workflow_dispatch:

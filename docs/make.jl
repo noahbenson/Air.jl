@@ -29,4 +29,8 @@ deploydocs(;
     repo="github.com/noahbenson/Air.jl",
     deploy_config=Documenter.GitHubActions(),
     push_preview=false,
+    # The repository's default branch is `main`. `deploydocs` otherwise infers
+    # the dev branch by asking git for the remote HEAD and silently falls back to
+    # "master" when it cannot, which would leave the dev docs never updated.
+    devbranch="main",
 )
