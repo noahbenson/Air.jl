@@ -45,6 +45,13 @@ See also: [`PArray`](@ref), [`PVector`](@ref).
 """
 abstract type AbstractPArray{T,N} <: AbstractArray{T,N} end
 export AbstractPDict, AbstractPSet, AbstractPArray
+# A copy of a persistent collection is the collection: it is immutable, so there
+# is nothing for a copy to be independent *of*, and what matters is that the
+# result is the same kind. `Base`'s `AbstractDict` fallback instead builds a new
+# dictionary with `merge!` and so raises a `MethodError` for these types, which
+# have no `setindex!`; `Base.copy(u::PArray)` says the same thing for the arrays.
+Base.copy(u::AbstractPDict) = u
+Base.copy(u::AbstractPSet) = u
 """
     ReentrantRef{T}
 
