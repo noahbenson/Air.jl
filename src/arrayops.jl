@@ -114,3 +114,162 @@ function Base.getindex(u::PVector{T}, I::AbstractVector{<:Integer}) where {T}
     end
     return PVector{T}(HASH_T(0x0), _lindex(length(I)), tree, dflt)
 end
+
+# ==============================================================================
+# Concatenation
+
+# An operand's default, converted to the result's element type. The first
+# operand's default becomes the result's, so that a concatenation of sparse
+# arrays stays sparse.
+function _air_default_as(u, ::Type{T}) where {T}
+    d = _air_default(u)
+    return d === nothing ? nothing : Tuple{T}((T(_defaultvalue(d)),))
+end
+
+# A transient operand makes a transient result, as it does for a broadcast.
+_air_transient(args) = Val(any(a -> a isa TArray, args))
+
+# The concatenations differ only in how an operand's linear positions map into
+# the result, so they share this. An operand whose default is not the result's —
+# or which has no default at all — is materialised position by position, because
+# its default value is an explicit value of the result. An operand that shares
+# the result's default only has to move the entries it stores.
+function _air_concat(
+    ::Type{T}, ::Val{N}, sz, dflt, args, posmap, ::Val{Transient}
+) where {T,N,Transient}
+    tree = PTree{T}()
+    for (m, a) in enumerate(args)
+        ad = _air_default(a)
+        materialise =
+            (dflt === nothing) || (ad === nothing) ||
+            (_defaultvalue(ad) != _defaultvalue(dflt))
+        if materialise
+            for k in 1:length(a)
+                v = T(_air_value(a, k))
+                _eqdefault(dflt, v) && continue
+                tree = _air_set(tree, v, HASH_T(posmap(m, k) - 1), Val(Transient))
+            end
+        else
+            tr = _air_tree(a)
+            (tr === nothing) && continue
+            i0 = _air_i0(a)
+            for (ii, v) in tr
+                k = Int(ii - i0) + 1
+                tree = _air_set(
+                    tree, T(v), HASH_T(posmap(m, k) - 1), Val(Transient)
+                )
+            end
+        end
+    end
+    return _air_pack(T, Val(N), tree, sz, dflt, Val(Transient))
+end
+
+"""
+    vcat(u::PVector, rest::AbstractVector...)
+
+Yields the `PVector` of the given vectors, one after another. The result's default
+is the first operand's, so concatenating sparse vectors stays sparse; an operand
+whose default differs from it is stored explicitly, as its default value is an
+explicit value of the result.
+
+This replaces the `SparseArrays` method that would otherwise be reached and
+return a mutable `SparseVector`, which is why the element types are restricted to
+`Number`: `SparseArrays` defines its own `vcat` over `AbstractVecOrMat{<:Number}`,
+and a method over the same arguments but without that restriction is not more
+specific than it, so the call would be *ambiguous* rather than intercepted. With
+it, this method is strictly narrower in both arguments. A `PVector` of a
+non-`Number` element type is left to `Base`, and its `vcat` is an `Array`.
+"""
+function Base.vcat(
+    u::Union{PVector{T},TVector{T}}, us::AbstractVector{S}...
+) where {T<:Number,S<:Number}
+    args = (u, us...)
+    Tt = promote_type(T, map(eltype, us)...)
+    n = sum(length, args)
+    offs = Vector{Int}(undef, length(args))
+    acc = 0
+    for (m, a) in enumerate(args)
+        offs[m] = acc
+        acc += length(a)
+    end
+    return _air_concat(
+        Tt, Val(1), (n,), _air_default_as(u, Tt), args,
+        (m, k) -> offs[m] + k, _air_transient(args),
+    )
+end
+
+"""
+    hcat(u::PMatrix, rest::AbstractMatrix...)
+
+Yields the `PArray{Float64,2}`-style matrix of the given matrices, side by side.
+The operands must have the same number of rows. As with `vcat`, the result's
+default is the first operand's.
+
+This replaces the `SparseArrays` method that would otherwise be reached and
+return a mutable `SparseMatrixCSC`. As with `vcat`, the element types are
+restricted to `Number` so that this method is strictly narrower than
+`SparseArrays`' rather than ambiguous with it.
+"""
+function Base.hcat(
+    u::Union{PMatrix{T},TArray{T,2}}, us::AbstractMatrix{S}...
+) where {T<:Number,S<:Number}
+    args = (u, us...)
+    Tt = promote_type(T, map(eltype, us)...)
+    rows = size(u, 1)
+    all(a -> size(a, 1) == rows, us) || throw(
+        DimensionMismatch("hcat: the matrices must have the same number of rows")
+    )
+    cols = sum(a -> size(a, 2), args)
+    # An operand occupies a block of columns, so its linear positions shift by a
+    # constant: the number of columns before it, times the number of rows.
+    offs = Vector{Int}(undef, length(args))
+    acc = 0
+    for (m, a) in enumerate(args)
+        offs[m] = acc * rows
+        acc += size(a, 2)
+    end
+    return _air_concat(
+        Tt, Val(2), (rows, cols), _air_default_as(u, Tt), args,
+        (m, k) -> offs[m] + k, _air_transient(args),
+    )
+end
+
+"""
+    vcat(u::PMatrix, rest::AbstractMatrix...)
+
+Yields the matrix of the given matrices, one above another. The operands must
+have the same number of columns. As with the vectors, the result's default is the
+first operand's, and the element types are restricted to `Number` for the same
+reason — to be strictly narrower than `SparseArrays`' method rather than
+ambiguous with it.
+"""
+function Base.vcat(
+    u::Union{PMatrix{T},TArray{T,2}}, us::AbstractMatrix{S}...
+) where {T<:Number,S<:Number}
+    args = (u, us...)
+    Tt = promote_type(T, map(eltype, us)...)
+    cols = size(u, 2)
+    all(a -> size(a, 2) == cols, us) || throw(
+        DimensionMismatch("vcat: the matrices must have the same number of columns")
+    )
+    rows = sum(a -> size(a, 1), args)
+    r = [size(a, 1) for a in args]
+    off = Vector{Int}(undef, length(args))
+    acc = 0
+    for m in eachindex(args)
+        off[m] = acc
+        acc += r[m]
+    end
+    # Stacking rows is not a constant shift: column `j` of an operand lands in
+    # the wider column of the result, so the mapping has to go through the
+    # operand's own row count.
+    posmap = function (m, k)
+        i = mod1(k, r[m])
+        j = div(k - 1, r[m]) + 1
+        return (off[m] + i - 1) + (j - 1) * rows + 1
+    end
+    return _air_concat(
+        Tt, Val(2), (rows, cols), _air_default_as(u, Tt), args, posmap,
+        _air_transient(args),
+    )
+end

@@ -87,4 +87,62 @@
         @test collect(map(x -> x + 1, t)) == collect(u) .+ 1
         @test length(t) == 5                 # the transient is unchanged
     end
+
+    @testset "concatenation" begin
+        a = PVector(collect(1:3))
+        b = PVector(collect(4:6))
+        c = vcat(a, b)
+        @test c isa PVector{Int}
+        @test length(c) == 6
+        @test collect(c) == vcat(collect(a), collect(b))
+        @test collect(vcat(a)) == collect(a)
+        @test collect(hcat(PVector([1, 2]), PVector([3, 4]))) ==
+              hcat([1, 2], [3, 4])
+        # the first operand's default becomes the result's, so concatenating
+        # sparse vectors stays sparse
+        s = setindex(PVector{Float64}(2.0, (4,)), 9.0, 3)
+        t = PVector{Float64}(2.0, (3,))
+        sc = vcat(s, t)
+        @test sc isa PVector{Float64}
+        @test Air.defaultvalue(sc) == 2.0
+        @test nnz(sc) == 1
+        @test length(sc) == 7
+        @test collect(sc) == vcat(collect(s), collect(t))
+        # an operand with a different default is materialised: its default value
+        # is an explicit value of the result
+        u2 = PVector{Float64}(5.0, (3,))
+        su = vcat(s, u2)
+        @test Air.defaultvalue(su) == 2.0
+        @test length(su) == 7
+        @test nnz(su) == 4                   # s's one entry, plus u2's three
+        @test collect(su) == vcat(collect(s), collect(u2))
+        # a plain vector operand is materialised the same way
+        @test collect(vcat(s, [1.0, 2.0])) == vcat(collect(s), [1.0, 2.0])
+        # element types promote as they do for `Base`
+        @test vcat(a, PVector([1.5])) isa PVector{Float64}
+        @test collect(vcat(a, PVector([1.5]))) == [1, 2, 3, 1.5]
+        # matrices: hcat stacks columns, vcat stacks rows
+        m1 = setindex(PMatrix(0.0, (2, 2)), 1.0, 1, 1)
+        m2 = setindex(PMatrix(0.0, (2, 3)), 2.0, 2, 2)
+        h = hcat(m1, m2)
+        @test h isa PArray{Float64,2}
+        @test size(h) == (2, 5)
+        @test Air.defaultvalue(h) == 0.0
+        @test nnz(h) == 2
+        @test collect(h) == hcat(collect(m1), collect(m2))
+        # stacking rows maps positions through the operand's row count, so this
+        # is the case where the shift is not constant
+        v = vcat(m1, m1)
+        @test v isa PArray{Float64,2}
+        @test size(v) == (4, 2)
+        @test Air.defaultvalue(v) == 0.0
+        @test collect(v) == vcat(collect(m1), collect(m1))
+        @test_throws DimensionMismatch hcat(m1, PMatrix(0.0, (3, 1)))
+        @test_throws DimensionMismatch vcat(m1, PMatrix(0.0, (2, 3)))
+        # a transient operand answers with a transient
+        t1 = transient(a)
+        @test vcat(t1, b) isa TVector{Int}
+        @test collect(vcat(t1, b)) == collect(vcat(a, b))
+        @test length(t1) == 3                # the transient is unchanged
+    end
 end
