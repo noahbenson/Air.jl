@@ -91,8 +91,14 @@
         @test collect(r) == collect(u) .+ zeros(4)
         @test Air.defaultvalue(r) === undef     # no default, so every entry is stored
         @test nnz(r) == 4
-        # a PArray built with `undef` is dense in the same way
-        d = setindex(PArray{Float64,1}(undef, (4,)), 2.0, 1)
+        # A PArray built with `undef` is dense in the same way. Every position
+        # must be set before it is read: such an array has no default, so an
+        # unset position raises rather than yielding a value.
+        @test_throws ErrorException PArray{Float64,1}(undef, (4,))[1]
+        d = PArray{Float64,1}(undef, (4,))
+        for k in 1:4
+            d = setindex(d, float(k), k)
+        end
         rd = d .+ 1
         @test nnz(rd) == 4
         @test collect(rd) == collect(d) .+ 1

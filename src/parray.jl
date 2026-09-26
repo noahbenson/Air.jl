@@ -410,8 +410,17 @@ function _parray_get(u::PTree{T}, ii::HASH_T, ::Nothing) where {T}
     x = get(u, ii, nothing)
     (x === nothing) || return x
     isa(nothing, T) && in(ii => nothing, u) && return x
-    #error("PArray has unset values and no default")
-    return Array{T}(undef, 1)[1]
+    # An array with no default should hold a value at every position, so reaching
+    # here means one was never set. This used to `return Array{T}(undef, 1)[1]`,
+    # which yields *fresh* uninitialized memory on every read: nondeterministic
+    # (two reads of the same position disagree), one allocation per read, and for
+    # a `T` holding references a pointer that must never be dereferenced. Raising
+    # is what the author's commented-out line intended, and it matches what Julia
+    # does for a reference-holding `Array` built with `undef`.
+    error(
+        "PArray has unset values and no default: an array built with `undef` " *
+        "must have every position set before it is read",
+    )
 end
 _parray_get(u::PTree{T}, ii::HASH_T, d::Tuple{T}) where {T} = begin
     return get(u, ii, d[1])
