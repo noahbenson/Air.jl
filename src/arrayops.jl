@@ -313,3 +313,105 @@ function Base.vcat(
         _air_transient(args),
     )
 end
+
+# ==============================================================================
+# The elementwise arithmetic operators
+
+# Each of these is the broadcast, which already answers a `PArray` with a
+# `PArray` (a `TArray` for a transient operand), already maps the default as well
+# as the stored entries, already drops an entry that lands on the new default, and
+# already handles a scalar or a plain-array operand. Defining them is what stops
+# `u + v` from falling back to `Base`, which allocates a mutable `Array`.
+#
+# The set of signatures is deliberate. `Base` defines `+` for `(AbstractArray,
+# AbstractArray)`, `(AbstractArray, Number)` and `(Number, AbstractArray)`; a
+# method whose argument is a `Union` of those alternatives is *not* narrower than
+# them, so the call would be ambiguous rather than intercepted. Hence one method
+# per combination of Air type and Base kind, plus the Air-Air case, which is the
+# narrowest of them all and resolves the overlaps between the others.
+#
+# Matrix multiplication is deliberately not here. `A * B` is not elementwise, and
+# `Base`'s method — which answers with a mutable `Matrix` — is the right answer
+# for it. Only multiplication and division *by a number* are included.
+const _AirArray = Union{PArray,TArray}
+
+Base.:+(u::_AirArray, v::_AirArray) = broadcast(+, u, v)
+Base.:+(u::_AirArray, v::Number) = broadcast(+, u, v)
+Base.:+(u::_AirArray, v::AbstractArray) = broadcast(+, u, v)
+Base.:+(u::Number, v::_AirArray) = broadcast(+, u, v)
+Base.:+(u::AbstractArray, v::_AirArray) = broadcast(+, u, v)
+
+Base.:-(u::_AirArray, v::_AirArray) = broadcast(-, u, v)
+Base.:-(u::_AirArray, v::Number) = broadcast(-, u, v)
+Base.:-(u::_AirArray, v::AbstractArray) = broadcast(-, u, v)
+Base.:-(u::Number, v::_AirArray) = broadcast(-, u, v)
+Base.:-(u::AbstractArray, v::_AirArray) = broadcast(-, u, v)
+Base.:-(u::_AirArray) = broadcast(-, u)
+
+# Multiplication and division by a number are elementwise, so they are included;
+# array-by-array multiplication is `Base`'s (see the note above).
+Base.:*(a::Number, u::_AirArray) = broadcast(*, a, u)
+Base.:*(u::_AirArray, a::Number) = broadcast(*, u, a)
+Base.:/(u::_AirArray, a::Number) = broadcast(/, u, a)
+
+# ==============================================================================
+# Reshape
+
+# `reshape` preserves the linear order, and a `PArray`'s tree is keyed by that
+# order, so the tree does not change at all: only the shape does. That makes this
+# O(1) rather than a copy, and it keeps a sparse array sparse for free.
+#
+# A `TArray` is left to `Base`, which answers with a `ReshapedArray` — a mutable
+# view over the transient, which is the right answer for a mutable array, just as
+# a new `PArray` is for an immutable one.
+
+# The dimensions a `:` stands for, following `Base`: at most one colon, and it
+# takes up whatever the others leave. A zero among the others pins it to zero,
+# and only if there is nothing to hold.
+function _air_reshape_dims(n::Int, dims::Tuple)
+    ncolon = count(d -> d === Colon(), dims)
+    (ncolon > 1) &&
+        throw(DimensionMismatch("reshape: at most one dimension may be `:`"))
+    (ncolon == 0) && return dims
+    known = prod(d -> d === Colon() ? 1 : Int(d), dims; init=1)
+    if known == 0
+        (n == 0) ||
+            throw(DimensionMismatch("reshape: the dimensions do not multiply to $n"))
+        return map(d -> d === Colon() ? 0 : Int(d), dims)
+    end
+    (n % known == 0) ||
+        throw(DimensionMismatch("reshape: $n is not divisible by $known"))
+    return map(d -> d === Colon() ? n ÷ known : Int(d), dims)
+end
+
+"""
+    reshape(u::PArray, dims)
+
+Yields the `PArray` of the same elements in the given shape. Since a `PArray`'s
+tree is keyed by linear position and reshaping preserves the linear order, this
+changes only the shape: it is O(1), and a sparse array stays sparse.
+
+A `:` may stand for one of the dimensions, as it does for an `Array`, and takes
+up whatever the other dimensions leave.
+
+See also: `Base.reshape`, [`PArray`](@ref).
+"""
+function _air_reshape(u::PArray{T}, dims::Tuple) where {T}
+    d = _air_reshape_dims(length(u), dims)
+    (prod(d) == length(u)) ||
+        throw(DimensionMismatch("reshape: the dimensions do not multiply to $(length(u))"))
+    return PArray{T,length(d)}(
+        getfield(u, :_i0), _lindex(d...), getfield(u, :_tree), getfield(u, :_default)
+    )
+end
+Base.reshape(u::PArray{T}, dims::Tuple{Vararg{Union{Int,Colon}}}) where {T} =
+    _air_reshape(u, dims)
+Base.reshape(u::PArray, dims::Vararg{Union{Int,Colon}}) = _air_reshape(u, dims)
+# The all-integer case, and the two `Colon` forms that Base defines for a vector,
+# each have to be named explicitly: a signature over `Union{Int,Colon}` is not
+# narrower than one over all `Int` (or over a bare `Colon`), so those calls would
+# be ambiguous rather than reaching the methods above.
+Base.reshape(u::PArray{T}, dims::Dims{M}) where {T,M} = _air_reshape(u, dims)
+Base.reshape(u::PVector{T}, dims::Tuple{Colon}) where {T} = _air_reshape(u, dims)
+Base.reshape(u::PVector, ::Colon) = _air_reshape(u, (Colon(),))
+
