@@ -81,12 +81,14 @@
     @test nnz(m) == 2                       # the zeros are not stored
     # and from an array: the entries that are not its default
     @test collect(psparse([1, 0, 2])) == [1, 0, 2]
-    # a plain `Array` has no default, so nothing is droppable and every entry is
-    # kept; naming a default gives the `sparse(A)` behaviour
-    @test nnz(psparse([1, 0, 2])) == 3
-    @test nnz(psparse([1, 0, 2]; default = 0)) == 2
-    @test Air.defaultvalue(psparse([1, 0, 2])) === undef
-    @test Air.defaultvalue(psparse([1, 0, 2]; default = 0)) == 0
+    # the zeros are dropped, as `sparse(A)` drops them
+    @test nnz(psparse([1, 0, 2])) == 2
+    @test Air.defaultvalue(psparse([1, 0, 2])) == 0
+    # and a non-zero default, which a `SparseArray` cannot express: the 1 is
+    # dropped because it *is* the default, and the other two are stored
+    @test nnz(psparse([1, 0, 2]; default = 1)) == 2
+    @test collect(psparse([1, 0, 2]; default = 1)) == [1, 0, 2]
+    @test Air.defaultvalue(psparse([1, 0, 2]; default = 1)) == 1
     @test nnz(psparse(setindex(PVector{Int}(0, (3,)), 5, 2))) == 1
 
     @test collect(pdiagm([1, 2, 3])) == [1 0 0; 0 2 0; 0 0 3]

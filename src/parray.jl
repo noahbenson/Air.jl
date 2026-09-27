@@ -709,16 +709,20 @@ end
 
 """
     psparse(I, J, V, m, n)
-    psparse(A; default=nothing)
+    psparse(A; default=zero(eltype(A)))
 
 Yields the `PArray` holding `V[k]` at position `(I[k], J[k])`, of size `m` by `n`,
 as `SparseArrays.sparse` does — or, from an array, one holding the entries of `A`
-that are not its default value.
+that are not zero, again as `sparse(A)` does.
 
-Unlike a `SparseArray`, the array it yields has a *default value* rather than
-assuming zero, so an entry equal to the default is not stored at all. Repeated
-positions are an error rather than being summed, since a persistent array cannot
-distinguish "written twice" from "written once".
+Unlike a `SparseArray`, the array it yields may have a default value of its own;
+`default` names it, and an entry equal to it is not stored at all. So
+`psparse(A; default=NaN)` yields an array that reads as `NaN` wherever `A` is
+`NaN`, rather than storing those positions — which is the only way to express
+what a `SparseArray` cannot.
+
+Repeated positions are an error rather than being summed, since a persistent
+array cannot distinguish "written twice" from "written once".
 
 # Examples
 
@@ -749,11 +753,9 @@ function psparse(
 end
 psparse(I::AbstractVector, J::AbstractVector, V::AbstractVector) =
     psparse(I, J, V, maximum(I; init = 0), maximum(J; init = 0))
-# `default` is `nothing` by default, meaning "an array with no default", so every
-# entry is kept: a plain `Array` cannot distinguish an entry that is zero from one
-# that is absent, and neither then can this. Passing `default=zero(eltype(A))`
-# gives what `SparseArrays.sparse(A)` gives, dropping the zeros.
-psparse(A::AbstractArray{T,N}; default = nothing) where {T,N} =
+# The default is zero, so that this does what `sparse(A)` does and drops the
+# zeros; `default` overrides it for the arrays a `SparseArray` cannot express.
+psparse(A::AbstractArray{T,N}; default = zero(T)) where {T,N} =
     _parray_from(T, Val(N), size(A), default, _pnz(A))
 # The entries of an array that are not its default; from a `PArray` that is
 # exactly its tree, and from anything else every position.
