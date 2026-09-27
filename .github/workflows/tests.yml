@@ -43,6 +43,13 @@ jobs:
           - os: ubuntu-latest
             version: '1.10'
             threads: '1'
+          # ... and one leg above the usual four, where the STM sees contention
+          # no other leg does. The concurrency tests in `tx_concurrency.jl` scale
+          # their task counts with the thread count, so this leg both runs more
+          # tasks and runs them genuinely in parallel.
+          - os: ubuntu-latest
+            version: '1.10'
+            threads: '8'
     env:
       JULIA_NUM_THREADS: ${{ matrix.threads }}
     steps:
