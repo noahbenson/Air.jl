@@ -168,7 +168,9 @@
     a = PSet([1, 2, 3])
     b = PSet([3, 4])
     @test filter(isodd, a) isa PSet{Int}
-    @test collect(filter(isodd, a)) == [1, 3]
+    # a `PSet` is unordered, so compare sorted: the hash order differs between
+    # Julia versions, which is not something to assert
+    @test sort(collect(filter(isodd, a))) == [1, 3]
     @test replace(a, 1 => 9) isa PSet{Int}
     @test 9 in replace(a, 1 => 9)
     @test union(a, b) isa PSet{Int}
