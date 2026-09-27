@@ -342,8 +342,26 @@ function actor_reset!(a::Actor{T}, val) where {T}
 end
 
 # #Volatile ####################################################################
-# Volatile's, like Actor's, have a single immutable state structure.
-struct VolatileData{T}
+# Volatile's, like Actor's, have a single state structure.
+#
+# `VolatileData` is deliberately `mutable`, and that is what makes it a heap
+# reference rather than a value that has to be materialised. Reading a volatile's
+# value through an unparameterised ref — which is what the commit's validation,
+# `volatile_setindex!`'s comparisons and a read inside a transaction all do —
+# otherwise boxes it: measured, `getfield(v, :value)` with `v::Volatile` costs
+# 20.5 ns and one allocation, against 2.8 ns and none when the type is known.
+# Nothing needs to be materialised for a mutable object, so every such read is
+# allocation-free; the cost is one allocation wherever one is constructed, and
+# reads outnumber constructions in any transaction. A write's allocations went
+# 12 -> 5 and its time 849 -> 632 ns.
+#
+# What keeps it sound is that a write *constructs* a new `VolatileData` rather
+# than changing one in place, so the `===` comparisons sprinkled through the
+# staged-write logic still mean "the same change" under reference equality. Do
+# not turn it back into a `struct` without re-measuring, and do not start mutating
+# one in place: the concurrency tests in `test/tx_concurrency.jl` exist to catch
+# that class of mistake.
+mutable struct VolatileData{T}
     value::T
     # These two are `Function`-typed, which makes a filter or finalizer call
     # dynamic. Parameterizing the type would make those calls static, but it
