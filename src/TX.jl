@@ -560,15 +560,23 @@ Transactions have the following properties:
 """
 mutable struct Transaction
     state::Symbol
-    reads::IdDict{Volatile,VolatileData}
-    writes::IdDict{Volatile,NTuple{2,VolatileData}}
-    actors::IdDict{Actor,ActorTxData}
+    # `Dict`s rather than `IdDict`s, even though the keys are compared by
+    # identity. A `Dict` gives identity for these keys anyway, because neither
+    # `Volatile` nor `Actor` defines `hash` or `isequal`, so both fall back to
+    # Base's identity versions — verified by checking that two equal-valued but
+    # distinct volatiles hash differently and occupy two entries in a `Dict`, as
+    # they do in an `IdDict`. What matters is that `Base.IdDict` keeps its
+    # *values* in a `Vector{Any}`, which is where a transaction's 2 kB of
+    # `Memory{Any}` came from; a `Dict`'s keys and values are both typed.
+    reads::Dict{Volatile,VolatileData}
+    writes::Dict{Volatile,NTuple{2,VolatileData}}
+    actors::Dict{Actor,ActorTxData}
     function Transaction()
         return new(
             :running,
-            IdDict{Volatile,VolatileData}(),
-            IdDict{Volatile,NTuple{2,VolatileData}}(),
-            IdDict{Actor,ActorTxData}(),
+            Dict{Volatile,VolatileData}(),
+            Dict{Volatile,NTuple{2,VolatileData}}(),
+            Dict{Actor,ActorTxData}(),
         )
     end
 end
@@ -737,11 +745,11 @@ function tx(fn::F) where {F<:Function}
         n = nw + nr
         m = length(actors)
         # The lock-order buffers are task-local scratch space rather than fresh
-        # vectors. Note that `keys(::IdDict)` materialises a vector of its own, so
-        # the obvious version — two arrays filled from three `keys` calls — is five
-        # allocations on every commit. The commit runs once per transaction and
-        # never re-enters, so a per-task buffer is safe (it does not even need to
-        # be cleared between uses: it is `resize!`d and filled from the start).
+        # vectors. The obvious version — two arrays filled from the transaction's
+        # key sets — is five allocations on every commit. The commit runs once per
+        # transaction and never re-enters, so a per-task buffer is safe; it does not
+        # even need clearing between uses, being `resize!`d and filled from the
+        # start.
         vols = _lockbuf(_VOLS_KEY, Volatile)
         resize!(vols, n)
         i = 0
