@@ -102,6 +102,24 @@
             end
         end
         @test @inferred(readstr()) == "x"
+
+        # An `Actor`'s value is inferred too. It inferred as `Any` for two
+        # reasons, both fixed: the transaction's actors dictionary is valued by
+        # unparameterised `ActorTxData` (a transaction can touch differently
+        # typed actors), so `tx_actordata` lost the actor's type parameter; and
+        # recovering the value with an `isa` test *for the exception* left the
+        # field read on the whole two-member union, which widens to `Any`. An
+        # assertion and a positive `isa` are what fix them — see `TX.jl`.
+        actorread() = Actor{Int}(0)[]
+        @test @inferred(actorread()) === 0
+        readactor() = begin
+            a = Actor{Int}(0)
+            tx() do
+                a[]
+            end
+        end
+        @test @inferred(readactor()) === 0
+        @test @inferred(Actor{String}("x")[]) == "x"
     end
 
     @testset "deferred: representation changes" begin
