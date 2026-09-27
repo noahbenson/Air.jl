@@ -2,7 +2,21 @@ using Documenter, Air
 
 makedocs(;
     modules=[Air],
-    format=Documenter.HTML(; prettyurls=get(ENV, "CI", nothing) == "true"),
+    format=Documenter.HTML(;
+        prettyurls=get(ENV, "CI", nothing) == "true",
+        # The default branch, named explicitly. Documenter otherwise asks git for
+        # the remote HEAD and falls back to a `master` that this repository has
+        # not had since the rename, which would leave every "edit this page" link
+        # pointing at a branch that does not exist.
+        edit_link="main",
+        # `API.md` is one reference page holding every public docstring, so it is
+        # large by construction: the default warning threshold of 100 KiB and
+        # error threshold of 200 KiB are sized for prose pages, and this page is
+        # most of the way to the error already. Raising them is a decision about
+        # this page, not a way of ignoring a problem.
+        size_threshold_warn=250 * 1024,
+        size_threshold=500 * 1024,
+    ),
     pages=[
         "Home" => "index.md",
         "Persistent Arrays" => "parray.md",
@@ -17,12 +31,18 @@ makedocs(;
         "Utilities" => "util.md",
         "API Reference" => "API.md",
     ],
-    repo="https://github.com/noahbenson/Air.jl/blob/{commit}{path}#L{line}",
+    # A `Remotes.GitHub` rather than a URL string. Documenter derives the navbar
+    # link, the "edit this page" link and the commit of a source link from it, and
+    # with a bare string it warns that it cannot — and then falls back to a
+    # `master` default that this repository does not have.
+    repo=Documenter.Remotes.GitHub("noahbenson", "Air.jl"),
     sitename="Air.jl",
     authors="Noah C. Benson",
-    # Several internal docstrings cross-reference each other by unqualified
-    # name, so strict cross-reference checking is left off for now.
-    checkdocs=:none,
+    # `:exports` requires that every exported symbol's docstring appear somewhere
+    # in these pages. `:all` — which would also demand that every *internal*
+    # docstring appear — is deliberately not used: those are written for people
+    # working on Air, not for people reading the manual.
+    checkdocs=:exports,
 )
 
 deploydocs(;

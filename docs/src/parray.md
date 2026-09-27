@@ -57,3 +57,36 @@ julia> setindex(m, -100, 2, 1)
  -100  5  5
 ```
 
+
+## Operations that keep the array persistent
+
+A `PArray` is a dense/sparse hybrid. Every array has a default value, and any
+position that is not stored explicitly reads as that default. Operations on a
+`PArray` preserve both halves of that: a broadcast maps the *default* as well as
+the stored entries, and a result equal to the new default is simply not stored.
+So a sparse array stays sparse, and a batch of values that happen to equal the
+default stores nothing at all.
+
+That is true of broadcasting, `map`, `filter`,
+`reverse`, indexing with a vector of positions, `vcat` and
+`hcat`, the elementwise arithmetic operators, and `reshape` — which
+reuses the same tree with a different shape and so costs nothing. Two things are
+deliberately otherwise: `similar` returns a mutable `Array`, because that is what
+it promises its caller and an immutable array cannot be it; and matrix
+multiplication is left to Base, because `A * B` is not elementwise and a mutable
+`Matrix` is the right answer for it.
+
+## Transients
+
+[`transient`](@ref) yields a mutable view of an array for batch updates. It
+supports `push!` and `pop!`, and `setindex!` in place, with the interface of an
+`Array`; [`persistent!`](@ref) hands back a `PArray` in O(1) when the batch is
+done. A transient is an `AbstractArray` but deliberately *not* an
+`AbstractPArray`, which is the hierarchy for persistent collections.
+
+The gain is measured rather than assumed, and it is narrower than it looks. For
+appends a transient is a clear win, since consecutive appends reuse the same
+rightmost node. For updates to existing entries the crossover is around ten
+updates per batch, and a single update is *slower* through a transient than
+directly. The per-type docstrings — [`TArray`](@ref), [`TDict`](@ref),
+[`TSet`](@ref) and their identity-keyed variants — carry the tables.
