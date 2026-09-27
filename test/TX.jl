@@ -186,4 +186,73 @@
             @test geterror(b) === nothing
         end
     end
+
+    @testset "TxIO and airout" begin
+        # `TxIO` writes through an `Actor`, so concurrent writers are serialised —
+        # each `write` is one message. And because a send inside a transaction is
+        # itself transactional (the message is staged and released only at commit),
+        # output written inside a transaction appears only if it succeeds. That is
+        # the contract its docstring states, and the abort case below is the part
+        # of it nothing else covers.
+        buf = IOBuffer()
+        io = TxIO(buf)
+        content() = String(take!(copy(buf)))
+        # The writes below are asynchronous — they are performed by the TxIO's
+        # actor task — so each has to be waited for. (`waituntil` is defined
+        # inside the neighbouring testset, so this one defines its own.)
+        waitio(f; timeout = 10.0) = begin
+            t0 = time()
+            while !f() && (time() - t0) < timeout
+                sleep(0.005)
+            end
+            f()
+        end
+        @test iswritable(io)
+        @test !isreadable(io)
+        @test eof(io) == eof(buf)
+        @test_throws ErrorException TxIO(IOBuffer(read=true, write=false))
+
+        # outside a transaction, a write goes through
+        write(io, "direct")
+        @test waitio(() -> content() == "direct")
+        # inside a transaction that commits
+        tx() do
+            write(io, "-committed")
+        end
+        @test waitio(() -> content() == "direct-committed")
+        # inside a transaction that aborts, it must never be sent. The check is
+        # made deterministic rather than by waiting and hoping: a marker is
+        # written *after* the aborted attempt and waited for. The actor processes
+        # its queue in order, so once the marker has appeared, anything the
+        # aborted transaction had sent would have appeared too.
+        try
+            tx() do
+                write(io, "-ABORTED")
+                error("abort")
+            end
+        catch
+        end
+        write(io, "-marker")
+        @test waitio(() -> content() == "direct-committed-marker")
+        @test !occursin("ABORTED", content())
+
+        # the rest of the IO interface
+        print(io, "-print")
+        println(io, "-line")
+        @test waitio(() -> content() == "direct-committed-marker-print-line\n")
+
+        # concurrent writers do not interleave, since one write is one message
+        if Threads.nthreads() >= 2
+            n = 20
+            @sync for i in 1:n
+                Threads.@spawn write(io, "|$(i)")
+            end
+            @test waitio(() -> all(occursin("|$(i)", content()) for i in 1:n))
+        end
+
+        # `airout` is the `stdout` counterpart
+        @test iswritable(airout)
+        @test !isreadable(airout)
+        @test Air.AirOut() isa Air.AirOut
+    end
 end
