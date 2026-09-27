@@ -66,9 +66,17 @@
         end for _ in 1:nw]
         readers = [Threads.@spawn begin
             for _ in 1:M
-                tx() do
-                    (a[] == b[]) || Threads.atomic_add!(torn, 1)
+                # What matters is what a *committed* transaction observed. A
+                # reader may legitimately see a torn pair inside an attempt that
+                # is then invalidated and retried — that is what optimistic
+                # concurrency permits — so counting a violation from inside the
+                # body would count speculative attempts. `tx`'s return value is
+                # produced only by an attempt that commits, so counting here
+                # counts exactly the observations we care about.
+                bad = tx() do
+                    a[] != b[]
                 end
+                bad && Threads.atomic_add!(torn, 1)
             end
         end for _ in 1:(T - nw)]
         foreach(wait, writers)
