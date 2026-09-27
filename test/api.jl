@@ -149,4 +149,49 @@
         @test !(p === q)
         @test hash(p) == hash(q)
     end
+
+@testset "operations that keep the collection's kind" begin
+    # `Base` does these for `AbstractDict`/`AbstractSet` by building a mutable
+    # `Dict`/`Set`, which for a persistent collection either raises (its `empty`
+    # is immutable) or returns the wrong kind.
+    d = PDict(:a => 1, :b => 2, :c => 3)
+    f = filter(kv -> isodd(kv.second), d)
+    @test f isa PDict{Symbol,Int}
+    @test length(f) == 2 && f[:a] == 1 && f[:c] == 3 && !haskey(f, :b)
+    @test length(d) == 3                        # the source is untouched
+
+    r = replace(d, 1 => 9)
+    @test r isa PDict{Symbol,Int}
+    @test r[:a] == 9 && r[:b] == 2 && length(r) == 3
+    @test d[:a] == 1
+
+    a = PSet([1, 2, 3])
+    b = PSet([3, 4])
+    @test filter(isodd, a) isa PSet{Int}
+    @test collect(filter(isodd, a)) == [1, 3]
+    @test replace(a, 1 => 9) isa PSet{Int}
+    @test 9 in replace(a, 1 => 9)
+    @test union(a, b) isa PSet{Int}
+    @test sort(collect(union(a, b))) == [1, 2, 3, 4]
+    @test sort(collect(intersect(a, b))) == [3]
+    @test sort(collect(setdiff(a, b))) == [1, 2]
+    @test sort(collect(symdiff(a, b))) == [1, 2, 4]
+    @test union(a, b, PSet([9])) isa PSet{Int}
+    # a mixed call with a plain `Set` is `Base`'s business, and gives `Base`'s
+    # answer
+    @test union(a, Set([9])) isa Set{Int}
+
+    # a weighted set keeps each element's weight, including through a filter and
+    # a replacement
+    w = PWSet{Int,Float64}(1 => 1.0, 2 => 2.0, 3 => 3.0)
+    fw = filter(isodd, w)
+    @test fw isa PWSet{Int,Float64}
+    @test sort(collect(fw)) == [1, 3]
+    @test getweight(fw, 3) == 3.0
+    @test getweight(fw, 1) == 1.0
+    rw = replace(w, 1 => 9)
+    @test rw isa PWSet{Int,Float64}
+    @test 9 in rw && !(1 in rw)
+    @test getweight(rw, 9) == 1.0
+end
 end

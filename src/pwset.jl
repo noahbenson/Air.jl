@@ -235,3 +235,23 @@ end
 
 # Export the relevant symbols.
 export PWSet, PWIdSet
+
+# The weighted counterparts of `filter` and `replace` (`api.jl` holds the
+# unweighted ones; these live here because `AbstractPWSet` is defined in this
+# file, which is included after `api.jl`). Each element's weight follows it: a
+# filtered or replaced element keeps the weight it had.
+function Base.filter(f, s::AbstractPWSet)
+    out = empty(s)
+    for x in s
+        f(x) && (out = push(out, x => getweight(s, x)))
+    end
+    return out
+end
+function Base.replace(s::AbstractPWSet, pairs::Pair...)
+    alt = _altlookup(pairs...)
+    out = empty(s)
+    for x in s
+        out = push(out, get(alt, x, x) => getweight(s, x))
+    end
+    return out
+end

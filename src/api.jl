@@ -954,3 +954,118 @@ end
 Base.:(==)(l::AbstractSet, r::AbstractPSet) = _equalfn_eq(l, r)
 Base.:(==)(l::AbstractPSet, r::AbstractSet) = _equalfn_eq(l, r)
 Base.:(==)(l::AbstractPSet, r::AbstractPSet) = _equalfn_eq(l, r)
+
+# ==============================================================================
+# Operations that keep the collection's kind
+
+# `Base` provides all of these for `AbstractDict` and `AbstractSet`, but builds a
+# mutable `Dict` or `Set` — and for a persistent collection it cannot even manage
+# that, because the `empty` it starts from is immutable, so the operation raises
+# or returns something of a different kind. Each of these does the same thing,
+# into a collection of the same kind as its argument.
+
+"""
+    filter(f, d::AbstractPDict)
+
+Yields the persistent dictionary of the entries of `d` for which `f` is true.
+`f` is applied to each `key => value` pair, as in `Base.filter`; unlike
+`Base.filter` — which builds a mutable `Dict`, and cannot build one of these at
+all — the result is the same kind of dictionary as its argument.
+"""
+function Base.filter(f, d::AbstractPDict)
+    out = empty(d)
+    for (k, v) in d
+        f(k => v) && (out = push(out, k => v))
+    end
+    return out
+end
+
+"""
+    filter(f, s::AbstractPSet)
+
+Yields the persistent set of the elements of `s` for which `f` is true, as the
+same kind of set as its argument. (A weighted set has its own method, in
+`pwset.jl`, which keeps each element's weight.)
+"""
+function Base.filter(f, s::AbstractPSet)
+    out = empty(s)
+    for x in s
+        f(x) && (out = push(out, x))
+    end
+    return out
+end
+
+# The replacement table `replace` looks a value up in. `pairs` are the
+# `old => new` pairs the caller gave.
+_altlookup(pairs::Pair...) = Dict{Any,Any}((p.first => p.second for p in pairs))
+
+"""
+    replace(d::AbstractPDict, pairs...)
+
+Yields the persistent dictionary with each of the *values* named among `pairs`
+replaced, as `Base.replace` does — but as a dictionary of the same kind as its
+argument rather than a mutable `Dict`.
+"""
+function Base.replace(d::AbstractPDict, pairs::Pair...)
+    alt = _altlookup(pairs...)
+    out = empty(d)
+    for (k, v) in d
+        out = push(out, k => get(alt, v, v))
+    end
+    return out
+end
+
+"""
+    replace(s::AbstractPSet, pairs::Pair...)
+
+Yields the persistent set with each of the elements named among `pairs` replaced,
+as the same kind of set as its argument.
+"""
+function Base.replace(s::AbstractPSet, pairs::Pair...)
+    alt = _altlookup(pairs...)
+    out = empty(s)
+    for x in s
+        out = push(out, get(alt, x, x))
+    end
+    return out
+end
+
+# The set operations, the same way: `Base` builds a mutable `Set` from them.
+"""
+    union(s::AbstractPSet, others::AbstractPSet...)
+
+Yields the persistent set of every element of the given sets, as the same kind of
+set as the first argument.
+"""
+function Base.union(s::AbstractPSet, ss::AbstractPSet...)
+    out = s
+    for t in ss, x in t
+        out = push(out, x)
+    end
+    return out
+end
+
+"""
+    intersect(s::AbstractPSet, t::AbstractPSet)
+
+Yields the persistent set of the elements common to both, as the same kind of set
+as the first argument.
+"""
+Base.intersect(s::AbstractPSet, t::AbstractPSet) = filter(x -> x in t, s)
+
+"""
+    setdiff(s::AbstractPSet, t::AbstractPSet)
+
+Yields the persistent set of the elements of `s` that are not in `t`, as the same
+kind of set as the first argument.
+"""
+Base.setdiff(s::AbstractPSet, t::AbstractPSet) = filter(x -> !(x in t), s)
+
+"""
+    symdiff(s::AbstractPSet, t::AbstractPSet)
+
+Yields the persistent set of the elements in exactly one of the two, as the same
+kind of set as the first argument.
+"""
+Base.symdiff(s::AbstractPSet, t::AbstractPSet) =
+    union(setdiff(s, t), setdiff(t, s))
