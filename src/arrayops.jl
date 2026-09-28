@@ -572,3 +572,76 @@ function splice(u::PVector{T}, i::Integer, n::Integer = length(u) - Int(i) + 1) 
     return _air_deleteat(u, Int(i), Int(n))
 end
 export deleteat, splice
+
+# ==============================================================================
+# Rewriting the stored positions, and the triangular part
+
+# `rotl90` and `triu` are `LinearAlgebra`'s, not `Base`'s. This is the package's
+# only use of it, and it is a stdlib, so the dependency is nominal — but it is a
+# dependency, and it is here because these two are the survey's remaining
+# operations that returned a mutable `Array`.
+using LinearAlgebra: LinearAlgebra
+
+# Rewrite the stored entries of a matrix through a Cartesian map, visiting only
+# what is stored. A rotation moves a sparse matrix's entries and leaves every
+# other position reading as the default, so this costs the number of entries
+# rather than the shape. `f` gives the new position, or `nothing` to drop it.
+function _air_rewrite(u::PArray{T,N}, dims::NTuple{N,Int}, f) where {T,N}
+    tree = PTree{T}()
+    tr = _air_tree(u)
+    (tr === nothing) && return tree
+    i0 = _air_i0(u)
+    ci = CartesianIndices(size(u))
+    li = LinearIndices(dims)
+    for (ii, v) in tr
+        j = f(ci[Int(ii - i0) + 1])
+        (j === nothing) && continue
+        tree = setindex(tree, v, HASH_T(li[j] - 1))
+    end
+    return tree
+end
+
+"""
+    rotl90(m::PMatrix)
+
+Yields the `PArray` of `m` rotated a quarter-turn to the left, as `LinearAlgebra.rotl90`
+does. That both rotates and transposes, so the result's shape is `m`'s reversed.
+The stored entries move and the default is carried, so a sparse matrix stays
+sparse.
+"""
+function LinearAlgebra.rotl90(m::PMatrix{T}) where {T}
+    (r, c) = size(m)
+    dims = (c, r)
+    # an *input* position (p, q) lands at (c + 1 - q, p) in the result
+    tree = _air_rewrite(m, dims, ci -> CartesianIndex(c + 1 - ci[2], ci[1]))
+    return PArray{T,2}(HASH_T(0x0), _lindex(dims...), tree, getfield(m, :_default))
+end
+
+"""
+    triu(m::PMatrix, k::Integer = 0)
+
+Yields the `PArray` of `m` with every entry below the `k`-th diagonal set to
+zero, as `LinearAlgebra.triu` does, keeping `m`'s shape.
+
+Note that this *zeroes* those entries rather than setting them to `m`'s default.
+Where the default is zero the two are the same and only the stored entries need
+touching; where it is not, every position below the diagonal has to be stored as
+an explicit zero, since reading one would otherwise give the default.
+"""
+function LinearAlgebra.triu(m::PMatrix{T}, k::Integer = 0) where {T}
+    dims = size(m)
+    d = getfield(m, :_default)
+    z = zero(T)
+    # at or above the `k`-th diagonal is kept, below it is dropped here
+    tree = _air_rewrite(m, dims, ci -> (ci[2] - ci[1] < k) ? nothing : ci)
+    if !_eqdefault(d, z)
+        # `zero(T)` is not the default, so the positions below the diagonal do
+        # not read as zero on their own: each is stored explicitly
+        li = LinearIndices(dims)
+        for ci in CartesianIndices(dims)
+            (ci[2] - ci[1] < k) || continue
+            tree = setindex(tree, z, HASH_T(li[ci] - 1))
+        end
+    end
+    return PArray{T,2}(HASH_T(0x0), _lindex(dims...), tree, d)
+end

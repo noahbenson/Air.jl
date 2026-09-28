@@ -14,6 +14,8 @@
 # MIT License
 # Copyright (c) 2020-2021 Noah C. Benson
 
+using LinearAlgebra: triu, rotl90
+
 @testset "array operations keep the kind" begin
     u = PVector(collect(1:5))
     # a `PArray` is immutable, so sharing is a copy
@@ -364,5 +366,59 @@ end
     @test length(circshift(s, 2)) == 6
     @test collect(deleteat(s, 2)) == [collect(s)[1:1]; collect(s)[3:end]]
     @test length(deleteat(s, 2)) == 5
+end
+
+@testset "rotation and the triangular part" begin
+    # `rotl90` both rotates and transposes, so the result's shape is the
+    # argument's reversed. `triu` keeps the shape and is checked at every `k`,
+    # because the diagonal is where its two regimes meet.
+    a = [1 2 3; 4 5 6]
+    m = PMatrix(a)
+
+    r = rotl90(m)
+    @test r isa PMatrix{Int}
+    @test size(r) == (3, 2)
+    @test collect(r) == rotl90(a)
+    @test Air.defaultvalue(r) === UndefInitializer()
+    @test collect(rotl90(permutedims(m))) == rotl90(permutedims(a))
+
+    t = triu(m)
+    @test t isa PMatrix{Int}
+    @test size(t) == (2, 3)
+    @test collect(t) == triu(a)
+    @test Air.defaultvalue(t) === UndefInitializer()
+    for k in -3:3
+        @test collect(triu(m, k)) == triu(a, k)
+    end
+
+    # A sparse matrix with a zero default. What lies below the diagonal already
+    # reads as the default, so `triu` only has to drop the entries that are
+    # there, and the operation costs the entries rather than the shape.
+    s = setindex(setindex(PMatrix(0.0, (3, 3)), 1.0, 2, 1), 2.0, 1, 2)
+    st = triu(s)
+    @test st isa PMatrix{Float64}
+    @test collect(st) == triu(collect(s))
+    @test Air.defaultvalue(st) == 0.0
+    @test nnz(st) == 1                     # the below-diagonal 1.0 is gone
+    # rotation carries both the entries and the default without densifying
+    sr = rotl90(s)
+    @test collect(sr) == rotl90(collect(s))
+    @test Air.defaultvalue(sr) == 0.0
+    @test nnz(sr) == nnz(s)
+
+    # A non-zero default is the other regime. `triu` *zeroes* the entries below
+    # the diagonal, and zero is not what an unset position reads as, so each of
+    # those positions has to be stored explicitly — this is the costly case, and
+    # it is inherent to the operation rather than to the representation.
+    n = setindex(PMatrix(7.0, (3, 3)), 1.0, 1, 1)
+    nt = triu(n)
+    @test collect(nt) == triu(collect(n))
+    @test Air.defaultvalue(nt) == 7.0
+    @test nt[2, 1] == 0.0
+    @test nt[3, 3] == 7.0                  # still the default, so still unset
+    @test nnz(nt) == 4                     # the 1.0 and three explicit 0.0s
+    for k in -3:3
+        @test collect(triu(n, k)) == triu(collect(n), k)
+    end
 end
 end
