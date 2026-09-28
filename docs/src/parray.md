@@ -73,10 +73,17 @@ That is true of broadcasting, `map`, `filter`,
 reuses the same tree with a different shape and so costs nothing.
 
 It is also true of the operations that reorder a vector's values — `sort`,
-`unique`, `circshift`, `deleteat` and `splice`. Note what those preserve: a
-`PArray`'s positions are positions and not merely the entries that happen to be
-stored, so `sort` keeps the array's *length*, and the positions that were unset
-stay unset rather than vanishing.
+`unique`, `circshift`, `deleteat` and `splice` — and of `repeat` and
+`cat`, which build a new array out of one or more arguments.
+
+Note what these preserve. A `PArray`'s positions are positions and not merely the
+entries that happen to be stored, so `sort` keeps the array's *length*, and the
+positions that were unset stay unset rather than vanishing. And the default
+travels with the entries into the result, so neither `repeat` nor `cat` stores an
+entry that only restates it: repeating a four-element sparse vector that holds
+two entries gives two stored entries per copy rather than four. Where the
+arguments disagree about the default the first one's wins, and the entries that
+disagree with it become stored, since they can no longer be the default.
 
 `LinearAlgebra`'s `triu` and `rotl90` belong here too, and `triu` is worth a
 note. It *zeroes* what lies below the `k`-th diagonal rather than setting it to
