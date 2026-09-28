@@ -53,3 +53,66 @@ end
     @test !isequal(missing, a)
     @test !isequal(a, :x)
 end
+
+@testset "weighted set operations" begin
+    a = PWSet{Int,Float64}(1 => 1.0, 2 => 2.0, 3 => 3.0)
+    b = PWSet{Int,Float64}(3 => 30.0, 4 => 4.0)
+
+    # An element only one argument holds keeps that argument's weight, whatever
+    # the rule is — including `:mean`, which would otherwise divide by one.
+    for rule in (:first, :last, :sum, :mean, :min, :max, :median)
+        u = union(a, b; weight = rule)
+        @test u isa PWSet{Int,Float64}
+        @test sort(collect(u)) == [1, 2, 3, 4]
+        @test getweight(u, 1) == 1.0        # only in `a`
+        @test getweight(u, 2) == 2.0
+        @test getweight(u, 4) == 4.0        # only in `b`
+    end
+
+    # ... and the rule decides for the one they share
+    @test getweight(union(a, b; weight = :first), 3) == 3.0
+    @test getweight(union(a, b; weight = :last), 3) == 30.0
+    @test getweight(union(a, b; weight = :sum), 3) == 33.0
+    @test getweight(union(a, b; weight = :mean), 3) == 16.5
+    @test getweight(union(a, b; weight = :min), 3) == 3.0
+    @test getweight(union(a, b; weight = :max), 3) == 30.0
+    @test getweight(union(a, b; weight = :median), 3) == 16.5
+    @test union(a, b) == union(a, b; weight = :first)   # the default is `:first`
+
+    # A caller's own function is given the element and the weights it was found
+    # with, and is called for every element of the result, not only the shared
+    # ones. The weights arrive in argument order.
+    f = (el, ws) -> sum(ws) * 10
+    @test getweight(union(a, b; weight = f), 3) == 330.0
+    @test getweight(union(a, b; weight = f), 1) == 10.0
+    @test getweight(intersect(a, b; weight = f), 3) == 330.0
+    @test getweight(symdiff(a, b; weight = f), 4) == 40.0
+    # the weights arrive as a `Vector` of the arguments' weight type, in argument
+    # order — and the value a function returns must be positive, since a weighted
+    # set is a heap and `PHeap` rejects weights that are not
+    seen = Ref{Any}(nothing)
+    union(a, b; weight = (el, ws) -> (seen[] = ws; 1.0))
+    @test seen[] isa Vector{Float64}
+    @test_throws ArgumentError union(a, b; weight = (el, ws) -> -1.0)
+
+    # the other three
+    @test sort(collect(intersect(a, b))) == [3]
+    @test getweight(intersect(a, b), 3) == 3.0
+    @test sort(collect(setdiff(a, b))) == [1, 2]
+    @test getweight(setdiff(a, b), 1) == 1.0
+    @test sort(collect(symdiff(a, b))) == [1, 2, 4]
+    @test getweight(symdiff(a, b), 4) == 4.0
+    @test intersect(a, b) isa PWSet{Int,Float64}
+    @test setdiff(a, b) isa PWSet{Int,Float64}
+    @test symdiff(a, b) isa PWSet{Int,Float64}
+
+    # a name that is not one of the rules is an error rather than a default
+    @test_throws ArgumentError union(a, b; weight = :nope)
+
+    # and the identity-keyed kind behaves the same way
+    ia = PWIdSet{Int,Float64}(1 => 1.0, 3 => 3.0)
+    ib = PWIdSet{Int,Float64}(3 => 30.0)
+    @test union(ia, ib; weight = :sum) isa PWIdSet{Int,Float64}
+    @test getweight(union(ia, ib; weight = :sum), 3) == 33.0
+    @test getweight(union(ia, ib; weight = :sum), 1) == 1.0
+end

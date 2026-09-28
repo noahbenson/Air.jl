@@ -255,3 +255,150 @@ function Base.replace(s::AbstractPWSet, pairs::Pair...)
     end
     return out
 end
+
+# ==============================================================================
+# Combining weights
+
+# When an operation merges two weighted sets, an element they share arrives with a
+# weight from each, and `weight` says what to do about it:
+#
+#   * `:first`, `:last`, `:min`, `:max`, `:sum` and `:mean` are folds over the
+#     weights in argument order, so an element found in one argument folds to that
+#     argument's weight — which is the rule for everything but a caller's own
+#     function;
+#   * `:median` needs the weights themselves;
+#   * a caller's own `f(el, weights)` gets the element and the vector of weights it
+#     was found with, and is called for *every* element of the result, not only the
+#     ones several arguments shared.
+#
+# The folds are what make this cheap: because the weights arrive as an iterator,
+# `:sum` and friends never build the vector that only `:median` and a caller's
+# function need. `Statistics` is not a dependency of this package, so the two
+# statistics are spelled out here rather than imported.
+const _WEIGHT_RULES = (:first, :last, :sum, :mean, :min, :max, :median)
+
+# The rule as it is dispatched on: a `Val` for one of the names, the function
+# itself for a caller's own.
+function _weight_rule(w)
+    (w isa Symbol) || return w
+    (w in _WEIGHT_RULES) || throw(
+        ArgumentError("weight: $w is not one of $(_WEIGHT_RULES), nor a function")
+    )
+    return Val(w)
+end
+
+"""
+    _wcombine(rule, el, weights)
+
+Yields the weight an element takes, given the weights it was found with. See the
+note above for what each `rule` means.
+"""
+_wcombine(::Val{:first}, el, ws) = first(ws)
+_wcombine(::Val{:last}, el, ws) = last(ws)
+_wcombine(::Val{:sum}, el, ws) = sum(ws)
+_wcombine(::Val{:min}, el, ws) = minimum(ws)
+_wcombine(::Val{:max}, el, ws) = maximum(ws)
+_wcombine(::Val{:mean}, el, ws) = begin
+    (s, n) = (zero(first(ws)), 0)
+    for w in ws
+        s += w
+        n += 1
+    end
+    return s / n
+end
+_wcombine(::Val{:median}, el, ws) = _median(collect(ws))
+_wcombine(f::Function, el, ws) = f(el, collect(ws))
+# The median of a set of weights: the middle one of an odd count, the mean of the
+# two middle ones of an even count.
+function _median(v::AbstractVector)
+    W = eltype(v)
+    (isempty(v)) && throw(ArgumentError("median: no weights"))
+    sort!(v)
+    n = length(v)
+    return isodd(n) ? v[(n + 1) ÷ 2] : (v[n ÷ 2] + v[n ÷ 2 + 1]) / 2
+end
+
+# The type the combined weight will have, so that the result's type is known
+# before the elements are visited. The folds preserve the weights' own type; the
+# two statistics divide, and a caller's function is asked of the compiler.
+_wtype(::Union{Val{:first},Val{:last},Val{:sum},Val{:min},Val{:max}}, ::Type{E}, ::Type{W}) where {E,W} = W
+_wtype(::Union{Val{:mean},Val{:median}}, ::Type{E}, ::Type{W}) where {E,W} = typeof(zero(W) / 1)
+_wtype(f::Function, ::Type{E}, ::Type{W}) where {E,W} = Base.promote_op(f, E, Vector{W})
+
+# The elements of `s` that `keep` accepts, each with the weight it takes from the
+# arguments that hold it. `keep` is given the element and the argument list.
+function _pwset_combine(s, args, keep, elems, rule)
+    E = _pwset_eltype(args)
+    W = _pwset_wtype(args)
+    Wr = _wtype(rule, E, W)
+    out = empty(s, E, Wr)
+    for x in elems
+        keep(x, args) || continue
+        w = _wcombine(rule, x, (getweight(t, x) for t in args if x in t))
+        out = push(out, x => w)
+    end
+    return out
+end
+# The element and weight types of the result: the arguments' promoted.
+_pwset_eltype(args) = promote_type(map(eltype, args)...)
+_pwset_wtype(args) = promote_type(map(Air._pwset_w, args)...)
+_pwset_w(::AbstractPWSet{T,W}) where {T,W} = W
+
+"""
+    union(s::AbstractPWSet, others::AbstractPWSet...; weight=:first)
+
+Yields the persistent weighted set of every element of the given sets. An element
+that several of them hold takes its weight from `weight`; see the note in this
+file for what that may be. An element held by only one keeps that one's weight.
+"""
+function Base.union(s::AbstractPWSet, ss::AbstractPWSet...; weight = :first)
+    args = (s, ss...)
+    return _pwset_combine(s, args, (x, a) -> true, _pwiter_all(args), _weight_rule(weight))
+end
+
+# The elements of every argument, without repeats: a `Set` of the elements, which
+# is what keeps a shared element from being visited once per argument.
+_pwiter_all(args) = begin
+    ks = Set{_pwset_eltype(args)}()
+    for t in args, x in t
+        push!(ks, x)
+    end
+    ks
+end
+
+"""
+    intersect(s::AbstractPWSet, t::AbstractPWSet; weight=:first)
+
+Yields the persistent weighted set of the elements both hold, each taking its
+weight from `weight`.
+"""
+function Base.intersect(s::AbstractPWSet, t::AbstractPWSet; weight = :first)
+    args = (s, t)
+    return _pwset_combine(s, args, (x, a) -> x in t, s, _weight_rule(weight))
+end
+
+"""
+    setdiff(s::AbstractPWSet, t::AbstractPWSet; weight=:first)
+
+Yields the persistent weighted set of the elements of `s` that are not in `t`.
+Each is held by only one of the arguments, so `weight` does not come into it — a
+caller's own function is still called, as its contract says.
+"""
+function Base.setdiff(s::AbstractPWSet, t::AbstractPWSet; weight = :first)
+    args = (s, t)
+    return _pwset_combine(s, args, (x, a) -> !(x in t), s, _weight_rule(weight))
+end
+
+"""
+    symdiff(s::AbstractPWSet, t::AbstractPWSet; weight=:first)
+
+Yields the persistent weighted set of the elements in exactly one of the two. As
+with `setdiff`, each is held by only one argument.
+"""
+function Base.symdiff(s::AbstractPWSet, t::AbstractPWSet; weight = :first)
+    args = (s, t)
+    return _pwset_combine(
+        s, args, (x, a) -> (x in t) ⊻ (x in s),
+        union(_pwiter_all((s,)), _pwiter_all((t,))), _weight_rule(weight),
+    )
+end
