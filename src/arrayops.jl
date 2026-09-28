@@ -415,3 +415,109 @@ Base.reshape(u::PArray{T}, dims::Dims{M}) where {T,M} = _air_reshape(u, dims)
 Base.reshape(u::PVector{T}, dims::Tuple{Colon}) where {T} = _air_reshape(u, dims)
 Base.reshape(u::PVector, ::Colon) = _air_reshape(u, (Colon(),))
 
+
+# ==============================================================================
+# Reordering the values
+
+# Every position of an operand, in array order. This has to *fill in the default*
+# rather than gather only what is stored: an operation that keeps the length — as
+# `sort` does — must see the positions that are not stored, or the length collapses
+# to the number of stored entries. Walking the tree is a single pass and covers
+# every position of a sparse operand; a dense one (no default) has to be read
+# through `getindex`, since the tree does not record the positions it lacks.
+function _air_values(u::Union{PArray,TArray})
+    n = length(u)
+    out = Vector{eltype(u)}(undef, n)
+    if _air_default(u) === nothing
+        for k in 1:n
+            out[k] = u[k]
+        end
+    else
+        fill!(out, _defaultvalue(_air_default(u)))
+        tr = _air_tree(u)
+        (tr === nothing) && return out
+        i0 = _air_i0(u)
+        for (ii, v) in tr
+            out[Int(ii - i0) + 1] = v
+        end
+    end
+    return out
+end
+
+# A `PVector` holding the given values in order, with an operand's default — so a
+# value equal to the default is not stored, and a sparse vector given a new order
+# stays sparse.
+function _air_array_from(::Type{T}, vals::AbstractVector, default) where {T}
+    tree = PTree{T}()
+    dflt = _air_default_tuple(default)
+    for (j, v) in enumerate(vals)
+        _eqdefault(dflt, v) && continue
+        tree = setindex(tree, v, HASH_T(j - 1))
+    end
+    return PVector{T}(HASH_T(0x0), _lindex(length(vals)), tree, dflt)
+end
+_air_default_tuple(::Nothing) = nothing
+_air_default_tuple(d::Tuple{T}) where {T} = d
+
+"""
+    sort(u::PVector; kws...)
+
+Yields the `PVector` of the elements of `u` in sorted order, with the same default
+as `u` — so a sparse vector stays sparse, its default value sorting to wherever it
+sorts among the others.
+"""
+Base.sort(u::PVector{T}; kws...) where {T} =
+    _air_array_from(T, sort!(_air_values(u); kws...), getfield(u, :_default))
+
+"""
+    unique(u::PVector)
+
+Yields the `PVector` of the elements of `u` with duplicates removed, keeping the
+first occurrence of each in the order `u` has them — the same order `Base.unique`
+keeps, which is why this collects by position rather than by walking the tree.
+"""
+Base.unique(u::PVector{T}) where {T} =
+    _air_array_from(T, unique(collect(u)), getfield(u, :_default))
+
+"""
+    circshift(u::PVector, n)
+
+Yields the `PVector` of the elements of `u` shifted by `n` positions, with the
+same default.
+"""
+function Base.circshift(u::PVector{T}, n::Integer) where {T}
+    m = length(u)
+    tree = _air_retree(T, u, k -> mod1(k + Int(n), m))
+    return PVector{T}(HASH_T(0x0), _lindex(m), tree, getfield(u, :_default))
+end
+
+# Removing the `n` positions starting at `i`: the positions before the span keep
+# theirs, those after it move down by `n`, and the span itself is dropped.
+function _air_deleteat(u::PVector{T}, i::Int, n::Int) where {T}
+    (i >= 1) || throw(BoundsError(u, i))
+    (n >= 0) || throw(ArgumentError("deleteat: cannot delete a negative number of elements"))
+    (i + n - 1 <= length(u)) || throw(BoundsError(u, i + n - 1))
+    f = k -> k < i ? k : (k >= i + n ? k - n : nothing)
+    tree = _air_retree(T, u, f)
+    return PVector{T}(HASH_T(0x0), _lindex(length(u) - n), tree, getfield(u, :_default))
+end
+
+"""
+    deleteat(u::PVector, i)
+
+Yields the `PVector` of the elements of `u` with the element at position `i`
+removed, in the same kind of vector as `u`.
+"""
+deleteat(u::PVector{T}, i::Integer) where {T} = _air_deleteat(u, Int(i), 1)
+
+"""
+    splice(u::PVector, i, n)
+
+Yields the `PVector` of the elements of `u` with the `n` elements starting at
+position `i` removed. This is the persistent counterpart of `Base.splice!`'s
+removal form, which is what `splice!` does when it is given no replacements.
+"""
+function splice(u::PVector{T}, i::Integer, n::Integer = length(u) - Int(i) + 1) where {T}
+    return _air_deleteat(u, Int(i), Int(n))
+end
+export deleteat, splice
