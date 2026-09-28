@@ -290,6 +290,37 @@
         r[1, 1] = -1.0
         @test t[1] == -1.0
     end
+
+@testset "repetition and cat" begin
+    v = PVector([1, 2, 3])
+    u = collect(v)
+    @test collect(repeat(v, 2)) == repeat(u, 2)
+    @test repeat(v, 2) isa PVector{Int}
+    @test collect(repeat(v; inner = 2)) == repeat(u; inner = 2)
+    @test collect(repeat(v; outer = 3)) == repeat(u; outer = 3)
+    @test collect(repeat(v; inner = 2, outer = 3)) == repeat(u; inner = 2, outer = 3)
+    @test collect(repeat(v, 0)) == Int[]
+    @test collect(repeat(v, 1)) == u
+    @test_throws ArgumentError repeat(v; inner = -1)
+    @test_throws ArgumentError repeat(v, -1)
+
+    @test collect(cat(v, v; dims = 1)) == cat(u, u; dims = 1)
+    @test cat(v, v; dims = 1) isa PVector{Int}
+    @test collect(cat(v, v, v; dims = 1)) == cat(u, u, u; dims = 1)
+    m = setindex(PMatrix(0.0, (2, 3)), 1.0, 1, 1)
+    @test collect(cat(m, m; dims = 1)) == cat(collect(m), collect(m); dims = 1)
+    @test collect(cat(m, m; dims = 2)) == cat(collect(m), collect(m); dims = 2)
+    @test cat(m, m; dims = 2) isa PMatrix{Float64}
+    @test_throws ArgumentError cat(m, m; dims = (1, 2))
+    @test_throws ArgumentError cat(m, m; dims = 3)
+
+    # a sparse vector keeps its default and its length through a repeat
+    s = setindex(PVector{Float64}(0.0, (3,)), 5.0, 2)
+    r = repeat(s, 2)
+    @test length(r) == 6
+    @test Air.defaultvalue(r) == 0.0
+    @test nnz(r) == 2
+    @test collect(r) == repeat(collect(s), 2)
 end
 
 @testset "reordering the values" begin
@@ -333,4 +364,5 @@ end
     @test length(circshift(s, 2)) == 6
     @test collect(deleteat(s, 2)) == [collect(s)[1:1]; collect(s)[3:end]]
     @test length(deleteat(s, 2)) == 5
+end
 end
