@@ -322,5 +322,47 @@
     @test nnz(r) == 2
     @test collect(r) == repeat(collect(s), 2)
 end
-end
 
+@testset "reordering the values" begin
+    v = PVector([3, 1, 4, 1, 5, 9, 2, 6])
+    u = collect(v)
+
+    @test collect(sort(v)) == sort(u)
+    @test sort(v) isa PVector{Int}
+    @test collect(sort(v; rev = true)) == sort(u; rev = true)
+    @test collect(sort(v; by = x -> -x)) == sort(u; by = x -> -x)
+
+    @test collect(unique(v)) == unique(u)
+    @test unique(v) isa PVector{Int}
+
+    @test collect(circshift(v, 2)) == circshift(u, 2)
+    @test collect(circshift(v, -3)) == circshift(u, -3)
+    @test collect(circshift(v, 0)) == u
+    @test collect(circshift(v, 8)) == u              # a full turn
+
+    @test collect(deleteat(v, 3)) == [u[1:2]; u[4:end]]
+    @test collect(deleteat(v, 1)) == u[2:end]
+    @test collect(deleteat(v, length(v))) == u[1:(end - 1)]
+    @test collect(splice(v, 2, 3)) == [u[1]; u[5:end]]
+    @test collect(splice(v, 1, 0)) == u              # nothing removed
+    @test_throws BoundsError deleteat(v, 0)
+    @test_throws BoundsError deleteat(v, 9)
+    @test_throws BoundsError splice(v, 5, 5)
+    @test collect(circshift(PVector{Int}(), 3)) == Int[]
+
+    # A sparse vector keeps its default *and* its length: the positions it does
+    # not store are positions, not absences, so sorting must move them with
+    # everything else rather than collapse the result to the stored entries.
+    s = setindex(setindex(PVector{Float64}(0.0, (6,)), 3.0, 2), 1.0, 5)
+    @test length(sort(s)) == 6
+    @test Air.defaultvalue(sort(s)) == 0.0
+    @test nnz(sort(s)) == 2
+    @test collect(sort(s)) == sort(collect(s))
+    @test collect(unique(s)) == unique(collect(s))
+    @test collect(circshift(s, 2)) == circshift(collect(s), 2)
+    @test Air.defaultvalue(circshift(s, 2)) == 0.0
+    @test length(circshift(s, 2)) == 6
+    @test collect(deleteat(s, 2)) == [collect(s)[1:1]; collect(s)[3:end]]
+    @test length(deleteat(s, 2)) == 5
+end
+end

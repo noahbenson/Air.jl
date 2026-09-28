@@ -53,3 +53,123 @@ end
     @test !isequal(missing, a)
     @test !isequal(a, :x)
 end
+
+@testset "weighted set operations" begin
+    a = PWSet{Int,Float64}(1 => 1.0, 2 => 2.0, 3 => 3.0)
+    b = PWSet{Int,Float64}(3 => 30.0, 4 => 4.0)
+
+    # An element only one argument holds keeps that argument's weight, whatever
+    # the rule is — including `:mean`, which would otherwise divide by one.
+    for rule in (:first, :last, :sum, :mean, :min, :max, :median)
+        u = union(a, b; weight = rule)
+        @test u isa PWSet{Int,Float64}
+        @test sort(collect(u)) == [1, 2, 3, 4]
+        @test getweight(u, 1) == 1.0        # only in `a`
+        @test getweight(u, 2) == 2.0
+        @test getweight(u, 4) == 4.0        # only in `b`
+    end
+
+    # ... and the rule decides for the one they share
+    @test getweight(union(a, b; weight = :first), 3) == 3.0
+    @test getweight(union(a, b; weight = :last), 3) == 30.0
+    @test getweight(union(a, b; weight = :sum), 3) == 33.0
+    @test getweight(union(a, b; weight = :mean), 3) == 16.5
+    @test getweight(union(a, b; weight = :min), 3) == 3.0
+    @test getweight(union(a, b; weight = :max), 3) == 30.0
+    @test getweight(union(a, b; weight = :median), 3) == 16.5
+    @test union(a, b) == union(a, b; weight = :first)   # the default is `:first`
+
+    # A caller's own function is given the element and the weights it was found
+    # with, and is called for every element of the result, not only the shared
+    # ones. The weights arrive in argument order.
+    f = (el, ws) -> sum(ws) * 10
+    @test getweight(union(a, b; weight = f), 3) == 330.0
+    @test getweight(union(a, b; weight = f), 1) == 10.0
+    @test getweight(intersect(a, b; weight = f), 3) == 330.0
+    @test getweight(symdiff(a, b; weight = f), 4) == 40.0
+    # the weights arrive as a `Vector` of the arguments' weight type, in argument
+    # order — and the value a function returns must be positive, since a weighted
+    # set is a heap and `PHeap` rejects weights that are not
+    seen = Ref{Any}(nothing)
+    union(a, b; weight = (el, ws) -> (seen[] = ws; 1.0))
+    @test seen[] isa Vector{Float64}
+    @test_throws ArgumentError union(a, b; weight = (el, ws) -> -1.0)
+
+    # the other three
+    @test sort(collect(intersect(a, b))) == [3]
+    @test getweight(intersect(a, b), 3) == 3.0
+    @test sort(collect(setdiff(a, b))) == [1, 2]
+    @test getweight(setdiff(a, b), 1) == 1.0
+    @test sort(collect(symdiff(a, b))) == [1, 2, 4]
+    @test getweight(symdiff(a, b), 4) == 4.0
+    @test intersect(a, b) isa PWSet{Int,Float64}
+    @test setdiff(a, b) isa PWSet{Int,Float64}
+    @test symdiff(a, b) isa PWSet{Int,Float64}
+
+    # a name that is not one of the rules is an error rather than a default
+    @test_throws ArgumentError union(a, b; weight = :nope)
+
+    # and the identity-keyed kind behaves the same way
+    ia = PWIdSet{Int,Float64}(1 => 1.0, 3 => 3.0)
+    ib = PWIdSet{Int,Float64}(3 => 30.0)
+    @test union(ia, ib; weight = :sum) isa PWIdSet{Int,Float64}
+    @test getweight(union(ia, ib; weight = :sum), 3) == 33.0
+    @test getweight(union(ia, ib; weight = :sum), 1) == 1.0
+end
+
+@testset "views" begin
+    s = PWSet{Int,Float64}()
+    for i in 1:100
+        s = push(s, i => float(i))
+    end
+    v = pset_view(s)
+
+    @test v isa AbstractSet{Tuple{Int,Float64}}
+    @test length(v) == 100
+    @test sort([k for (k, w) in v]) == sort(collect(s))
+    @test all(w == float(k) for (k, w) in v)
+    @test eltype(v) == Tuple{Int,Float64}
+    # membership is by element *and* weight, which is what the pairs mean
+    @test (3, 3.0) in v
+    @test !((3, 4.0) in v)
+    @test !((3,) in v)
+    # it is a view, so it has no storage to write into
+    @test_throws ErrorException push(v, (1, 1.0))
+    @test_throws ErrorException delete(v, (1, 1.0))
+    @test_throws ErrorException empty(v)
+
+    # an empty one is a view of nothing, not an error
+    e = pset_view(PWSet{Int,Float64}())
+    @test length(e) == 0
+    @test collect(e) == []
+
+    # and a weighted dictionary pairs each key with its value and weight
+    d = PWDict{Symbol,Int,Float64}(:a => (1, 2.0), :b => (2, 3.0))
+    dv = pdict_view(d)
+    @test dv isa AbstractDict{Symbol,Tuple{Int,Float64}}
+    @test length(dv) == 2
+    @test dv[:a] == (1, 2.0)
+    @test haskey(dv, :a) && !haskey(dv, :z)
+    @test get(dv, :b, :none) == (2, 3.0)
+    @test get(dv, :z, :none) === :none
+    @test sort([k for (k, vw) in dv]) == [:a, :b]
+    @test dv[:a] == (1, 2.0) && dv[:b] == (2, 3.0)
+    @test [k => vw for (k, vw) in dv] == [:a => (1, 2.0), :b => (2, 3.0)] ||
+          [:b => (2, 3.0), :a => (1, 2.0)] == [k => vw for (k, vw) in dv]
+    @test_throws ErrorException push(dv, :c => (3, 4.0))
+    @test_throws KeyError dv[:z]
+
+    # the operations that iterate use the view, so they still agree with the set
+    f = filter(isodd, s)
+    @test length(f) == 50
+    @test getweight(f, 3) == 3.0
+    # `replace` replaces *elements*, as `Base.replace` does for a set; an
+    # element's weight follows it to whatever it becomes. (The weights are not
+    # what is being replaced, which is worth being explicit about, since for a
+    # weighted set it is the other plausible reading.)
+    r = replace(s, 100 => 1000)
+    @test length(r) == 100
+    @test !(100 in r)
+    @test getweight(r, 1000) == 100.0
+    @test getweight(r, 1) == 1.0
+end
