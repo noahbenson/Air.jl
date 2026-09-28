@@ -71,4 +71,57 @@
         @test p1[:, 8, :] != a[:, 8, :]
         @test p1[:, :, 5] != a[:, :, 5]
     end
+
+@testset "generators" begin
+    # `psparse` from positions and values, with a default of zero
+    m = psparse([1, 2], [2, 3], [10.0, 20.0], 2, 3)
+    @test m isa PArray{Float64,2}
+    @test size(m) == (2, 3)
+    @test m[1, 2] == 10.0 && m[2, 3] == 20.0 && m[1, 1] == 0.0
+    @test nnz(m) == 2                       # the zeros are not stored
+    # and from an array: the entries that are not its default
+    @test collect(psparse([1, 0, 2])) == [1, 0, 2]
+    # the zeros are dropped, as `sparse(A)` drops them
+    @test nnz(psparse([1, 0, 2])) == 2
+    @test Air.defaultvalue(psparse([1, 0, 2])) == 0
+    # and a non-zero default, which a `SparseArray` cannot express: the 1 is
+    # dropped because it *is* the default, and the other two are stored
+    @test nnz(psparse([1, 0, 2]; default = 1)) == 2
+    @test collect(psparse([1, 0, 2]; default = 1)) == [1, 0, 2]
+    @test Air.defaultvalue(psparse([1, 0, 2]; default = 1)) == 1
+    @test nnz(psparse(setindex(PVector{Int}(0, (3,)), 5, 2))) == 1
+
+    @test collect(pdiagm([1, 2, 3])) == [1 0 0; 0 2 0; 0 0 3]
+    @test collect(pdiagm(1 => [1, 2])) == [0 1 0; 0 0 2; 0 0 0]
+    @test nnz(pdiagm([1, 2, 3])) == 3
+
+    # `permutedims` carries the default, so a sparse array stays sparse
+    u = setindex(PMatrix(0.0, (2, 3)), 1.0, 2, 1)
+    @test size(permutedims(u)) == (3, 2)
+    @test collect(permutedims(u)) == permutedims(collect(u))
+    @test Air.defaultvalue(permutedims(u)) == 0.0
+    @test nnz(permutedims(u)) == 1
+    @test collect(permutedims(u, (2, 1))) == permutedims(collect(u), (2, 1))
+    @test_throws ArgumentError permutedims(u, (1, 1))
+
+    b = SparseArrays.blockdiag(PMatrix(1.0, (2, 2)), PMatrix(2.0, (2, 2)))
+    @test size(b) == (4, 4)
+    # the first operand's default is the result's, so the off-diagonal positions
+    # read as 1.0 rather than as zero
+    @test collect(b) == [1 1 1 1; 1 1 1 1; 1 1 2 2; 1 1 2 2]
+    @test Air.defaultvalue(b) == 1.0
+    @test_throws DimensionMismatch SparseArrays.blockdiag(PVector([1, 2]), PMatrix(0.0, (2, 2)))
+
+    # the random generators: a dense form, and a sparse one whose sparsity is the
+    # probability each position is set
+    Random.seed!(0x5eed)
+    @test size(prand(2, 3)) == (2, 3)
+    @test size(prandn(2, 3)) == (2, 3)
+    @test size(prand(4, 4, 0.5)) == (4, 4)
+    @test size(prandn(4, 4, 0.5)) == (4, 4)
+    @test nnz(prand(4, 4, 0.0)) == 0
+    @test nnz(prandn(4, 4, 0.0)) == 0
+    @test nnz(prand(4, 4, 1.0)) == 16
+    @test Air.defaultvalue(prand(4, 4, 0.5)) == 0.0
+end
 end

@@ -15,11 +15,10 @@
 # the elementwise arithmetic operators (see arrayops.jl); and every array
 # operation that used to fall back to a mutable `Array` — `copy`, `map`,
 # `filter`, `reverse`, indexed selection and `vcat`/`hcat` (also arrayops.jl).
-# Still open:
-# psparse() method for making PArrays similar to SparseArrays.sparse().
-# prand() and prandn() similar to rand()/randn() and sprand()/sprandn().
-# pdiagm() similar to spdiagm(), and a blockdiag() method instance.
-# permute() method.
+# Done: `psparse`, `prand`, `prandn`, `pdiagm`, `blockdiag` and `permutedims` —
+# see the generators below. (A `permute` method is not needed: `permutedims` is
+# the name Julia uses for the non-mutating operation and `permute!` for the
+# mutating one, which an immutable array cannot offer.)
 # Matrix multiplication and the rest of linear algebra are deliberately left to
 # Base, which answers with a mutable `Array` — the right answer for them.
 
@@ -29,6 +28,10 @@
 # We expand on some sparse array methods with PArrays (which are implemented as
 # efficitn sparse arrays anyway.
 using SparseArrays: SparseArrays
+# `Random` is brought into scope by `pheap.jl`, which is included later, and the
+# generators below name `Random.AbstractRNG` in a signature — evaluated when this
+# file is defined, not when it is called.
+using Random: Random
 
 """
     PArray{T,N}
@@ -460,16 +463,11 @@ end
 function _lindex(u::Vararg{Int,N}) where {N}
     return LinearIndices{N,NTuple{N,Base.OneTo{Int}}}(((Base.OneTo{Int}.(u))...,))
 end
-function Base.permutedims(u::PArray{T,N}, dims::NTuple{N,Int}) where {T,N}
-    # This is actually pretty easy, code-wise:
-    v = PVector{T}(0x0, LinearIndices(()), PTree{T}(), u._default)
-    for k in permutedims(u._index, dims)
-        v = push(v, u[k])
-    end
-    sz = size(u)
-    idx = _lindex([sz[k] for k in dims]...)
-    return PArray{T,N}(v._i0, idx, v._tree, u._default)
-end
+# There used to be a `permutedims(u::PArray, dims::NTuple{N,Int})` here. It could
+# not have worked: it built an empty `PVector` with a `LinearIndices{0}` for an
+# index, which its own constructor rejects — and being more specific than the
+# general method below, it shadowed it. `permutedims` for a `PArray` is defined
+# further down, where the generators are.
 #Base.broadcast(fn::F, u::PArray{T,N}, args...) where {F<:Function,T,N} = begin
 #
 #end
@@ -681,5 +679,223 @@ julia> pfill(:abc, 2, 3)
 """
 pfill(val::T, dims::Vararg{Integer}) where {T} = PArray{T,length(dims)}(val, dims...)
 pfill(val::T, dims::Tuple) where {T} = PArray{T,length(dims)}(val, dims)
+
+# ==============================================================================
+# Generators
+
+# The raw default of an operand, or `nothing` — as `_parray_from` wants it, rather
+# than the `Tuple{T}` the representation uses.
+_air_rawdefault(u) = begin
+    d = _air_default(u)
+    return d === nothing ? nothing : _defaultvalue(d)
+end
+
+# Everything here that builds an array from a list of positions goes through this:
+# it drops entries equal to the default, so the result is as sparse as its inputs
+# were and never stores a value it would only have to read back as the default.
+function _parray_from(
+    ::Type{T}, ::Val{N}, dims::NTuple{N,Int}, default, entries
+) where {T,N}
+    tree = PTree{T}()
+    dflt = default === nothing ? nothing : Tuple{T}((T(default),))
+    li = LinearIndices(dims)
+    for (idx, val) in entries
+        v = T(val)
+        _eqdefault(dflt, v) && continue
+        tree = setindex(tree, v, HASH_T(li[idx...] - 1))
+    end
+    return PArray{T,N}(HASH_T(0x0), _lindex(dims...), tree, dflt)
+end
+
+"""
+    psparse(I, J, V, m, n)
+    psparse(A; default=zero(eltype(A)))
+
+Yields the `PArray` holding `V[k]` at position `(I[k], J[k])`, of size `m` by `n`,
+as `SparseArrays.sparse` does — or, from an array, one holding the entries of `A`
+that are not zero, again as `sparse(A)` does.
+
+Unlike a `SparseArray`, the array it yields may have a default value of its own;
+`default` names it, and an entry equal to it is not stored at all. So
+`psparse(A; default=NaN)` yields an array that reads as `NaN` wherever `A` is
+`NaN`, rather than storing those positions — which is the only way to express
+what a `SparseArray` cannot.
+
+Repeated positions are an error rather than being summed, since a persistent
+array cannot distinguish "written twice" from "written once".
+
+# Examples
+
+```@meta
+DocTestSetup = quote
+    using Air
+end
+```
+
+```jldoctest; filter=r"2×3 (PArray{Float64, ?2}|PMatrix{Float64}):"
+julia> psparse([1, 2], [2, 3], [10.0, 20.0], 2, 3)
+2×3 PMatrix{Float64}:
+ 0.0  10.0   0.0
+ 0.0   0.0  20.0
+```
+"""
+function psparse(
+    I::AbstractVector{<:Integer}, J::AbstractVector{<:Integer},
+    V::AbstractVector, m::Integer, n::Integer
+)
+    length(I) == length(J) == length(V) ||
+        throw(DimensionMismatch("psparse: I, J and V must be the same length"))
+    T = eltype(V)
+    return _parray_from(
+        T, Val(2), (Int(m), Int(n)), zero(T),
+        (((Int(I[k]), Int(J[k])), V[k]) for k in eachindex(V)),
+    )
+end
+psparse(I::AbstractVector, J::AbstractVector, V::AbstractVector) =
+    psparse(I, J, V, maximum(I; init = 0), maximum(J; init = 0))
+# The default is zero, so that this does what `sparse(A)` does and drops the
+# zeros; `default` overrides it for the arrays a `SparseArray` cannot express.
+psparse(A::AbstractArray{T,N}; default = zero(T)) where {T,N} =
+    _parray_from(T, Val(N), size(A), default, _pnz(A))
+# The entries of an array that are not its default; from a `PArray` that is
+# exactly its tree, and from anything else every position.
+function _pnz(p::PArray{T,N}) where {T,N}
+    i0 = getfield(p, :_i0)
+    ci = CartesianIndices(size(p))
+    return (
+        (Tuple(ci[Int(ii - i0) + 1]), v) for (ii, v) in getfield(p, :_tree)
+    )
+end
+_pnz(a::AbstractArray) = ((Tuple(I), a[I]) for I in CartesianIndices(a))
+
+"""
+    prand(dims...)
+    prand(m, n, p)
+
+Yields a `PArray` of random values: of the given dimensions, as `rand` would, or
+of size `m` by `n` with each position set with probability `p`, as `sprand`
+would. The sparse form has a default of zero, so only the positions it fills are
+stored.
+"""
+prand(dims::Vararg{Integer}) = PArray(rand(dims...))
+prand(dims::Tuple) = PArray(rand(dims))
+prand(rng::Random.AbstractRNG, dims::Vararg{Integer}) = PArray(rand(rng, dims...))
+function prand(rng::Random.AbstractRNG, m::Integer, n::Integer, p::Real)
+    return _parray_from(
+        Float64, Val(2), (Int(m), Int(n)), 0.0,
+        (((i, j), rand(rng)) for (i, j) in _prand_positions(rng, m, n, p))
+    )
+end
+prand(m::Integer, n::Integer, p::Real) = prand(Random.default_rng(), m, n, p)
+
+"""
+    prandn(dims...)
+    prandn(m, n, p)
+
+As [`prand`](@ref), with normally distributed values.
+"""
+prandn(dims::Vararg{Integer}) = PArray(randn(dims...))
+prandn(dims::Tuple) = PArray(randn(dims))
+prandn(rng::Random.AbstractRNG, dims::Vararg{Integer}) = PArray(randn(rng, dims...))
+function prandn(rng::Random.AbstractRNG, m::Integer, n::Integer, p::Real)
+    return _parray_from(
+        Float64, Val(2), (Int(m), Int(n)), 0.0,
+        (((i, j), randn(rng)) for (i, j) in _prand_positions(rng, m, n, p))
+    )
+end
+prandn(m::Integer, n::Integer, p::Real) = prandn(Random.default_rng(), m, n, p)
+
+# The positions a sparse random array fills: each position with probability `p`,
+# which is what `sprand` means and, incidentally, cannot produce a duplicate.
+# Drawing a count from a binomial would be faster for a dense-in-the-limit `p`,
+# but the draw has to be the definition rather than merely fast.
+function _prand_positions(rng::Random.AbstractRNG, m::Integer, n::Integer, p::Real)
+    ci = CartesianIndices((Int(m), Int(n)))
+    return (Tuple(ci[ix]) for ix in 1:(Int(m) * Int(n)) if rand(rng) < p)
+end
+
+"""
+    pdiagm(v)
+    pdiagm(k => v, ...)
+
+Yields the `PArray` with the vector `v` on its diagonal — or, for the second form,
+on the `k`-th diagonal, as `SparseArrays.spdiagm` does. Entries equal to zero are
+not stored, so the result is diagonal in the sparse sense as well as the
+structural one.
+"""
+pdiagm(v::AbstractVector) = pdiagm(0 => v)
+function pdiagm(offsets::Pair{<:Integer,<:AbstractVector}...)
+    n = maximum(length(v) + abs(Int(k)) for (k, v) in offsets; init = 0)
+    return _parray_from(
+        promote_type(map(v -> eltype(last(v)), offsets)...), Val(2), (n, n), 0,
+        _pdiagm_entries(offsets),
+    )
+end
+function _pdiagm_entries(offsets)
+    return (
+        ((i, j), diag[i]) for (k, diag) in offsets for (i, j) in
+        ((j + max(-Int(k), 0), j + max(Int(k), 0)) for j in 1:length(diag))
+    )
+end
+
+"""
+    permutedims(u::PArray, perm)
+
+Yields the `PArray` whose dimensions are those of `u` rearranged by `perm`. As
+with `reshape` this only moves the stored entries — a permutation of the axes
+changes which linear position each one has, so the tree is rebuilt, but the
+default is carried along and a sparse array stays sparse.
+
+This is the persistent counterpart of `Base.permutedims`.
+"""
+function Base.permutedims(u::PArray{T,N}, perm) where {T,N}
+    p = _perm_check(perm, Val(N))
+    dims = ntuple(d -> size(u, p[d]), N)
+    li = LinearIndices(dims)
+    return _parray_from(
+        T, Val(N), dims, _air_rawdefault(u),
+        ((ntuple(d -> ci[p[d]], N), u[Tuple(ci)...]) for ci in CartesianIndices(size(u))),
+    )
+end
+Base.permutedims(u::PArray{T,N}) where {T,N} =
+    permutedims(u, ntuple(d -> N - d + 1, N))
+
+function _perm_check(perm, ::Val{N}) where {N}
+    p = ntuple(d -> Int(perm[d]), N)
+    (sort(collect(p)) == collect(1:N)) ||
+        throw(ArgumentError("permutedims: $perm is not a permutation of 1:$N"))
+    return p
+end
+
+"""
+    blockdiag(a::PArray, others...)
+
+Yields the `PArray` holding the given arrays on its diagonal and its default
+everywhere else. This is the persistent counterpart of
+`SparseArrays.blockdiag`.
+"""
+# (`PArray` only: `TArray` is defined in `transient.jl`, which is included after
+# this file, so it cannot appear in a signature here.)
+function SparseArrays.blockdiag(a::PArray, others::PArray...)
+    args = (a, others...)
+    all(u -> ndims(u) == 2, args) ||
+        throw(DimensionMismatch("blockdiag: every argument must be a matrix"))
+    T = promote_type(map(eltype, args)...)
+    rs = cumsum([size(u, 1) for u in args])
+    cs = cumsum([size(u, 2) for u in args])
+    dims = (rs[end], cs[end])
+    return _parray_from(
+        T, Val(2), dims, _air_rawdefault(a),
+        _blockdiag_entries(args, rs, cs, T),
+    )
+end
+function _blockdiag_entries(args, rs, cs, ::Type{T}) where {T}
+    return (
+        (((ro + ci[1], co + ci[2])), u[ci]) for
+        (u, ro, co) in zip(args, ([0; rs[1:(end - 1)]]), ([0; cs[1:(end - 1)]])) for
+        ci in CartesianIndices(size(u))
+    )
+end
+export psparse, prand, prandn, pdiagm
 
 export PArray, PVector, pzeros, pones, pfill
