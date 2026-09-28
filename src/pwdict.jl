@@ -106,9 +106,15 @@ macro _pwdict_code(name::Symbol, dicttype::Symbol)
             # Base methods.
             #Base.empty(s::$name{K,V,W}, ::Type{J}=K, ::Type{U}=V, ::Type{X}=W) where {K,V,W,J,U,X} = $name{J,U,X}()
             Base.length(s::$name) = length(s.heap)
+            # The heap's iteration state is opaque here, so the first step is
+            # taken from the heap directly rather than by seeding a state of our
+            # own devising; the heap answers with the state the rest of the walk
+            # continues from.
             Base.iterate(u::$name{K,V,W}) where {K,V,W} = begin
-                (length(u) == 0) && return nothing
-                return iterate(u, u.heap)
+                nxt = iterate(u.heap)
+                (nxt === nothing) && return nothing
+                (k, b) = nxt
+                return (k => u.dict[k], b)
             end
             Base.iterate(u::$name{K,V,W}, x) where {K,V,W} = begin
                 nxt = iterate(u.heap, x)

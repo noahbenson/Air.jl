@@ -43,6 +43,22 @@
 
         @test @inferred(LazyDict{Symbol,Int}()) isa LazyDict{Symbol,Int}
         @test @inferred(Delay{Int}(() -> 1)[]) === 1
+
+        # `PHeap` declares an element type, which is what lets `collect` and a
+        # comprehension build a `Vector{T}` rather than growing an untyped one and
+        # boxing every value. Its traversal state is concrete too, so the loop
+        # variable is inferred.
+        h = Air.PHeap{Int,Float64}(>)
+        for i in 1:20
+            h = push(h, (i, Float64(i)))
+        end
+        @test eltype(h) === Int
+        @test eltype(typeof(h)) === Int
+        @test typeof(collect(h)) === Vector{Int}
+        @test typeof([x for x in h]) === Vector{Int}
+        st = Base.return_types(iterate, (typeof(h),))[1]
+        @test st !== Any
+        @test !any(==(Any), Base.uniontypes(st))
     end
 
     @testset "@p macro" begin
