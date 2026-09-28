@@ -415,3 +415,58 @@ Base.reshape(u::PArray{T}, dims::Dims{M}) where {T,M} = _air_reshape(u, dims)
 Base.reshape(u::PVector{T}, dims::Tuple{Colon}) where {T} = _air_reshape(u, dims)
 Base.reshape(u::PVector, ::Colon) = _air_reshape(u, (Colon(),))
 
+
+# ==============================================================================
+# Repetition
+
+"""
+    repeat(u::PVector, n::Integer)
+    repeat(u::PVector; inner=1, outer=1)
+
+Yields the `PVector` of the elements of `u` repeated: the whole vector `n` (or
+`outer`) times, or each element `inner` times, as `Base.repeat` does. The result
+has the same default, so repeating a sparse vector keeps its sparse value.
+"""
+Base.repeat(u::PVector{T}, n::Integer) where {T} = _air_repeat(u, 1, Int(n))
+function Base.repeat(u::PVector{T}; inner::Integer = 1, outer::Integer = 1) where {T}
+    return _air_repeat(u, Int(inner), Int(outer))
+end
+function _air_repeat(u::PVector{T}, inner::Int, outer::Int) where {T}
+    (inner >= 0) || throw(ArgumentError("repeat: inner must not be negative"))
+    (outer >= 0) || throw(ArgumentError("repeat: outer must not be negative"))
+    # `collect` gives every position, defaults included: the positions a sparse
+    # vector does not store are positions, and repeating has to repeat them.
+    vals = collect(u)
+    dflt = getfield(u, :_default)
+    tree = PTree{T}()
+    j = 0
+    for _ in 1:outer, k in 1:length(vals), _ in 1:inner
+        j += 1
+        v = vals[k]
+        _eqdefault(dflt, v) && continue
+        tree = setindex(tree, v, HASH_T(j - 1))
+    end
+    return PVector{T}(HASH_T(0x0), _lindex(j), tree, dflt)
+end
+
+# ==============================================================================
+# Concatenation by `dims`
+
+"""
+    cat(u::PArray, others::PArray...; dims)
+
+The persistent counterpart of `Base.cat` in the two cases it reduces to:
+`dims=1` is [`vcat`](@ref) and `dims=2` is [`hcat`](@ref). The block form,
+`dims=(1,2)`, is not implemented, and says so rather than quietly producing
+something else.
+"""
+function Base.cat(
+    u::Union{PVector{T},PMatrix{T}}, vs::Union{PVector{T},PMatrix{T}}...; dims
+) where {T<:Number}
+    (dims == 1) && return vcat(u, vs...)
+    (dims == 2) && return hcat(u, vs...)
+    (dims == (1, 2) || dims == (2, 1)) && throw(
+        ArgumentError("cat: the block form (dims=(1,2)) is not implemented for PArrays")
+    )
+    return throw(ArgumentError("cat: dims must be 1 or 2, not $dims"))
+end
