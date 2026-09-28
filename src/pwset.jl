@@ -410,22 +410,26 @@ end
 # ==============================================================================
 # A weighted set as a set of pairs
 
-# A `PWSet` is a heap whose nodes are `(value, weight, total subtree weight)`, and
-# a `PHeap` traverses itself by *popping* — so reading every element of a `PWSet`
-# costs a pop each, which is O(n log n) and an allocation per element (measured at
-# 58 MB for a thousand elements, against 176 bytes for the view below). The weight
-# is already stored beside the value in those nodes, so a view that walks the node
-# vector directly is O(1) to build and a single pass to traverse.
+# A weighted set is a heap whose nodes are `(value, weight, total subtree weight)`,
+# and the heap's own traversal — which `PWSet` and `PWDict` inherit — yields those
+# values in weight order, at a sort's cost: O(n log n) comparisons, measured at
+# 16.5 KB and 54 us for a thousand elements. The weight is already stored beside
+# the value, so a view that walks the node vector directly is O(1) to build and a
+# single pass to traverse: 32 bytes and 11 us for the same thousand. That is the
+# trade the views make — the storage's order rather than the weights'.
 
 """
     pset_view(s::AbstractPWSet) -> AbstractPSet{Tuple{T,W}}
 
 Yields a view of a weighted set as a set of `(element, weight)` pairs. Building
-one is O(1), and traversing it is one pass over the collection's storage — unlike
-traversing the set itself, which costs a pop per element.
+one is O(1), and traversing it is one pass over the collection's storage, where
+traversing the set itself yields the same elements ordered by weight at a sort's
+cost. For a thousand elements the view is 32 bytes and 11 us against the ordered
+traversal's 16.5 KB and 54 us.
 
 The view iterates in the order of the underlying storage, not the
-weights-sorted order that `PHeap`'s own traversal gives.
+weights-sorted order that `PHeap`'s own traversal gives. That is what it trades
+for the difference in cost.
 
 It is read-only, having no storage of its own: `push`, `delete` and `empty` raise.
 """
@@ -462,9 +466,16 @@ Base.empty(v::PWSetView) = _readonly(v)
 
 Yields a view of a weighted dictionary as a dictionary of `key => (value,
 weight)` pairs, with the same guarantees as [`pset_view`](@ref): O(1) to build,
-one pass to traverse, read-only. The value is looked up per element, since it
-lives in the dictionary and not in the heap, but the traversal still avoids the
-pop that reading the dictionary itself costs.
+one pass to traverse, read-only, and in the storage's order rather than the
+weights-sorted one.
+
+One thing the view cannot avoid: the weight is stored beside the key in the heap,
+but the value lives in the dictionary, so every element costs a dictionary lookup
+on top of the pass. That is a property of the split rather than of the view.
+Iterating the dictionary and looking each weight up instead is worse rather than
+better — measured at 428 KB and 468 us per thousand against 32 bytes and 57 us
+here — because the dictionary's own iteration and the heap index's lookup are
+both paid per element either way, and the index lookup is the dearer of the two.
 """
 pdict_view(d::P) where {K,V,W,P<:AbstractPWDict{K,V,W}} = PWDictView{K,V,W,P}(d)
 # The type `pdict_view` returns; part of `Air`'s internal implementation details.

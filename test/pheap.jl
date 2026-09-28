@@ -149,4 +149,139 @@
         ratio = counts[2] / max(counts[1], 1)
         @test 7.0 < ratio < 11.0         # expected 9.0
     end
+
+    @testset "traversal is the pop sequence" begin
+        # Traversing a heap yields its values in the order repeated `pop`s would.
+        # The order is produced by sifting in place now rather than by popping, so
+        # this checks the replacement against the thing it replaced — `pop` itself,
+        # which is unchanged. That is the whole contract: the traversal is not
+        # merely some sorted arrangement of the values, it is *the* pop sequence,
+        # and a strict weight ordering would hide any difference.
+        function poporder(h)
+            out = Int[]
+            while !isempty(h)
+                push!(out, first(h))
+                h = pop(h)
+            end
+            return out
+        end
+
+        rng = MersenneTwister(0x5eed)
+        for cmp in (>, <, (a, b) -> a < b)   # including a non-builtin comparator
+            for n in (0, 1, 2, 3, 4, 7, 16, 33, 100, 257), ties in (false, true)
+                h = Air.PHeap{Int,Float64,typeof(cmp),PDict{Int,Int}}(cmp)
+                for i in 1:n
+                    # A small weight set makes ties common, which is where the
+                    # sift's choices between equals decide the order.
+                    w = ties ? Float64(1 + i % 3) : rand(rng) * 100 + 0.001
+                    h = push(h, (i, w))
+                end
+                want = poporder(h)
+                @test collect(h) == want
+                @test [x for x in h] == want
+                # the weights must come out ordered the way the comparator says
+                ws = [getweight(h, x) for x in want]
+                @test issorted(ws; rev = (cmp === (>)))
+            end
+        end
+
+        # Stepping by hand must agree with the loop, since the state is opaque and
+        # carried between calls.
+        h = Air.PHeap{Int,Float64}(>)
+        for i in 1:40
+            h = push(h, (i, Float64(1 + i % 4)))
+        end
+        stepped = Int[]
+        st = iterate(h)
+        while st !== nothing
+            (x, s) = st
+            push!(stepped, x)
+            st = iterate(h, s)
+        end
+        @test stepped == collect(h)
+
+        # Two loops over one heap must not share a traversal's state.
+        seen = Int[]
+        for x in h
+            push!(seen, x)
+            for y in h
+                push!(seen, y)
+            end
+            break
+        end
+        @test seen == [collect(h)[1]; collect(h)]
+
+        # A finished iterator stays finished. The state is a pair of vectors and a
+        # count, so an exhausted one is the count reaching zero, not a nil that has
+        # to be distinguished from a fresh start.
+        st = iterate(h)
+        n = 0
+        while st !== nothing
+            (_, s) = st
+            st = iterate(h, s)
+            n += 1
+        end
+        @test n == length(h)
+        st = iterate(h)
+        @test st !== nothing
+        (_, s) = st
+        for _ in 2:length(h)
+            (_, s) = iterate(h, s)
+        end
+        @test iterate(h, s) === nothing
+    end
+
+    @testset "membership across the weighted collections" begin
+        # `PWSet` and `PWDict` iterate through the heap, so their order is the
+        # heap's; check that the delegation has not changed it.
+        rng = MersenneTwister(0xbeef)
+        s = PWSet{Int,Float64}()
+        h = Air.PHeap{Int,Float64}(>)
+        for i in 1:60
+            w = Float64(1 + rand(rng, 1:3))
+            s = push(s, i => w)
+            h = push(h, (i, w))
+        end
+        want = Int[]
+        hh = h
+        while !isempty(hh)
+            push!(want, first(hh))
+            hh = pop(hh)
+        end
+        @test collect(s) == want
+
+        d = PWDict{Int,Int,Float64}()
+        for i in 1:60
+            d = push(d, i => (i * 10) => getweight(s, i))
+        end
+        @test collect(d) == [k => k * 10 for k in want]
+        # and the views still read the storage directly, in the storage's order
+        @test sort(collect(pset_view(s))) == sort([(x, getweight(s, x)) for x in want])
+        @test all(kv -> kv.second[1] == kv.first * 10, pdict_view(d))
+    end
+
+    @testset "traversal allocates with the heap, not with its elements" begin
+        # The traversal used to pop, rebuilding the heap vector and the index
+        # dictionary per element: 60 MB for a thousand. It now copies the values
+        # and weights once. This is a ceiling rather than an equality — the point
+        # is that the cost scales with the *scratch*, two vectors of n, and not
+        # with a persistent update per element — and it is measured after a warm
+        # call so that compilation is not what is being timed.
+        function walk(h)
+            n = 0
+            for _ in h
+                n += 1
+            end
+            return n
+        end
+        for n in (100, 1000, 10_000)
+            h = Air.PHeap{Int,Float64}(>)
+            for i in 1:n
+                h = push(h, (i, Float64(1 + i % 7) + 0.001))
+            end
+            @test walk(h) == n
+            @test (@allocated walk(h)) < 40 * n * sizeof(Float64)
+        end
+    end
+
 end
