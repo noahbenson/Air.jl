@@ -70,7 +70,26 @@ default stores nothing at all.
 That is true of broadcasting, `map`, `filter`,
 `reverse`, indexing with a vector of positions, `vcat` and
 `hcat`, the elementwise arithmetic operators, and `reshape` — which
-reuses the same tree with a different shape and so costs nothing. Two things are
+reuses the same tree with a different shape and so costs nothing.
+
+It is also true of the operations that reorder a vector's values — `sort`,
+`unique`, `circshift`, `deleteat` and `splice`. Note what those preserve: a
+`PArray`'s positions are positions and not merely the entries that happen to be
+stored, so `sort` keeps the array's *length*, and the positions that were unset
+stay unset rather than vanishing.
+
+`LinearAlgebra`'s `triu` and `rotl90` belong here too, and `triu` is worth a
+note. It *zeroes* what lies below the `k`-th diagonal rather than setting it to
+the array's default, and those two coincide only when the default is zero. In
+that case the positions below the diagonal already read as zero and `triu` only
+has to drop the stored entries there; in the other case it must store an explicit
+zero at each of them, so the operation costs the shape rather than the entries.
+That asymmetry is the operation's rather than the representation's, and no
+representation avoids it. `rotl90` both rotates and transposes, so the result's
+shape is the argument's reversed; like everything here it moves the stored
+entries and carries the default, so a sparse matrix stays sparse.
+
+Two things are
 deliberately otherwise: `similar` returns a mutable `Array`, because that is what
 it promises its caller and an immutable array cannot be it; and matrix
 multiplication is left to Base, because `A * B` is not elementwise and a mutable
