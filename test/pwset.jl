@@ -116,3 +116,60 @@ end
     @test getweight(union(ia, ib; weight = :sum), 3) == 33.0
     @test getweight(union(ia, ib; weight = :sum), 1) == 1.0
 end
+
+@testset "views" begin
+    s = PWSet{Int,Float64}()
+    for i in 1:100
+        s = push(s, i => float(i))
+    end
+    v = pset_view(s)
+
+    @test v isa AbstractSet{Tuple{Int,Float64}}
+    @test length(v) == 100
+    @test sort([k for (k, w) in v]) == sort(collect(s))
+    @test all(w == float(k) for (k, w) in v)
+    @test eltype(v) == Tuple{Int,Float64}
+    # membership is by element *and* weight, which is what the pairs mean
+    @test (3, 3.0) in v
+    @test !((3, 4.0) in v)
+    @test !((3,) in v)
+    # it is a view, so it has no storage to write into
+    @test_throws ErrorException push(v, (1, 1.0))
+    @test_throws ErrorException delete(v, (1, 1.0))
+    @test_throws ErrorException empty(v)
+
+    # an empty one is a view of nothing, not an error
+    e = pset_view(PWSet{Int,Float64}())
+    @test length(e) == 0
+    @test collect(e) == []
+
+    # and a weighted dictionary pairs each key with its value and weight
+    d = PWDict{Symbol,Int,Float64}(:a => (1, 2.0), :b => (2, 3.0))
+    dv = pdict_view(d)
+    @test dv isa AbstractDict{Symbol,Tuple{Int,Float64}}
+    @test length(dv) == 2
+    @test dv[:a] == (1, 2.0)
+    @test haskey(dv, :a) && !haskey(dv, :z)
+    @test get(dv, :b, :none) == (2, 3.0)
+    @test get(dv, :z, :none) === :none
+    @test sort([k for (k, vw) in dv]) == [:a, :b]
+    @test dv[:a] == (1, 2.0) && dv[:b] == (2, 3.0)
+    @test [k => vw for (k, vw) in dv] == [:a => (1, 2.0), :b => (2, 3.0)] ||
+          [:b => (2, 3.0), :a => (1, 2.0)] == [k => vw for (k, vw) in dv]
+    @test_throws ErrorException push(dv, :c => (3, 4.0))
+    @test_throws KeyError dv[:z]
+
+    # the operations that iterate use the view, so they still agree with the set
+    f = filter(isodd, s)
+    @test length(f) == 50
+    @test getweight(f, 3) == 3.0
+    # `replace` replaces *elements*, as `Base.replace` does for a set; an
+    # element's weight follows it to whatever it becomes. (The weights are not
+    # what is being replaced, which is worth being explicit about, since for a
+    # weighted set it is the other plausible reading.)
+    r = replace(s, 100 => 1000)
+    @test length(r) == 100
+    @test !(100 in r)
+    @test getweight(r, 1000) == 100.0
+    @test getweight(r, 1) == 1.0
+end

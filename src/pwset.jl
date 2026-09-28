@@ -242,16 +242,18 @@ export PWSet, PWIdSet
 # filtered or replaced element keeps the weight it had.
 function Base.filter(f, s::AbstractPWSet)
     out = empty(s)
-    for x in s
-        f(x) && (out = push(out, x => getweight(s, x)))
+    # `pset_view` yields each element with its weight in one pass, where iterating
+    # the set itself costs a pop per element (see the note above it).
+    for (x, w) in pset_view(s)
+        f(x) && (out = push(out, x => w))
     end
     return out
 end
 function Base.replace(s::AbstractPWSet, pairs::Pair...)
     alt = _altlookup(pairs...)
     out = empty(s)
-    for x in s
-        out = push(out, get(alt, x, x) => getweight(s, x))
+    for (x, w) in pset_view(s)
+        out = push(out, get(alt, x, x) => w)
     end
     return out
 end
@@ -359,8 +361,10 @@ end
 # The elements of every argument, without repeats: a `Set` of the elements, which
 # is what keeps a shared element from being visited once per argument.
 _pwiter_all(args) = begin
+    # Via the views: iterating a `PWSet` costs a pop per element, and all this
+    # needs is the elements.
     ks = Set{_pwset_eltype(args)}()
-    for t in args, x in t
+    for t in args, (x, _) in pset_view(t)
         push!(ks, x)
     end
     ks
@@ -402,3 +406,90 @@ function Base.symdiff(s::AbstractPWSet, t::AbstractPWSet; weight = :first)
         union(_pwiter_all((s,)), _pwiter_all((t,))), _weight_rule(weight),
     )
 end
+
+# ==============================================================================
+# A weighted set as a set of pairs
+
+# A `PWSet` is a heap whose nodes are `(value, weight, total subtree weight)`, and
+# a `PHeap` traverses itself by *popping* — so reading every element of a `PWSet`
+# costs a pop each, which is O(n log n) and an allocation per element (measured at
+# 58 MB for a thousand elements, against 176 bytes for the view below). The weight
+# is already stored beside the value in those nodes, so a view that walks the node
+# vector directly is O(1) to build and a single pass to traverse.
+
+"""
+    pset_view(s::AbstractPWSet) -> AbstractPSet{Tuple{T,W}}
+
+Yields a view of a weighted set as a set of `(element, weight)` pairs. Building
+one is O(1), and traversing it is one pass over the collection's storage — unlike
+traversing the set itself, which costs a pop per element.
+
+The view iterates in the order of the underlying storage, not the
+weights-sorted order that `PHeap`'s own traversal gives.
+
+It is read-only, having no storage of its own: `push`, `delete` and `empty` raise.
+"""
+pset_view(s::P) where {T,W,P<:AbstractPWSet{T,W}} = PWSetView{T,W,P}(s)
+# The type `pset_view` returns; part of `Air`'s internal implementation details.
+struct PWSetView{T,W,P<:AbstractPWSet{T,W}} <: AbstractPSet{Tuple{T,W}}
+    p::P
+end
+Base.length(v::PWSetView) = length(v.p)
+Base.eltype(::Type{<:PWSetView{T,W}}) where {T,W} = Tuple{T,W}
+Base.eltype(v::PWSetView{T,W}) where {T,W} = Tuple{T,W}
+Base.IteratorEltype(::Type{<:PWSetView}) = Base.HasEltype()
+Base.IteratorSize(::Type{<:PWSetView}) = Base.HasLength()
+function Base.iterate(v::PWSetView, st...)
+    nxt = iterate(getfield(getfield(v.p, :heap), :_heap), st...)
+    (nxt === nothing) && return nothing
+    ((k, w, _), s) = nxt
+    return ((k, w), s)
+end
+function Base.in(x::Tuple, v::PWSetView)
+    (length(x) == 2) || return false
+    (k, w) = x
+    return (k in v.p) && (getweight(v.p, k) == w)
+end
+_readonly(v) = error(
+    "$(typeof(v)) is a read-only view; its argument is the collection itself"
+)
+push(v::PWSetView, x) = _readonly(v)
+delete(v::PWSetView, x) = _readonly(v)
+Base.empty(v::PWSetView) = _readonly(v)
+
+"""
+    pdict_view(d::AbstractPWDict) -> AbstractPDict{K,Tuple{V,W}}
+
+Yields a view of a weighted dictionary as a dictionary of `key => (value,
+weight)` pairs, with the same guarantees as [`pset_view`](@ref): O(1) to build,
+one pass to traverse, read-only. The value is looked up per element, since it
+lives in the dictionary and not in the heap, but the traversal still avoids the
+pop that reading the dictionary itself costs.
+"""
+pdict_view(d::P) where {K,V,W,P<:AbstractPWDict{K,V,W}} = PWDictView{K,V,W,P}(d)
+# The type `pdict_view` returns; part of `Air`'s internal implementation details.
+struct PWDictView{K,V,W,P<:AbstractPWDict{K,V,W}} <: AbstractPDict{K,Tuple{V,W}}
+    d::P
+end
+Base.length(v::PWDictView) = length(v.d)
+Base.eltype(::Type{<:PWDictView{K,V,W}}) where {K,V,W} = Pair{K,Tuple{V,W}}
+Base.eltype(v::PWDictView{K,V,W}) where {K,V,W} = Pair{K,Tuple{V,W}}
+Base.IteratorEltype(::Type{<:PWDictView}) = Base.HasEltype()
+Base.IteratorSize(::Type{<:PWDictView}) = Base.HasLength()
+function Base.iterate(v::PWDictView{K,V,W}, st...) where {K,V,W}
+    nxt = iterate(getfield(getfield(v.d, :heap), :_heap), st...)
+    (nxt === nothing) && return nothing
+    ((k, w, _), s) = nxt
+    return (k => (getfield(v.d, :dict)[k], w), s)
+end
+Base.get(v::PWDictView, k, df) = haskey(v.d, k) ? (v.d[k], getweight(v.d, k)) : df
+Base.haskey(v::PWDictView, k) = haskey(v.d, k)
+# The *value* of the view's dictionary is the tuple, as for any dictionary; it is
+# only the iteration that yields `key => value` pairs, as for any dictionary.
+function Base.getindex(v::PWDictView, k)
+    return (v.d[k], getweight(v.d, k))
+end
+push(v::PWDictView, x::Pair) = _readonly(v)
+delete(v::PWDictView, x) = _readonly(v)
+Base.empty(v::PWDictView) = _readonly(v)
+export pset_view, pdict_view
