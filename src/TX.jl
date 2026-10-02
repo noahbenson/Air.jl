@@ -752,6 +752,23 @@ function tx(fn::F) where {F<:Function}
     # We need to make a new transaction for this task. We might have to do
     # this a few times if the transaction fails.
     for attempt in 1:TX_MAX_ATTEMPTS
+        # A failed attempt used to retry at once, which is counterproductive under
+        # contention: the retrying transaction immediately re-locks the volatiles
+        # that just invalidated it, so it is likely to lose again. Yielding first
+        # hands the thread to whoever holds them. Measured with several tasks
+        # writing one volatile, attempts per commit fell from 3.19 to 1.96 with
+        # eight tasks and from 3.05 to 2.36 with eight tasks over two volatiles,
+        # and latency came down 10-20%; yielding on every retry beat yielding only
+        # from the second.
+        #
+        # A `yield` rather than a sleep, because a transaction is short: this is a
+        # scheduler hand-off, and `sleep`'s resolution is a millisecond, three
+        # orders of magnitude coarser than a transaction. And it costs nothing in
+        # the shape this library is built for — many volatiles, short transactions
+        # touching few of them — where conflicts are rare and the retry path is
+        # barely reached: at a thousand volatiles with three per transaction,
+        # attempts per commit measure 1.037 both with and without it.
+        (attempt > 1) && yield()
         # Clear the transaction
         tx_clear!(the_tx)
         # Bind the result with the `try` expression rather than assigning to a

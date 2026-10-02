@@ -147,7 +147,11 @@
             end
             put!(resume, nothing)
             wait(t)
-            @test attempts[] >= 2
+            # Exactly two: the handshake makes the first attempt fail for certain
+            # and nothing writes `v` again after the main task's commit, so the
+            # second must succeed. Asserting the exact count rather than `>= 2`
+            # pins the retry policy — an extra attempt here is a regression.
+            @test attempts[] == 2
             @test v[] == 101
         end
 
