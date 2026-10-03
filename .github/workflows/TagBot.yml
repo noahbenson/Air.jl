@@ -11,6 +11,10 @@ name: TagBot
 # Note that there is deliberately no `permissions:` block. Upstream asks for the
 # repository defaults to be used, and adding one narrows them in ways that break
 # release creation.
+#
+# The `issue_comment` trigger fires only for comments authored by the TagBot
+# GitHub App's bot account, so without that app installed this workflow runs only
+# on a manual dispatch. Both work; the dispatch is one click per release.
 on:
   issue_comment:
     types:
@@ -37,7 +41,14 @@ jobs:
           # restating it. TagBot's default is to generate one from the merged
           # pull requests and closed issues, which would be a second changelog
           # and a worse one — `CHANGELOG.md` records which changes are breaking
-          # and why. Any notes given at registration are still included.
+          # and why.
+          #
+          # `custom` holds any notes given at registration, and it is empty when
+          # there are none, so the conditional is what keeps the literal string
+          # "None" out of the release body. Upstream's own example wraps it the
+          # same way.
           changelog: |
             See [CHANGELOG.md](https://github.com/noahbenson/Air.jl/blob/main/CHANGELOG.md).
+            {% if custom %}
             {{ custom }}
+            {% endif %}
