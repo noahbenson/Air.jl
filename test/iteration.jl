@@ -12,7 +12,7 @@
 # @author Noah C. Benson
 #
 # MIT License
-# Copyright (c) 2020-2021 Noah C. Benson
+# Copyright (c) 2020-2026 Noah C. Benson
 
 @testset "iteration" begin
     # Sizes chosen to straddle the node fan-out (64 children per node), where

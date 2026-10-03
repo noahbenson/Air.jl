@@ -19,7 +19,7 @@
 # @author Noah C. Benson
 #
 # MIT License
-# Copyright (c) 2020-2021 Noah C. Benson
+# Copyright (c) 2020-2026 Noah C. Benson
 
 # A tree rebuilt from an operand's, with each stored entry moved from one linear
 # position to another. `f` maps an old position to a new one, or to `nothing` to

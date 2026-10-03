@@ -86,8 +86,8 @@ PDict{Symbol,Float64} with 3 entries:
   :height => 0.2
   :width  => 9.4
 
-# Lookups are logarithmic in the size of the dictionary, and allocate a
-# little; see the comparison against Dict in bench/compare_base.jl.
+# Lookups are logarithmic in the size of the dictionary and do not allocate;
+# see the comparison against Dict in bench/compare_base.jl.
 julia> cube[:height]
 0.2
 
@@ -254,17 +254,15 @@ julia> notes[]
 
 ## Plans
 
-Note that many of the core components for Air already have working
-implementations. Others are currently undergoing testing. In particular, the
-existing persistent data structures are fairly well tested, and the test suite
-includes benchmarks (`bench/`) and a comparison against the mutable `Base`
-collections (`bench/compare_base.jl`) so that performance claims can be checked
-rather than asserted. Additionally, initial tests of the thread-safe transaction
-system using the transaction block macro, `Actor`s and `Volatile`s appear to
-work fine. However, as the author is not an expert on testing multi-threaded
-code, some caution is advisable.
+Air's persistent collections and its transactional layer are both complete, and
+both are tested: the suite covers the collections, the transactional system under
+real contention (in CI at one, four and eight threads), and the task-local
+utilities. `bench/` carries the benchmarks — including a comparison against the
+mutable `Base` collections (`bench/compare_base.jl`) and one for the transactional
+layer under contention (`bench/stm_contention.jl`) — so that performance claims
+can be checked rather than asserted.
 
-* Completed plans:
+* Completed:
   * Persistent data structures:
     * `PArray`, a persistent array type that mimics Julia's native `Array`
     * `PDict`, a persistent dictionary type that mimics Julia's native `Dict`
@@ -278,6 +276,10 @@ code, some caution is advisable.
       but instead of elements with weights, the dictionary contains key–value
       pairs with weights.
     * `LazyDict`, a persistent lazy dictionary type.
+  * Array operations that keep the array's kind. Broadcasting, `map`, `filter`,
+    `reverse`, `reshape`, the elementwise arithmetic, `sort`, `unique`,
+    `circshift`, `repeat`, `cat` and the rest all yield a persistent array, so
+    `PArray([1,2,3]) .+ 1` is a `PArray`.
   * Composable multi-threading utilities, inspired by Clojure:
     * A `Volatile` type that operates within transaction blocks to ensure
       that all updates to references within a synchronized block are performed
@@ -286,15 +288,8 @@ code, some caution is advisable.
       also respects the atomic requirements of transactional blocks.
     * Task-local `Var` type.
     * Thread-safe `Delay` type.
-* Plans with incomplete testing:
     * Thread-safe `Promise` types.
-* Plans that are not yet implemented:
-  * **Improved Persistent Array Methods.** Currently, most methods of persistent
-    arrays yield mutable Julia arrays instead of persistent arrays. This is
-    largely because the `PArray` class does not explicitly overload these
-    functions or the broadcasting functions in order to ensure that it creates
-    `PArray` objects. For example, `PArray([1,2,3]) .+ 1` should yield a
-    `PArray`; currently it yields an `Array`.
+* Not yet implemented:
   * **Forms.** Arbitrarily-deep nested persistent dictionaries and vectors are
     a common data organization paradigm for persistent data. With `Volatile`
     objects embedded in such a data-structure, multi-threaded operations can be
@@ -302,8 +297,8 @@ code, some caution is advisable.
     structures, using the various persistent types.
   * Better query/build/update API tools for the data structures:
     * The `setindex` and `push` functions are great, but it would be nice if
-    nested persistent data structures had single coherent way of updating and
-    querying them.
+      nested persistent data structures had single coherent way of updating and
+      querying them.
   * **Persistent Record Types.** Tool for defining data structures that
     support lazy reification of members and updates to their properties in the
     style of persistent data structure.
@@ -314,7 +309,7 @@ code, some caution is advisable.
     arguments shouldn't need to be duplicated in multiple places; rather a
     simple macro should make it easy for common parameters to occur in both
     places and be documented identically in both.
-* Problems that needs to be worked out:
+* Open questions:
   * It's not clear to me that Julia has entirely settled on or documented the
     difference between the `@async` and the `@spawn` macros. My suspicion is
     that the `Actor` constructor may need an additional parameter `async=false`
@@ -326,7 +321,7 @@ code, some caution is advisable.
 
 MIT License
 
-Copyright (c) 2019–2021 Noah C. Benson
+Copyright (c) 2019–2026 Noah C. Benson
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

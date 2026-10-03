@@ -9,7 +9,7 @@
 # @author Noah C. Benson
 #
 # MIT License
-# Copyright (c) 2020-2021 Noah C. Benson
+# Copyright (c) 2020-2026 Noah C. Benson
 
 # `setindex` is deliberately *not* imported from `Base`. It is defined here as
 # Air's own verb, alongside `push`, `pop` and `delete`: the methods below extend

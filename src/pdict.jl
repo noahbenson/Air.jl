@@ -6,7 +6,7 @@
 # @author Noah C. Benson
 #
 # MIT License
-# Copyright (c) 2020-2021 Noah C. Benson
+# Copyright (c) 2020-2026 Noah C. Benson
 
 # #PLinearDict #################################################################
 # We construct the types in this file in an unfortunaetly complex way in order
