@@ -5,7 +5,7 @@
 # @author Noah C. Benson
 #
 # MIT License
-# Copyright (c) 2019 Noah C. Benson
+# Copyright (c) 2019-2026 Noah C. Benson
 
 # ==============================================================================
 # #TODO List

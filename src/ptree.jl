@@ -8,7 +8,7 @@
 # @author Noah C. Benson
 #
 # MIT License
-# Copyright (c) 2020 Noah C. Benson
+# Copyright (c) 2020-2026 Noah C. Benson
 
 # ==============================================================================
 # Private

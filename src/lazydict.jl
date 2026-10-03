@@ -6,7 +6,7 @@
 # @author Noah C. Benson
 #
 # MIT License
-# Copyright (c) 2020-2021 Noah C. Benson
+# Copyright (c) 2020-2026 Noah C. Benson
 
 # This function is used for processing sequences of arguments when constructing
 # a lazy dictionary: you want to typejoin across pairs/tuples, and you want to

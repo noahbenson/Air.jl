@@ -6,7 +6,7 @@
 # @author Noah C. Benson
 #
 # MIT License
-# Copyright (c) 2020-2021 Noah C. Benson
+# Copyright (c) 2020-2026 Noah C. Benson
 
 # #Var #########################################################################
 # A tricky thing about Vars is that we want each Var object to be unique (i.e.,
