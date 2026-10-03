@@ -43,6 +43,8 @@ the [transaction system](https://noahbenson.github.io/Air.jl/dev/stm/),
 [utilities](https://noahbenson.github.io/Air.jl/dev/util/), and a
 [full API reference](https://noahbenson.github.io/Air.jl/dev/API/).
 
+Release notes for each version are in the [changelog](CHANGELOG.md).
+
 ## Examples
 
 The following code blocks demonstrate some simple examples of how one can use
