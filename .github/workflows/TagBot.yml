@@ -1,0 +1,43 @@
+name: TagBot
+
+# Creates the git tag and the GitHub release for a version once Registrator has
+# registered it, so a release needs no manual tagging. The pipeline becomes:
+#
+#     merge -> `@JuliaRegistrator register` -> TagBot tags -> docs.yml deploys
+#
+# The canonical form of this file is upstream's `example.yml`; the two inputs
+# below are the ones that need a reason here.
+#
+# Note that there is deliberately no `permissions:` block. Upstream asks for the
+# repository defaults to be used, and adding one narrows them in ways that break
+# release creation.
+on:
+  issue_comment:
+    types:
+      - created
+  workflow_dispatch:
+
+jobs:
+  TagBot:
+    if: github.event_name == 'workflow_dispatch' || github.actor == 'JuliaTagBot'
+    runs-on: ubuntu-latest
+    steps:
+      # Pinned to a commit rather than a version tag, as upstream's own example
+      # is: this workflow holds write access to the repository.
+      - uses: JuliaRegistries/TagBot@d8d3e8f45a4cd9839f1d6d8798ca246431564418 # v1.25.12
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # A tag pushed with `GITHUB_TOKEN` does not trigger other workflows, by
+          # GitHub's design, so without this the tag would be created and
+          # `docs.yml` would never run on it — the versioned documentation would
+          # silently never be built. The deploy key makes the push look like an
+          # ordinary one. `DOCUMENTER_KEY` is already set up for `docs.yml`.
+          ssh: ${{ secrets.DOCUMENTER_KEY }}
+          # The release body points at the hand-written changelog rather than
+          # restating it. TagBot's default is to generate one from the merged
+          # pull requests and closed issues, which would be a second changelog
+          # and a worse one — `CHANGELOG.md` records which changes are breaking
+          # and why. Any notes given at registration are still included.
+          changelog: |
+            See [CHANGELOG.md](https://github.com/noahbenson/Air.jl/blob/main/CHANGELOG.md).
+            {{ custom }}

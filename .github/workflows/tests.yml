@@ -3,6 +3,11 @@ name: CI
 on:
   push:
     branches: [main]
+    # A tag is what the registry records and what users install, so the suite
+    # runs on it too. For a tag on `main` this repeats a run that has already
+    # passed, but it is the only signal at all for a tag that is not on `main` —
+    # a backfilled historical tag, for instance.
+    tags: ['v*']
   # Deliberately not restricted to PRs targeting `main`: PRs stacked on
   # another feature branch need CI too.
   pull_request:
