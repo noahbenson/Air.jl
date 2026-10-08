@@ -11,9 +11,9 @@
 #
 # Values are drawn from a closed set, `FormLeaf`, so that every form can be
 # written as JSON and read back. A value that is not already a leaf is converted
-# when the conversion is easy and unambiguous — a `Symbol` or a `Char` becomes a
-# `String`, another `Integer` becomes an `Int64`, a real number becomes a
-# `ComplexF32` with a zero imaginary part — and otherwise construction raises.
+# when the conversion is easy and unambiguous — a `Char` becomes a `String`,
+# another `Integer` becomes an `Int64`, a narrower real becomes a `Float64` — and
+# otherwise construction raises.
 # That closedness is the point: a form is metadata that can always be serialized,
 # so it cannot hold an arbitrary object.
 #
@@ -25,13 +25,14 @@
 """
     FormLeaf
 
-The values a [`Form`](@ref) can hold directly: `String`, `Bool`, `Int64`,
-`ComplexF32` and `Nothing`. A `Form` holds either one of these or another `Form`.
+The values a [`Form`](@ref) can hold directly: `String`, `Symbol`, `Bool`,
+`Int64`, `Float64`, `ComplexF64` and `Nothing`. A `Form` holds either one of
+these or another `Form`.
 
-Real numbers are held as a `ComplexF32` whose imaginary part is exactly zero, so
-`Float64` values are accepted but narrowed to `Float32` in storage.
+A `String` and a `Symbol` are both JSON strings, and the first character inside
+the quotes tells them apart: `'` for a string and `:` for a symbol.
 """
-const FormLeaf = Union{String,Bool,Int64,ComplexF32,Nothing}
+const FormLeaf = Union{String,Symbol,Bool,Int64,Float64,ComplexF64,Nothing}
 
 """
     Form(seq...; keys...)
@@ -40,10 +41,10 @@ A persistent metadata object holding both a sequence and a map: positional value
 in `seq` and symbol-keyed values in `map`, so it reads like a function argument
 list. Values are drawn from [`FormLeaf`](@ref) or are other forms.
 
-Values are converted to a leaf where the conversion is unambiguous — a `Symbol`
-or `Char` becomes a `String`, another `Integer` becomes an `Int64`, a real number
-becomes a `ComplexF32` with zero imaginary part — and construction raises
-otherwise, since a form must always be serializable.
+Values are converted to a leaf where the conversion is unambiguous — a `Char`
+becomes a `String`, another `Integer` becomes an `Int64`, a narrower real becomes
+a `Float64` — and construction raises otherwise, since a form must always be
+serializable.
 
 A `Vector`, `PVector` or transient argument becomes a form with only a `seq`, and
 a `Dict`, `PDict` or transient argument becomes a form with only a `map`, so
@@ -76,8 +77,8 @@ const FormValue = Union{Form,FormLeaf}
 # ---- converting a value into the closed set ----------------------------------
 
 # The error message names the type, because the usual cause is a value the caller
-# assumed was acceptable — a `Float64` where a `ComplexF32` is wanted, or a
-# dictionary with non-symbol keys.
+# assumed was acceptable — a `Set` where a leaf is wanted, or a dictionary with
+# non-symbol keys.
 _formerror(x, why) =
     throw(ArgumentError("a Form cannot hold $(typeof(x)): $why; " *
                         "see FormLeaf for what it can hold"))
@@ -97,12 +98,9 @@ function _formvalue(x::Integer)
         _formerror(x, "it does not fit in an Int64, which is the only integer a Form holds")
     end
 end
-_formvalue(x::Real) = ComplexF32(x, 0)
-# A complex value of wider precision narrows the same way a real one does, so
-# that `ComplexF64` is accepted rather than being the one numeric type that is
-# not.
-_formvalue(x::Complex) = ComplexF32(x)
-_formvalue(x::Symbol) = String(x)
+# A narrower real widens, which is the conversion that cannot lose anything.
+_formvalue(x::Real) = Float64(x)
+_formvalue(x::Complex) = ComplexF64(x)
 _formvalue(x::Char) = string(x)
 _formvalue(x::AbstractString) = String(x)
 function _formvalue(x::AbstractVector)
@@ -174,11 +172,6 @@ function _showvalue(io::IO, f::Form)
     _showcontents(io, f)
     return print(io, ")")
 end
-# A real number is stored as a `ComplexF32` with a zero imaginary part, so it is
-# shown as the real number it is rather than as `1.5f0 + 0.0f0im`.
-function _showvalue(io::IO, x::ComplexF32)
-    return iszero(imag(x)) ? show(io, real(x)) : show(io, x)
-end
 _showvalue(io::IO, x) = show(io, x)
 
 function _showcontents(io::IO, f::Form)
@@ -217,11 +210,13 @@ export Form, FormLeaf, FormValue
 #
 # Two encodings are worth stating because they are not forced by JSON itself.
 #
-#  * A real number is held as a `ComplexF32` with a zero imaginary part, and is
-#    written as a plain JSON number — but always with a decimal point, since a
-#    bare integer would read back as an `Int64` rather than as that complex.
-#  * A complex number with a nonzero imaginary part has no JSON equivalent, so it
-#    is written as the object `{"re": …, "im": …}`.
+#  * A `String` and a `Symbol` are both JSON strings, so the first character
+#    inside the quotes says which: `'` for a string and `:` for a symbol.
+#  * A `Float64` is written as a plain number but always with a decimal point or
+#    an exponent, since a bare integer would read back as an `Int64`.
+#  * A complex number has no JSON equivalent, so it is written as the object
+#    `{"re": …, "im": …}` — always, even when the imaginary part is zero, since
+#    `ComplexF64(1, 0)` and `Float64(1)` are different values.
 
 const _JSON_ESCAPE = Dict{UInt8,String}(
     UInt8('"') => "\\\"", UInt8('\\') => "\\\\", UInt8('\b') => "\\b",
@@ -229,8 +224,11 @@ const _JSON_ESCAPE = Dict{UInt8,String}(
     UInt8('\t') => "\\t",
 )
 
-function _jsonstring(io::IO, s::AbstractString)
-    print(io, '"')
+# `marker` is the first character inside the quotes, and is what says whether the
+# value is a string or a symbol: JSON has only one string type, and a form holds
+# both.
+function _jsonstring(io::IO, s::AbstractString, marker::Char)
+    print(io, '"', marker)
     for c in s
         u = UInt32(c)
         if u < 0x20
@@ -248,12 +246,16 @@ end
 _jsonvalue(io::IO, x::Nothing) = print(io, "null")
 _jsonvalue(io::IO, x::Bool) = print(io, x ? "true" : "false")
 _jsonvalue(io::IO, x::Int64) = print(io, x)
-_jsonvalue(io::IO, x::AbstractString) = _jsonstring(io, x)
-# `print`, not `show`: `show(1.5f0)` writes `1.5f0`, which is not JSON.
-function _jsonvalue(io::IO, x::ComplexF32)
-    if iszero(imag(x))
-        return print(io, real(x))
-    end
+_jsonvalue(io::IO, x::AbstractString) = _jsonstring(io, x, '\'')
+_jsonvalue(io::IO, x::Symbol) = _jsonstring(io, string(x), ':')
+# `print`, not `show`: `show(1.5)` writes `1.5` but `show(1.5f0)` would write
+# `1.5f0`, which is not JSON. A float is always written with a point or an
+# exponent, so it never reads back as an integer.
+_jsonvalue(io::IO, x::Float64) = print(io, x)
+# Always the object, even when the imaginary part is zero: `ComplexF64(1, 0)` and
+# `Float64(1)` are different values, and a plain number would read back as the
+# latter.
+function _jsonvalue(io::IO, x::ComplexF64)
     print(io, "{\"re\": ", real(x), ", \"im\": ", imag(x), "}")
     return nothing
 end
@@ -272,7 +274,7 @@ function _jsonvalue(io::IO, f::Form)
     for k in sort!(collect(keys(f.map)))
         print(io, sep)
         sep = ", "
-        _jsonstring(io, string(k))
+        _jsonvalue(io, k)
         print(io, ": ")
         _jsonvalue(io, f.map[k])
     end
@@ -286,10 +288,12 @@ The form as a JSON string. A form is always written as the two-element list
 `[seq, map]`, so the format is self-describing: `from_JSON` reads a list as a
 form and nothing else.
 
-A real number — held as a `ComplexF32` with zero imaginary part — is written as a
-plain JSON number, always with a decimal point so that it reads back as the same
-complex rather than as an integer. A complex number with a nonzero imaginary part
-has no JSON equivalent and is written as `{"re": …, "im": …}`.
+A `String` and a `Symbol` are both written as JSON strings, with the first
+character inside the quotes saying which: `'` for a string and `:` for a symbol.
+A `Float64` is a plain number, always with a decimal point or an exponent so that
+it reads back as a float rather than as an integer. A complex number has no JSON
+equivalent and is written as `{"re": …, "im": …}`, always, even when its
+imaginary part is zero.
 
 """
 function to_JSON(f::Form)
@@ -397,8 +401,8 @@ function _hex4!(r::_JSONReader)
 end
 
 # An integer literal reads back as an `Int64`; anything with a point or an
-# exponent reads back as the `ComplexF32` a real is stored as. That is what makes
-# the encoding above round-trip.
+# exponent reads back as the `Float64` the writer would have produced for one.
+# That is what makes the encoding above round-trip.
 function _parsenumber!(r::_JSONReader)
     _skipws!(r)
     start = r.i
@@ -414,7 +418,33 @@ function _parsenumber!(r::_JSONReader)
     end
     v = tryparse(Float64, text)
     (v === nothing) && _jsonfail(r, "bad number: $text")
-    return ComplexF32(v, 0)
+    return v
+end
+
+# A JSON string carries its own kind in its first character: `'` for a string and
+# `:` for a symbol. Anything else is a mistake rather than a value, since the
+# writer never produces one.
+function _parseleafstring!(r::_JSONReader)
+    text = _parsestring!(r)
+    isempty(text) &&
+        _jsonfail(r, "a JSON string must begin with ' (a string) or : (a symbol)")
+    marker = text[1]
+    rest = SubString(text, nextind(text, 1))
+    (marker == '\'') && return String(rest)
+    (marker == ':') && return Symbol(rest)
+    _jsonfail(r, "a JSON string must begin with ' (a string) or : (a symbol), " *
+                 "not '$marker'")
+end
+
+# A map key is always a symbol, so it is written with the `:` marker. The marker
+# is required rather than assumed, since a key without one is a mistake the writer
+# never makes — but it is checked here rather than while reading the object, so
+# that the `{"re", "im"}` object a complex number is written as can carry plain
+# keys without them meaning symbols.
+function _parsekey(r::_JSONReader, k::AbstractString)
+    isempty(k) && _jsonfail(r, "a map key cannot be empty")
+    (k[1] == ':') || _jsonfail(r, "a map key must be a symbol, written \":name\"")
+    return Symbol(SubString(k, nextind(k, 1)))
 end
 
 function _parsearray!(r::_JSONReader)
@@ -438,7 +468,7 @@ end
 
 function _parseobject!(r::_JSONReader)
     _expect!(r, '{')
-    out = Pair{Symbol,FormValue}[]
+    out = Pair{String,FormValue}[]
     _skipws!(r)
     if !_atend(r) && r.s[r.i] == '}'
         r.i = nextind(r.s, r.i)
@@ -448,7 +478,7 @@ function _parseobject!(r::_JSONReader)
         _skipws!(r)
         k = _parsestring!(r)
         _expect!(r, ':')
-        push!(out, Symbol(k) => _parsevalue!(r))
+        push!(out, k => _parsevalue!(r))
         _skipws!(r)
         _atend(r) && _jsonfail(r, "unterminated object")
         c = r.s[r.i]
@@ -468,7 +498,8 @@ function _parseform!(r::_JSONReader)
     _expect!(r, ',')
     pairs = _parseobject!(r)
     _expect!(r, ']')
-    return Form(PVector(FormValue[seq...]), PDict{Symbol,FormValue}(pairs...))
+    kv = Pair{Symbol,FormValue}[_parsekey(r, first(p)) => last(p) for p in pairs]
+    return Form(PVector(FormValue[seq...]), PDict{Symbol,FormValue}(kv...))
 end
 
 function _parsevalue!(r::_JSONReader)
@@ -478,20 +509,21 @@ function _parsevalue!(r::_JSONReader)
     (c == 'n') && return _literal!(r, "null", nothing)
     (c == 't') && return _literal!(r, "true", true)
     (c == 'f') && return _literal!(r, "false", false)
-    (c == '"') && return _parsestring!(r)
+    (c == '"') && return _parseleafstring!(r)
     (c == '[') && return _parseform!(r)
     if c == '{'
         pairs = _parseobject!(r)
         # `{"re": …, "im": …}` is how a complex number is written; any other
         # object is a form with only a map.
-        if length(pairs) == 2 && Set(first.(pairs)) == Set([:re, :im])
-            re = pairs[findfirst(p -> first(p) === :re, pairs)].second
-            im = pairs[findfirst(p -> first(p) === :im, pairs)].second
-            (re isa ComplexF32 && im isa ComplexF32) ||
+        if length(pairs) == 2 && Set(first.(pairs)) == Set(["re", "im"])
+            re = pairs[findfirst(p -> first(p) == "re", pairs)].second
+            im = pairs[findfirst(p -> first(p) == "im", pairs)].second
+            (re isa Float64 && im isa Float64) ||
                 _jsonfail(r, "re and im must be numbers")
-            return ComplexF32(real(re), real(im))
+            return ComplexF64(re, im)
         end
-        return Form(PVector(FormValue[]), PDict{Symbol,FormValue}(pairs...))
+        kv = Pair{Symbol,FormValue}[_parsekey(r, first(p)) => last(p) for p in pairs]
+        return Form(PVector(FormValue[]), PDict{Symbol,FormValue}(kv...))
     end
     return _parsenumber!(r)
 end

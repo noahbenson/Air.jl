@@ -29,8 +29,8 @@ arguments, however deep it goes.
 
 ## A closed set of values
 
-A form holds a [`FormLeaf`](@ref) — a `String`, `Bool`, `Int64`, `ComplexF32` or
-`Nothing` — or another form, and nothing else. That closedness is the point: a
+A form holds a [`FormLeaf`](@ref) — a `String`, `Symbol`, `Bool`, `Int64`,
+`Float64`, `ComplexF64` or `Nothing` — or another form, and nothing else. That closedness is the point: a
 form is metadata that can always be written out, so it cannot come to hold an
 object that has no serialized form.
 
@@ -38,22 +38,18 @@ Values that are not already leaves are converted when the conversion is
 unambiguous, and refused otherwise:
 
 ```julia
-julia> Form(:sym)[1]             # Symbol -> String
-"sym"
+julia> Form(:sym)[1]             # a Symbol is a leaf of its own
+:sym
 
 julia> Form(Int32(7))[1]         # a narrower Integer -> Int64
 7
 
-julia> Form(1.5)[1]              # a real is held as a complex with zero imaginary part
-1.5f0 + 0.0f0im
+julia> Form(1.5f0)[1]            # a narrower real -> Float64
+1.5
 
 julia> Form(Set([1]))
 ERROR: ArgumentError: a Form cannot hold Set{Int64}: it is not a value type this can represent; see FormLeaf for what it can hold
 ```
-
-Real numbers are held as a `ComplexF32` whose imaginary part is exactly zero, so a
-`Float64` is accepted but narrowed to `Float32`. Such a value prints as the real
-number it is, and is written to JSON as a plain number.
 
 ## Building nested data from collections
 
@@ -78,19 +74,22 @@ list is a form and nothing else, so [`from_JSON`](@ref) never has to guess.
 
 ```julia
 julia> to_JSON(Form("widget", meta=Form(name="abc")))
-"[[\"widget\"], {\"meta\": [[], {\"name\": \"abc\"}]}]"
+"[[\"'widget\"], {\":meta\": [[], {\":name\": \"'abc\"}]}]"
 
-julia> from_JSON("[[\"widget\"], {}]")
+julia> from_JSON("[[\"'widget\"], {}]")
 Form("widget")
 ```
 
-Two encodings are worth knowing because JSON does not force them:
+Three encodings are worth knowing because JSON does not force them:
 
-- A real number is written as a plain JSON number, but **always with a decimal
-  point**, since a bare integer would read back as an `Int64` rather than as the
-  complex the value is stored as.
-- A complex number with a nonzero imaginary part has no JSON equivalent and is
-  written as the object `{"re": …, "im": …}`.
+- A `String` and a `Symbol` are both JSON strings, so the first character inside
+  the quotes says which: **`'` for a string and `:` for a symbol**. A map key is
+  always a symbol, so it carries the `:` marker too.
+- A `Float64` is a plain number, but **always with a decimal point or an
+  exponent**, since a bare integer would read back as an `Int64`.
+- A complex number has no JSON equivalent and is written as the object
+  `{"re": …, "im": …}` — always, even when its imaginary part is zero, since
+  `ComplexF64(1, 0)` and `Float64(1)` are different values.
 
 Together these make `from_JSON(to_JSON(f)) == f` hold for every value the type
 admits.
