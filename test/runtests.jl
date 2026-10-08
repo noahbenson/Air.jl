@@ -24,6 +24,7 @@ Random.seed!(0x5eed)
     include("pwset.jl")
     include("pwdict.jl")
     include("pheap.jl")
+    include("form.jl")
     include("transient.jl")
     # after `transient.jl`, which defines `_owned_count`
     include("broadcast.jl")

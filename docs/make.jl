@@ -26,6 +26,7 @@ makedocs(;
         "Persistent Weighted Sets" => "pwset.md",
         "Persistent Lazy Dictionaries" => "lazydict.md",
         "Persistent Heaps" => "pheap.md",
+        "Persistent Forms" => "form.md",
         "Transactions (STM)" => "stm.md",
         "Task-Local Variables" => "var.md",
         "Utilities" => "util.md",

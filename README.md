@@ -289,12 +289,10 @@ can be checked rather than asserted.
     * Task-local `Var` type.
     * Thread-safe `Delay` type.
     * Thread-safe `Promise` types.
+  * `Form`, a persistent metadata object: a hybrid of a sequence and a map, so
+    that one container carries both positional and keyword values, and converts
+    to JSON and back.
 * Not yet implemented:
-  * **Forms.** Arbitrarily-deep nested persistent dictionaries and vectors are
-    a common data organization paradigm for persistent data. With `Volatile`
-    objects embedded in such a data-structure, multi-threaded operations can be
-    made almost transparent. The `Form` trait will be a subsystem for such
-    structures, using the various persistent types.
   * Better query/build/update API tools for the data structures:
     * The `setindex` and `push` functions are great, but it would be nice if
       nested persistent data structures had single coherent way of updating and

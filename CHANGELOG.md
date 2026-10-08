@@ -7,6 +7,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 Under `0.x`, SemVer puts breaking changes in the minor position and compatible
 fixes in the patch position, which is how the versions below are chosen.
 
+## [Unreleased]
+
+### Added
+
+- **`Form`**, a persistent metadata object: a hybrid of a sequence and a map, so
+  that one container carries both positional and keyword values. It holds a
+  closed set of values — `String`, `Bool`, `Int64`, `ComplexF32`, `Nothing` or
+  another `Form` — so that every form can be written out, and `to_JSON` and
+  `from_JSON` convert it to and from JSON.
+
 ## [0.2.0] - 2026-10-02
 
 The first release since 0.1.1. Both the persistent collections and the

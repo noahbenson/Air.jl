@@ -24,6 +24,7 @@ include("arrayops.jl")
 include("pheap.jl")
 include("pwdict.jl")
 include("pwset.jl")
+include("form.jl")
 include("vars.jl")
 
 include("TX.jl")
