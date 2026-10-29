@@ -77,6 +77,35 @@
         @test snapshot(q) == [2]
         @test snapshot(q) isa Vector{Int}
 
+        # A stream can be created holding values, which restores a snapshot.
+        r = Stream{Int}([4, 5, 6])
+        @test r isa Stream{Int}
+        @test snapshot(r) == [4, 5, 6]
+        @test length(r) == 3
+        @test maxsize(r) === nothing
+        @test isopen(r)
+        @test take(r) == 4
+        @test snapshot(r) == [5, 6]
+        # The elements are converted as `put!` converts them, and the vector is
+        # copied, so reusing it afterwards leaves the stream alone.
+        @test snapshot(Stream{Float64}([1, 2])) == [1.0, 2.0]
+        @test_throws InexactError Stream{Int}([1.5])
+        @test_throws TypeError Stream{Int}([1]; maxsize = 2.5)
+        src = [1, 2]
+        owned = Stream{Int}(src)
+        push!(src, 3)
+        @test snapshot(owned) == [1, 2]
+        # The element type comes from the vector, and `maxsize` is honoured.
+        @test Stream([1, 2]) isa Stream{Int}
+        @test Stream(Any[:a]) isa Stream{Any}
+        full = Stream{Int}([1]; maxsize = 1)
+        @test maxsize(full) == 1
+        @test_throws ReaderTimeout put!(full, 2; timeout = 0.01)
+        @test Stream{Int}(Int[]; maxsize = 1) isa Stream{Int}
+        # Contents that do not fit, or a bad bound, are rejected outright.
+        @test_throws ArgumentError Stream{Int}([1, 2]; maxsize = 1)
+        @test_throws ArgumentError Stream{Int}(Int[]; maxsize = 0)
+
         # `show` never blocks or enumerates.
         @test occursin("Stream{Int64}", sprint(show, s))
         @test occursin("open", sprint(show, s))
@@ -429,6 +458,13 @@
             take(Stream{Int}())
         end
         @test v[] == 0
+
+        # A stream restored inside the transaction is newborn in the same way,
+        # but its contents may be taken without blocking.
+        @test_throws StreamDeadlock tx() do
+            take(Stream{Int}(Int[]))
+        end
+        @test tx(() -> take(Stream{Int}([8, 9]))) == 8
 
         # But a newborn stream works normally as long as it does not block, and
         # a staged close makes a take throw `StreamClosed`, not `StreamDeadlock`.

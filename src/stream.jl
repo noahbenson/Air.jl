@@ -45,9 +45,19 @@ function Base.showerror(io::IO, ::StreamDeadlock)
     return print(io, "no other task can reach it until the transaction commits")
 end
 
+# Validate a `maxsize` argument once, for both the empty and the pre-filled
+# constructors, and normalise it to the stored field's type.
+@inline function _check_maxsize(maxsize::Union{Nothing,Integer})
+    (maxsize === nothing || maxsize >= 1) ||
+        throw(ArgumentError("maxsize must be nothing or at least 1"))
+    return maxsize === nothing ? nothing : Int(maxsize)
+end
+
 """
     Stream{T}(; maxsize = nothing)
     Stream(; maxsize = nothing)
+    Stream{T}(items::AbstractVector; maxsize = nothing)
+    Stream(items::AbstractVector; maxsize = nothing)
 
 A `Stream{T}` is a FIFO of values of type `T` that may be written and read
 repeatedly, unlike the one-shot [`Promise`](@ref). `put!` appends a value and
@@ -58,6 +68,14 @@ read when the stream is empty, a write when it is full — and both accept the
 `maxsize` bounds the stream: with `maxsize = 3`, three values may be waiting,
 and a fourth `put!` waits for a `take`. The default, `nothing`, leaves the
 stream unbounded, so `put!` never waits. `Stream()` is a `Stream{Any}`.
+
+A stream may also start out holding values, given as any `AbstractVector`: the
+new stream starts with them queued, oldest first, and copies them, so the vector
+may be reused afterwards. The elements are converted to `T` as `put!` converts
+them, and a `maxsize` smaller than the number of items is an `ArgumentError`.
+`Stream(items)` is a `Stream{eltype(items)}`. This restores a
+[`snapshot`](@ref), which is the way to bring back a serialized stream; the
+restored stream is open, so `close` it afterwards if the original was closed.
 
 Outside a transaction, `put!` and `take` happen immediately, under the stream's
 lock. Inside one they are staged, and happen only if the transaction commits;
@@ -117,6 +135,21 @@ julia> take(s)
 1
 ```
 
+A stream can be created holding values, which is how a [`snapshot`](@ref) is
+restored:
+
+```jldoctest
+julia> s = Stream{Int}([4, 5]; maxsize = 2);
+
+julia> snapshot(s)
+2-element Vector{Int64}:
+ 4
+ 5
+
+julia> take(s)
+4
+```
+
 `close` lets a reader drain what is left and then stop:
 
 ```jldoctest
@@ -152,10 +185,7 @@ mutable struct Stream{T}
     # leaves. Guarded by `mutex`.
     waiters::Union{Nothing,Base.IdSet{Waiter}}
     function Stream{T}(maxsize::Union{Nothing,Integer}) where {T}
-        (maxsize === nothing || maxsize >= 1) ||
-            throw(ArgumentError("maxsize must be nothing or at least 1"))
-        s = new{T}(ReentrantLock(), T[], 1,
-                   maxsize === nothing ? nothing : Int(maxsize),
+        s = new{T}(ReentrantLock(), T[], 1, _check_maxsize(maxsize),
                    UInt64(0), false, nothing)
         _stream_register_born!(s)
         return s
@@ -165,6 +195,25 @@ export Stream
 Stream{T}(; maxsize::Union{Nothing,Integer} = nothing) where {T} = Stream{T}(maxsize)
 Stream(maxsize::Union{Nothing,Integer}) = Stream{Any}(maxsize)
 Stream(; maxsize::Union{Nothing,Integer} = nothing) = Stream{Any}(maxsize)
+# `Vector{T}(items)` both copies and converts, so the new stream owns its items
+# and `put!`'s conversion rules are the ones that apply. No lock is needed: no
+# other task can have a reference to a stream that is still being constructed,
+# so there is nothing to wake and the version can stay at zero. Both checks run
+# before the stream is constructed, so a bad restore leaves no half-made stream
+# (and no entry in the current transaction).
+function Stream{T}(items::AbstractVector;
+                   maxsize::Union{Nothing,Integer} = nothing) where {T}
+    m = _check_maxsize(maxsize)
+    xs = Vector{T}(items)
+    (m === nothing || length(xs) <= m) ||
+        throw(ArgumentError("the initial contents ($(length(xs)) items) " *
+                            "exceed maxsize ($m)"))
+    s = Stream{T}(maxsize)
+    append!(getfield(s, :items), xs)
+    return s
+end
+Stream(items::AbstractVector; maxsize::Union{Nothing,Integer} = nothing) =
+    Stream{eltype(items)}(items; maxsize = maxsize)
 
 """
     maxsize(stream)
@@ -528,6 +577,10 @@ first, without blocking and without removing them. The copy is independent of
 the stream, so it may be kept, mutated or serialized; whether the stream was
 open and what its bound is are reported separately by [`isopen`](@ref) and
 [`maxsize`](@ref).
+
+A snapshot is what `Stream{T}(items; maxsize)` puts back: passing it to the
+constructor creates a new stream holding the same values, and `close` on that
+stream finishes restoring a closed one.
 
 Inside a transaction the snapshot is the transaction's own view: it includes
 the values the body has staged with `put!` and excludes those it has staged

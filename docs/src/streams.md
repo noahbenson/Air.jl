@@ -70,6 +70,21 @@ julia> length(s)        # nothing was taken
 2
 ```
 
+A snapshot goes back in through the constructor, which is how a serialized
+stream is restored:
+
+```julia
+julia> r = Stream{Int}(snapshot(s); maxsize = maxsize(s));
+
+julia> snapshot(r)
+2-element Vector{Int64}:
+ 1
+ 2
+```
+
+The new stream is open, so `isopen(s) || close(r)` completes a round trip that
+carries the closed state as well.
+
 ## Closing a stream
 
 `close` ends a stream. A later `put!` throws
