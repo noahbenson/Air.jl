@@ -354,13 +354,37 @@ export @memoize
 # #Promise #####################################################################
 """
     Promise{T}
+    Promise{T}(; ondelivery = nothing, onfailure = nothing)
+    Promise(; ondelivery = nothing, onfailure = nothing)
 
-Promise objects represent placeholders for values that may or may not have been
-delivered yet. This is effectively a `Channel` object that can only be `put!` to
-a single time and all `take` calls on the promise will return that value.
-Promise values can be accessed via the `take()` function (not the `take!()`
-function) or via `p[]` for promise `p`. In both cases, the running thread is
-suspended until a value is delivered.
+Promise objects represent placeholders for values that are produced at some
+later point, typically by another task. A promise is settled exactly once: it is
+either *delivered* with a value by `put!`, or *failed* with an error payload by
+[`fail!`](@ref). Until then it is pending. `take` (or `p[]` for promise `p`)
+yields the delivered value, throws [`PromiseFailed`](@ref) for a failed promise,
+and suspends the calling task until the promise is settled.
+
+The `ondelivery` keyword installs a callback that is called with the delivered
+value, exactly once; `onfailure` installs one that is called with the failure
+payload. The callbacks are fixed when the promise is constructed and cannot be
+changed later. Their return values are ignored, so they are notifications
+rather than transformations, and an exception either callback throws is not
+caught. A callback is called in the latest world, so a long-lived task may
+settle a promise whose callback was defined after that task was created.
+Outside a transaction a callback runs in the task that settled the promise,
+after the settlement has been made; inside a transaction it runs in the
+finalize phase, before the transaction attempts to commit.
+
+[`take`](@ref) also accepts a timeout and a cancellation token. A `Promise`
+compares by identity — two promises are equal only when they are the same
+object — and its hash never waits for a settlement, so a pending promise may be
+used as a dictionary key.
+
+A `Promise` participates in transactions: a `put!` or `fail!` inside a
+transaction is staged and performed only if the whole transaction commits, and
+`take`, `isready`, [`isfailed`](@ref) and [`geterror`](@ref) inside that
+transaction see the staged settlement. See the "Promises and transactions"
+section of the manual for the details.
 
 # Examples
 
@@ -391,18 +415,98 @@ julia> p[]
 ```
 """
 mutable struct Promise{T}
-    _val::Union{Threads.Condition,Some{T}}
+    # The mutex is persistent, unlike the condition in the original one-field
+    # representation: a transaction's commit must be able to lock the promise
+    # in order to validate and settle it, and it must be able to do so whether
+    # or not the promise is still pending. `cond` is bound to `mutex`, so
+    # waiting and locking are the same lock and `notify` may be called with it
+    # held.
+    mutex::ReentrantLock
+    cond::Threads.Condition
+    # At most one of `_val` and `_err` is non-`nothing`; both transitions happen
+    # under `mutex`. `Some` wrappers rather than plain values, so a promise
+    # delivered `nothing` or failed `nothing` is still distinguishable from a
+    # pending one.
+    _val::Union{Nothing,Some{T}}
+    _err::Union{Nothing,Some{Any}}
+    ondelivery::Union{Nothing,Function}
+    onfailure::Union{Nothing,Function}
+    # The waiters parked in `take`; created on the first `take` and dropped when
+    # it is the last, so a promise that is never awaited allocates nothing for
+    # them. Guarded by `mutex`.
+    waiters::Union{Nothing,Base.IdSet{Waiter}}
+    function Promise{T}(ondelivery::Union{Nothing,Function},
+                        onfailure::Union{Nothing,Function}) where {T}
+        mux = ReentrantLock()
+        return new{T}(mux, Threads.Condition(mux), nothing, nothing, ondelivery,
+                      onfailure, nothing)
+    end
 end
-Promise{T}() where {T} = Promise{T}(Threads.Condition())
-Promise() = Promise{Any}()
+Promise{T}(; ondelivery::Union{Nothing,Function} = nothing,
+           onfailure::Union{Nothing,Function} = nothing) where {T} =
+    Promise{T}(ondelivery, onfailure)
+Promise(; ondelivery::Union{Nothing,Function} = nothing,
+        onfailure::Union{Nothing,Function} = nothing) =
+    Promise{Any}(ondelivery, onfailure)
+
+"""
+    PromiseFailed(err)
+
+An exception thrown by [`take`](@ref) (and by `p[]`) when the promise was
+settled as failed with [`fail!`](@ref). The failure payload is stored as `err`.
+
+See also: [`Promise`](@ref), [`fail!`](@ref), [`isfailed`](@ref),
+[`geterror`](@ref)
+"""
+struct PromiseFailed <: Exception
+    err::Any
+end
+export PromiseFailed
+function Base.showerror(io::IO, e::PromiseFailed)
+    print(io, "promise failed: ")
+    show(io, getfield(e, :err))
+    return nothing
+end
+
+"""
+    ReaderTimeout(timeout)
+
+An exception thrown by a blocking read when the given timeout expired: by
+[`take`](@ref) when the promise was still pending, and by [`take`](@ref) or
+`put!` when a [`Stream`](@ref) was still empty or full. The timeout, in seconds,
+is stored as `timeout`.
+
+See also: [`Promise`](@ref), [`Stream`](@ref), [`take`](@ref)
+"""
+struct ReaderTimeout <: Exception
+    timeout::Real
+end
+export ReaderTimeout
+function Base.showerror(io::IO, e::ReaderTimeout)
+    return print(io, "reader timed out after ", getfield(e, :timeout), " seconds")
+end
 # Some base functions.
 """
-    take(promise)
+    take(promise; timeout = nothing, token = canceltoken())
 
 Yields the value delivered to the given `Promise` object after suspending the
-current thread to wait for the value if necessary.
+current thread to wait for the value if necessary, and throws
+[`PromiseFailed`](@ref) if the promise was failed. If the current transaction
+has staged a settlement for the promise, that settlement is used without
+waiting; see [`Promise`](@ref).
 
-See also [`Promise`](@ref), `Base.put!`.
+`timeout` bounds the wait in seconds: if the promise is still pending when it
+expires, `take` throws [`ReaderTimeout`](@ref). A settled promise is returned or
+thrown immediately, even with `timeout = 0`.
+
+`token` is the [`CancelToken`](@ref) to observe; the default is the calling
+task's own token, see [`canceltoken`](@ref). If the token has been cancelled,
+`take` throws [`Cancelled`](@ref) even when the promise is already settled, so
+pass `token = nothing` to wait regardless — in the cleanup of a cancelled task,
+for example. Inside a transaction, a `take` that has to wait is a deadlock: the
+delivery it is waiting for cannot happen until the body returns. (Waiting on a
+[`Stream`](@ref) inside a transaction is not a deadlock in the same way; see its
+docstring.)
 
 
 ```@meta
@@ -425,49 +529,333 @@ julia> take(p)
 :done
 ```
 """
-take(d::Promise{T}) where {T} = begin
-    v = d._val
-    if isa(v, Threads.Condition)
-        lock(v)
-        try
-            (d._val === v) && wait(v)
-            return ((d._val)::Some{T}).value
-        finally
-            unlock(v)
+function take(d::Promise{T};
+              timeout::Union{Nothing,Real} = nothing,
+              token::Union{Nothing,CancelToken} = canceltoken()) where {T}
+    # Cancellation wins over settlement, including a settlement that is already
+    # present: a task whose work has been cancelled should not go on to use a
+    # value it was waiting for. `token = nothing` opts out.
+    (token === nothing) || checkcancel(token)
+    # Read-your-writes: a settlement staged by the current transaction is
+    # visible to that transaction, even though it has not committed. Without
+    # this, a `take` after a `put!` in the same transaction would wait for a
+    # settlement that cannot happen until the transaction's body returns.
+    t = currtx()
+    if t !== nothing
+        dat = get(getfield(t, :promises), d, nothing)
+        (dat === nothing) || return _staged_value(dat)
+    end
+    # The common case, and the only one that allocates nothing: an already
+    # settled promise.
+    r = _try_settle(d)
+    (r === nothing) || return r.val
+    (timeout === nothing) || (timeout >= 0) ||
+        throw(ArgumentError("timeout must be non-negative"))
+    w = Waiter()
+    timer = nothing
+    try
+        _promise_register!(d, w)
+        (token === nothing) || _register_waiter!(token, w)
+        (timeout === nothing) || (timer = Timer(_ -> _timeout!(w), timeout))
+        while true
+            # Re-check now that a wake-up cannot be missed: the waiter is
+            # registered before these checks, and settlement, timeout and
+            # cancellation all wake it.
+            (token === nothing) || checkcancel(token)
+            r = _try_settle(d)
+            (r === nothing) || return r.val
+            if _park!(w)
+                # The timer may have raced a settlement; one last check lets
+                # the settlement win.
+                r = _try_settle(d)
+                (r === nothing) || return r.val
+                throw(ReaderTimeout(timeout))
+            end
         end
-    else
-        return v.value
+    finally
+        _promise_unregister!(d, w)
+        (token === nothing) || _unregister_waiter!(token, w)
+        (timer === nothing) || close(timer)
     end
 end
+
+# A promise's settlement as `take` sees it: `nothing` means still pending, and a
+# failure throws rather than being wrapped. The wrapper, rather than a bare
+# value, because a promise may legitimately deliver `nothing`.
+struct _Settled{T}
+    val::T
+end
+
+# The settlement of `d`, or `nothing` if it is still pending. The promise's
+# mutex is the only lock taken.
+function _try_settle(d::Promise{T}) where {T}
+    mux = getfield(d, :mutex)
+    lock(mux)
+    try
+        v = getfield(d, :_val)
+        (v !== nothing) && return _Settled{T}((v::Some{T}).value)
+        e = getfield(d, :_err)
+        (e === nothing) || throw(PromiseFailed((e::Some{Any}).value))
+        return nothing
+    finally
+        unlock(mux)
+    end
+end
+
+# The settlement staged for `d` by the current transaction; see `take`.
+function _staged_value(dat)
+    v = getfield(dat, :val)
+    (v !== nothing) && return v.value
+    return throw(PromiseFailed((getfield(dat, :err)::Some{Any}).value))
+end
+
+# Park `w` on `d` so that a settlement wakes it. The promise's mutex is the only
+# lock taken; see the lock-order note in `cancel.jl`.
+function _promise_register!(d::Promise, w::Waiter)
+    mux = getfield(d, :mutex)
+    lock(mux)
+    try
+        ws = getfield(d, :waiters)
+        if ws === nothing
+            ws = Base.IdSet{Waiter}()
+            setfield!(d, :waiters, ws)
+        end
+        push!(ws, w)
+    finally
+        unlock(mux)
+    end
+    return nothing
+end
+function _promise_unregister!(d::Promise, w::Waiter)
+    mux = getfield(d, :mutex)
+    lock(mux)
+    try
+        ws = getfield(d, :waiters)
+        if ws !== nothing
+            delete!(ws, w)
+            isempty(ws) && setfield!(d, :waiters, nothing)
+        end
+    finally
+        unlock(mux)
+    end
+    return nothing
+end
+# Wake every registered waiter and drop the registry. The caller holds `d`'s
+# mutex.
+function _wake_waiters!(d::Promise)
+    ws = getfield(d, :waiters)
+    (ws === nothing) && return nothing
+    setfield!(d, :waiters, nothing)
+    for w in ws
+        _wake!(w)
+    end
+    return nothing
+end
+
 Base.getindex(d::Promise{T}) where {T} = take(d)
 function Base.put!(d::Promise{T}, x) where {T}
-    v = d._val
-    if isa(v, Threads.Condition)
-        lock(v)
-        try
-            (d._val === v) || throw(ArgumentError("given promise is already fulfilled"))
-            d._val = Some{T}(x)
-            notify(v; all=true)
-            return d._val.value
-        finally
-            unlock(v)
-        end
-    else
-        throw(ArgumentError("given promise is already fulfilled"))
+    s = Some{T}(x)
+    t = currtx()
+    (t === nothing) && return _promise_deliver!(d, s)
+    return _promise_stage!(d, s, t)
+end
+
+"""
+    fail!(promise, err)
+
+Settles `promise` as failed with the given error payload and yields `err`; a
+later [`take`](@ref) throws [`PromiseFailed`](@ref) carrying it. A promise
+settles exactly once, so failing one that has already been delivered or failed
+raises `ArgumentError`. Inside a transaction, the failure is staged like a
+delivery and happens only if the transaction commits.
+
+See also: [`Promise`](@ref), [`take`](@ref), [`isfailed`](@ref),
+[`geterror`](@ref)
+"""
+function fail!(d::Promise{T}, err) where {T}
+    e = Some{Any}(err)
+    t = currtx()
+    (t === nothing) && return _promise_fail!(d, e)
+    return _promise_stage_failure!(d, e, t)
+end
+export fail!
+# Stage a settlement in the given transaction; the commit performs it. `t` is
+# deliberately unannotated: `Transaction` is defined in `TX.jl`, which is
+# included after this file, and the annotation would be resolved at definition
+# time.
+function _promise_stage!(d::Promise{T}, s::Some{T}, t) where {T}
+    _promise_check_stage!(d, t, "given promise is already fulfilled")
+    getfield(t, :promises)[d] = PromiseTxData{T}(s, nothing)
+    return s.value
+end
+function _promise_stage_failure!(d::Promise{T}, e::Some{Any}, t) where {T}
+    _promise_check_stage!(d, t, "given promise is already settled")
+    getfield(t, :promises)[d] = PromiseTxData{T}(nothing, e)
+    return e.value
+end
+# The checks shared by both staging paths: the transaction must still be
+# running, and the promise must be unsettled both in the transaction and in
+# fact. A promise is one-shot either way, so a second settlement is a permanent
+# error rather than a retryable conflict. `msg` names the settlement that was
+# attempted, so `put!` keeps its historical message and `fail!` reports a
+# settlement.
+function _promise_check_stage!(d::Promise{T}, t, msg::String) where {T}
+    (getfield(t, :state) === :running) ||
+        error("promises can only be settled before finalizing the transaction")
+    haskey(getfield(t, :promises), d) && throw(ArgumentError(msg))
+    mux = getfield(d, :mutex)
+    lock(mux)
+    try
+        _promise_pending(d) || throw(ArgumentError(msg))
+    finally
+        unlock(mux)
+    end
+    return nothing
+end
+# Whether `d` is unsettled. The caller holds `d`'s mutex.
+_promise_pending(d::Promise) =
+    (getfield(d, :_val) === nothing) && (getfield(d, :_err) === nothing)
+
+# Settle immediately, outside any transaction. The settlement callback runs
+# after the lock is released, so it may take or settle other promises; an
+# exception from it propagates, but the promise remains settled. It is called
+# with `invokelatest` for the reason the actor's functions are: the settling
+# task may be long-lived, and the callback may have been written after that
+# task was created.
+function _promise_deliver!(d::Promise{T}, s::Some{T}) where {T}
+    cb = getfield(d, :ondelivery)
+    mux = getfield(d, :mutex)
+    lock(mux)
+    try
+        _promise_pending(d) || throw(ArgumentError("given promise is already fulfilled"))
+        setfield!(d, :_val, s)
+        notify(getfield(d, :cond); all=true)
+        _wake_waiters!(d)
+    finally
+        unlock(mux)
+    end
+    (cb === nothing) || Base.invokelatest(cb, s.value)
+    return s.value
+end
+function _promise_fail!(d::Promise{T}, e::Some{Any}) where {T}
+    cb = getfield(d, :onfailure)
+    mux = getfield(d, :mutex)
+    lock(mux)
+    try
+        _promise_pending(d) || throw(ArgumentError("given promise is already settled"))
+        setfield!(d, :_err, e)
+        notify(getfield(d, :cond); all=true)
+        _wake_waiters!(d)
+    finally
+        unlock(mux)
+    end
+    (cb === nothing) || Base.invokelatest(cb, e.value)
+    return e.value
+end
+
+function Base.isready(d::Promise{T}) where {T}
+    t = currtx()
+    if t !== nothing
+        dat = get(getfield(t, :promises), d, nothing)
+        (dat === nothing) || return true
+    end
+    mux = getfield(d, :mutex)
+    lock(mux)
+    try
+        return !_promise_pending(d)
+    finally
+        unlock(mux)
     end
 end
-Base.isready(d::Promise{T}) where {T} = isa(d._val, Some{T})
-Base.isequal(a::Promise{T}, b::Promise{S}) where {T,S} = (a === b) || isequal(a[], b[])
-Base.hash(d::Promise{T}) where {T} = 0x767127451c1e402a + hash(d[])
+
+"""
+    isfailed(promise)
+
+Yields `true` if the given `Promise` has been failed with [`fail!`](@ref), and
+`false` if it is pending or delivered. Inside the transaction that staged a
+failure, it reflects the staged settlement, like `isready`.
+
+See also: [`Promise`](@ref), [`geterror`](@ref), [`PromiseFailed`](@ref)
+"""
+function isfailed(d::Promise{T}) where {T}
+    t = currtx()
+    if t !== nothing
+        dat = get(getfield(t, :promises), d, nothing)
+        if dat !== nothing
+            return getfield(dat, :err) !== nothing
+        end
+    end
+    mux = getfield(d, :mutex)
+    lock(mux)
+    try
+        return getfield(d, :_err) !== nothing
+    finally
+        unlock(mux)
+    end
+end
+export isfailed
+
+"""
+    geterror(promise)
+
+Yields the failure payload of a `Promise` that was settled as failed with
+[`fail!`](@ref), and `nothing` if it is pending or delivered. This is the
+non-throwing counterpart of [`take`](@ref), which throws [`PromiseFailed`](@ref)
+for a failed promise. Inside the transaction that staged a failure, it reflects
+the staged settlement. A promise failed with a payload of `nothing` also yields
+`nothing`, so use [`isfailed`](@ref) to tell that case from a pending or
+delivered promise.
+
+See also: [`Promise`](@ref), [`isfailed`](@ref), [`fail!`](@ref)
+"""
+function geterror(d::Promise{T}) where {T}
+    t = currtx()
+    if t !== nothing
+        dat = get(getfield(t, :promises), d, nothing)
+        if dat !== nothing
+            e = getfield(dat, :err)
+            return e === nothing ? nothing : e.value
+        end
+    end
+    mux = getfield(d, :mutex)
+    lock(mux)
+    try
+        e = getfield(d, :_err)
+        return e === nothing ? nothing : (e::Some{Any}).value
+    finally
+        unlock(mux)
+    end
+end
+
+# Identity semantics, as for any mutable object identified by its handle: a
+# promise is equal only to itself, and its hash never waits for a settlement.
+# (The value-comparing forms this replaces called `take`, so an undelivered
+# promise as a dictionary key hung.)
+Base.isequal(a::Promise, b::Promise) = a === b
+Base.hash(d::Promise, h::UInt) = hash(objectid(d), hash(0x767127451c1e402a, h))
+
 function Base.show(io::IO, ::MIME"text/plain", d::Promise{T}) where {T}
-    v = d._val
-    if isa(v, Some)
+    mux = getfield(d, :mutex)
+    lock(mux)
+    local v, e
+    try
+        v = getfield(d, :_val)
+        e = getfield(d, :_err)
+    finally
+        unlock(mux)
+    end
+    if v !== nothing
         print(io, "$(typeof(d))(")
         show(io, v.value)
         print(io, ")")
+    elseif e !== nothing
+        print(io, "$(typeof(d))(<failed: ")
+        show(io, e.value)
+        print(io, ">)")
     else
         print(io, "$(typeof(d))(<...>)")
     end
+    return nothing
 end
 export Promise, take
 

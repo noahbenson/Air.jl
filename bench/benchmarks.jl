@@ -264,6 +264,47 @@ SUITE["tx"]["filtered"] = @benchmarkable begin
     v[]
 end
 
+# ==============================================================================
+# Streams
+
+# A stream's fast path is one mutex acquisition, a push or a pop, and a version
+# bump. The transactional variants pay the staging and the commit's version
+# validation on top, so the two pairs together say what a rollback-safe stream
+# access costs.
+function _stream_ready(n::Int)
+    s = Stream{Int}()
+    for i in 1:n
+        put!(s, i)
+    end
+    return s
+end
+
+SUITE["stream"] = BenchmarkGroup(["take", "put", "tx"])
+SUITE["stream"]["take"] = @benchmarkable begin
+    for _ in 1:$NTX
+        take(s)
+    end
+end setup=(s = _stream_ready($NTX))
+SUITE["stream"]["put"] = @benchmarkable begin
+    for _ in 1:$NTX
+        put!(s, 1)
+    end
+end setup=(s = Stream{Int}())
+SUITE["stream"]["tx_take"] = @benchmarkable begin
+    for _ in 1:$NTX
+        tx() do
+            take(s)
+        end
+    end
+end setup=(s = _stream_ready($NTX))
+SUITE["stream"]["tx_put"] = @benchmarkable begin
+    for _ in 1:$NTX
+        tx() do
+            put!(s, 1)
+        end
+    end
+end setup=(s = Stream{Int}())
+
 # Sending to an actor enqueues a function for its own task to run later; the
 # queue is heterogeneous by design, so the call the actor makes is dynamic.
 SUITE["actor"] = BenchmarkGroup(["send"])

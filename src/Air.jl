@@ -11,7 +11,9 @@
 
 module Air
 
+include("cancel.jl")
 include("util.jl")
+include("stream.jl")
 include("api.jl")
 include("ptree.jl")
 include("pset.jl")
@@ -113,6 +115,10 @@ export Var,
     getfinalize,
     setfilter!,
     setfinalize!,
+    getpostprocess,
+    geterrorhandler,
+    setpostprocess!,
+    seterrorhandler!,
     send,
     geterror,
     reset,
