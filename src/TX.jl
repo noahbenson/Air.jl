@@ -899,18 +899,21 @@ function tx(fn::F) where {F<:Function}
         # makes the inferred return type `Union{Nothing,T}`, and a transaction's
         # value is read on every `tx` call. The `catch` arm never falls through,
         # so the value of this expression is exactly the value of `fn`.
+        #
+        # Bind the transaction for the body by writing the task's slot directly.
+        # The `withvars` binding it replaces did the same job, but through the
+        # task's bindings dictionary, which it copies twice and looks up three
+        # times to bind one value. The slot is cleared on both exits without a
+        # `finally`, which keeps the body call inside one exception frame: with
+        # the extra frame, Julia 1.11 miscompiles a body that raises from
+        # inside its own `try`/`finally` (it traps with an illegal instruction
+        # instead of unwinding; JuliaLang/julia#29152 and #51853); see
+        # `_stream_take_once` in src/stream.jl.
+        slot[] = the_tx
         res = try
-            # Bind the transaction for the body by writing the task's slot
-            # directly. The `withvars` binding it replaces did the same job, but
-            # through the task's bindings dictionary, which it copies twice and
-            # looks up three times to bind one value.
-            slot[] = the_tx
-            try
-                fn()
-            finally
-                slot[] = nothing
-            end
+            fn()
         catch e
+            slot[] = nothing
             # Clear on the way out of the attempt: the transaction is pooled per
             # task, so anything left staged would stay reachable until this task
             # ran another transaction. A retry restages its own writes into the
@@ -920,6 +923,7 @@ function tx(fn::F) where {F<:Function}
             isa(e, TxRetryException) && continue
             rethrow()
         end
+        slot[] = nothing
         # At this point the transaction is over and we need to ensure that the
         # current volatile values are consistent with the transaction we just
         # executed. Before we do that, we should finalize the volatiles.

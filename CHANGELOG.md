@@ -111,6 +111,15 @@ fixes in the patch position, which is how the versions below are chosen.
   after that task was started, which raised `MethodError` ("the applicable
   method may be too new") and failed the settling task instead of running the
   callback.
+- A transaction whose body raised from inside its own `try`/`finally` could
+  trap with an illegal instruction (signal 4) on Julia 1.11 rather than unwind:
+  that version miscompiles a `try`/`finally` region whose `Union`-typed value
+  has to survive an exception unwinding through further exception frames
+  (JuliaLang/julia#29152, a trap since 1.11's #51853). Julia 1.10 and 1.13 are
+  unaffected. The body call now sits in a single exception frame, and a
+  stream's transactional attempt is its own function — which also deduplicates
+  the two identical locked blocks that each stream operation had — so no such
+  region remains.
 
 ### Performance
 

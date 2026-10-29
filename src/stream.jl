@@ -765,6 +765,28 @@ end
     return d !== nothing && getfield(d, :born)
 end
 
+# One attempt at a transactional take: the mutex is taken and released here, and
+# `nothing` means that the stream would block. Keeping the attempt whole in its
+# own function is deliberate. Its result is a `Union{Nothing,_StreamItem{T}}`,
+# and Julia 1.11 miscompiles a `try`/`finally` region whose union value has to
+# survive an exception unwinding through further exception frames — the
+# symptom is an illegal instruction (an LLVM trap) rather than a wrong answer.
+# That is the shape of JuliaLang/julia#29152, made a trap by the union-store
+# guard added in 1.11 (#51853); 1.10 and 1.13 are unaffected. Called from
+# `_stream_take_tx`, whose body is one such frame, the union is built and
+# consumed in a frame of its own instead.
+function _stream_take_once(s::Stream{T}, t) where {T}
+    mux = getfield(s, :mutex)
+    lock(mux)
+    try
+        d = _stream_txdata_locked!(s, t)
+        _stream_tx_recheck!(s, d)
+        return _try_tx_take_locked!(s, d)
+    finally
+        unlock(mux)
+    end
+end
+
 function _stream_take_tx(s::Stream{T}, t, timeout,
                          token::Union{Nothing,CancelToken}) where {T}
     mux = getfield(s, :mutex)
@@ -773,14 +795,7 @@ function _stream_take_tx(s::Stream{T}, t, timeout,
     try
         while true
             (token === nothing) || checkcancel(token)
-            lock(mux)
-            r = try
-                d = _stream_txdata_locked!(s, t)
-                _stream_tx_recheck!(s, d)
-                _try_tx_take_locked!(s, d)
-            finally
-                unlock(mux)
-            end
+            r = _stream_take_once(s, t)
             (r === nothing) || return r.value
             _stream_born(t, s) && throw(StreamDeadlock())
             (timeout === nothing) || (timeout >= 0) ||
@@ -797,14 +812,7 @@ function _stream_take_tx(s::Stream{T}, t, timeout,
                 (timeout === nothing) || (timer = Timer(_ -> _timeout!(w), timeout))
             end
             if _park!(w)
-                lock(mux)
-                r = try
-                    d = _stream_txdata_locked!(s, t)
-                    _stream_tx_recheck!(s, d)
-                    _try_tx_take_locked!(s, d)
-                finally
-                    unlock(mux)
-                end
+                r = _stream_take_once(s, t)
                 (r === nothing) || return r.value
                 throw(ReaderTimeout(timeout))
             end
@@ -817,6 +825,21 @@ function _stream_take_tx(s::Stream{T}, t, timeout,
     end
 end
 
+# One attempt at a transactional put, for the reason given on
+# `_stream_take_once`. Its result is a `Bool` rather than a union, so it would
+# not trip that miscompilation, but it belongs next to the take it mirrors.
+function _stream_put_once(s::Stream{T}, xT::T, t) where {T}
+    mux = getfield(s, :mutex)
+    lock(mux)
+    try
+        d = _stream_txdata_locked!(s, t)
+        _stream_tx_recheck!(s, d)
+        return _try_tx_push_locked!(s, d, xT)
+    finally
+        unlock(mux)
+    end
+end
+
 function _stream_put_tx(s::Stream{T}, xT::T, t, timeout,
                         token::Union{Nothing,CancelToken}) where {T}
     mux = getfield(s, :mutex)
@@ -825,14 +848,7 @@ function _stream_put_tx(s::Stream{T}, xT::T, t, timeout,
     try
         while true
             (token === nothing) || checkcancel(token)
-            lock(mux)
-            ok = try
-                d = _stream_txdata_locked!(s, t)
-                _stream_tx_recheck!(s, d)
-                _try_tx_push_locked!(s, d, xT)
-            finally
-                unlock(mux)
-            end
+            ok = _stream_put_once(s, xT, t)
             ok && return xT
             _stream_born(t, s) && throw(StreamDeadlock())
             (timeout === nothing) || (timeout >= 0) ||
@@ -849,14 +865,7 @@ function _stream_put_tx(s::Stream{T}, xT::T, t, timeout,
                 (timeout === nothing) || (timer = Timer(_ -> _timeout!(w), timeout))
             end
             if _park!(w)
-                lock(mux)
-                ok = try
-                    d = _stream_txdata_locked!(s, t)
-                    _stream_tx_recheck!(s, d)
-                    _try_tx_push_locked!(s, d, xT)
-                finally
-                    unlock(mux)
-                end
+                ok = _stream_put_once(s, xT, t)
                 ok && return xT
                 throw(ReaderTimeout(timeout))
             end
