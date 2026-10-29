@@ -45,7 +45,10 @@ fixes in the patch position, which is how the versions below are chosen.
   only if the transaction commits, and a concurrent change makes the attempt
   retry rather than commit against a stale view; a stream created in the
   current transaction raises `StreamDeadlock` instead of waiting, since no other
-  task can reach it yet. Streams compare by identity, like promises.
+  task can reach it yet. `snapshot` copies the values that are waiting, oldest
+  first, as an independent vector — the form to log, keep or serialize — and
+  `isopen`, `maxsize`, `length`, `isempty` and `isready` inspect a stream
+  without blocking. Streams compare by identity, like promises.
 - **Timeouts and cancellation.** `take` accepts a `timeout` keyword (in
   seconds), throwing the new `ReaderTimeout` if the promise is still pending
   when it expires, and a `token` keyword. Every task has a `CancelToken`

@@ -520,6 +520,72 @@ Base.isempty(s::Stream) = length(s) == 0
 Base.isready(s::Stream) = length(s) > 0 || !isopen(s)
 Base.eltype(::Type{Stream{T}}) where {T} = T
 
+"""
+    snapshot(stream) -> Vector{T}
+
+Yields a copy of the values the given [`Stream`](@ref) is holding, oldest
+first, without blocking and without removing them. The copy is independent of
+the stream, so it may be kept, mutated or serialized; whether the stream was
+open and what its bound is are reported separately by [`isopen`](@ref) and
+[`maxsize`](@ref).
+
+Inside a transaction the snapshot is the transaction's own view: it includes
+the values the body has staged with `put!` and excludes those it has staged
+with `take`, so it agrees with `length`, `isempty` and `isready`. Like those,
+it is an advisory snapshot rather than a read that is validated at commit.
+
+See also: [`Stream`](@ref), [`take`](@ref)
+
+# Examples
+
+```@meta
+DocTestSetup = quote
+    using Air
+end
+```
+
+```jldoctest
+julia> s = Stream{Int}(maxsize = 4); put!(s, 1); put!(s, 2);
+
+julia> snapshot(s)
+2-element Vector{Int64}:
+ 1
+ 2
+
+julia> take(s)          # a snapshot consumes nothing
+1
+
+julia> snapshot(s)
+1-element Vector{Int64}:
+ 2
+```
+"""
+function snapshot(s::Stream{T}) where {T}
+    mux = getfield(s, :mutex)
+    lock(mux)
+    try
+        items = getfield(s, :items)
+        # Indexing a `Vector` with a range copies, which is the snapshot.
+        out = items[getfield(s, :head):end]
+        t = currtx()
+        (t === nothing) && return out
+        d = get(getfield(t, :streams), s, nothing)
+        (d === nothing) && return out
+        # Staged takes consume the front of the live items, then the staged
+        # puts; `ntaken` may exceed the live count if another task has taken
+        # some since, in which case nothing live remains.
+        skip = min(getfield(d, :ntaken), length(out))
+        (skip > 0) && deleteat!(out, 1:skip)
+        ph = getfield(d, :puts_head)
+        ps = getfield(d, :puts)
+        (ph <= length(ps)) && append!(out, @view ps[ph:end])
+        return out
+    finally
+        unlock(mux)
+    end
+end
+export snapshot
+
 # Streams are handles, so equality and hashing are by identity, as for a
 # promise; a stream is a perfectly good dictionary key.
 Base.isequal(a::Stream, b::Stream) = a === b

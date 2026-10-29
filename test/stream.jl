@@ -60,6 +60,23 @@
         @test d[s] === :a
         @test d[b] === :b
 
+        # `snapshot` copies what is queued, oldest first, without consuming it,
+        # and the copy is independent of the stream.
+        q = Stream{Int}(maxsize = 3)
+        @test snapshot(q) == Int[]
+        @test snapshot(q) isa Vector{Int}
+        put!(q, 1)
+        put!(q, 2)
+        snap = snapshot(q)
+        @test snap == [1, 2]
+        @test length(snap) == length(q)
+        push!(snap, 99)
+        empty!(snap)
+        @test snapshot(q) == [1, 2]
+        @test take(q) == 1
+        @test snapshot(q) == [2]
+        @test snapshot(q) isa Vector{Int}
+
         # `show` never blocks or enumerates.
         @test occursin("Stream{Int64}", sprint(show, s))
         @test occursin("open", sprint(show, s))
@@ -274,6 +291,20 @@
         @test view == (1, 0, true, 1, true)
         @test length(t) == 1
         @test take(t) == 2
+
+        # A snapshot is staged-aware in the same way, and agrees with `length`.
+        sn = Stream{Int}()
+        put!(sn, 1)
+        put!(sn, 2)
+        shot = tx() do
+            take(sn)
+            put!(sn, 3)
+            @test length(snapshot(sn)) == length(sn)
+            snapshot(sn)
+        end
+        @test shot == [2, 3]
+        @test snapshot(sn) == [2, 3]
+        @test take(sn) == 2
 
         # A staged close commits, and one that aborts leaves the stream open.
         c = Stream{Int}()

@@ -53,6 +53,23 @@ inspect the stream without blocking. Here `isready` means "a `take` would return
 rather than wait", so a closed stream is ready even when it is empty, just as a
 failed promise is.
 
+[`snapshot`](@ref) copies the values that are waiting, oldest first, without
+consuming them. Its result is an independent `Vector`, so it is the form to log,
+keep, or serialize; a stream describes itself further with `isopen` and
+`maxsize`.
+
+```julia
+julia> s = Stream{Int}(maxsize = 3); put!(s, 1); put!(s, 2);
+
+julia> snapshot(s)
+2-element Vector{Int64}:
+ 1
+ 2
+
+julia> length(s)        # nothing was taken
+2
+```
+
 ## Closing a stream
 
 `close` ends a stream. A later `put!` throws
@@ -120,9 +137,10 @@ while this transaction is running, the commit's version check fails and the
 body runs again from the start, with its staged operations discarded. This is
 the same optimistic rule the STM applies to [`Volatile`](@ref)s: a transaction
 always commits against the values it first saw. A stream that a transaction
-only inspects with `length`, `isempty`, `isready` or `isopen` is not part of
-that validation; those are advisory snapshots, not validated reads, so a body
-should not branch on them and then assume the branch still holds at commit.
+only inspects with `length`, `isempty`, `isready`, `isopen` or `snapshot` is not
+part of that validation; those are advisory snapshots, not validated reads, so a
+body should not branch on them and then assume the branch still holds at commit.
+(Inside a transaction, `snapshot` shows the body's own staged puts and takes.)
 
 Two consequences are worth stating plainly:
 
@@ -161,6 +179,7 @@ prefer one non-transactional consumer per stream.
 
 The docstrings for `Stream`, [`StreamClosed`](@ref) and
 [`StreamDeadlock`](@ref) are in the full [API reference](API.md), along with
-those for `take`, `put!`, `close`, `isopen`, `maxsize`, `isempty`, `length` and
-`isready`. All of those but `take` and `maxsize` extend `Base`; the `Promise`
-methods that `take` and `put!` share with streams are documented there too.
+those for `take`, `put!`, `close`, [`snapshot`](@ref), `isopen`, [`maxsize`](@ref),
+`isempty`, `length` and `isready`. All of those but `take`, `maxsize` and
+`snapshot` extend `Base`; the `Promise` methods that `take` and `put!` share
+with streams are documented there too.
