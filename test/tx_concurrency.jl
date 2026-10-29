@@ -28,6 +28,18 @@
     # the CI leg that runs eight threads exercises more than the four-thread one.
     T = max(2, Threads.nthreads())
 
+    # Bounded polling for the promise tests below, which watch the waiter
+    # registry to know that every task is parked: a missed wake-up fails the
+    # test instead of hanging it.
+    waituntil(f; timeout=30.0) = begin
+        t0 = time()
+        while !f() && (time() - t0) < timeout
+            sleep(0.01)
+        end
+        f()
+    end
+    nwaiters(d) = (ws = getfield(d, :waiters); ws === nothing ? 0 : length(ws))
+
     @testset "no lost updates" begin
         # T tasks each increment one volatile M times. Every increment must land
         # exactly once, so the total is exact: a lost update shows up as a short
@@ -116,5 +128,177 @@
         foreach(wait, committers)
         foreach(wait, aborters)
         @test v[] == ncommit * M
+    end
+
+    @testset "exactly one transaction delivers a shared promise" begin
+        # A promise is one-shot, so among T transactions racing to deliver the
+        # same one exactly one must commit and the rest must fail with an
+        # `ArgumentError` rather than retry.
+        p = Promise{Int}()
+        results = Vector{Any}(undef, T)
+        tasks = [Threads.@spawn begin
+            try
+                tx() do
+                    put!(p, i)
+                end
+                results[i] = :ok
+            catch e
+                results[i] = e
+            end
+        end for i in 1:T]
+        foreach(wait, tasks)
+        @test count(==(:ok), results) == 1
+        @test count(r -> r isa ArgumentError, results) == T - 1
+        @test take(p) in 1:T
+    end
+
+    @testset "a two-promise transaction stages in either order" begin
+        # Each transaction stages the same two promises, alternating the order.
+        # Without the commit's sorted promise-lock group two such transactions
+        # could each hold one lock and wait for the other; with it, one commits
+        # and the other fails cleanly.
+        p1 = Promise{Int}()
+        p2 = Promise{Int}()
+        results = Vector{Any}(undef, T)
+        tasks = [Threads.@spawn begin
+            try
+                tx() do
+                    if isodd(i)
+                        put!(p1, i)
+                        put!(p2, i)
+                    else
+                        put!(p2, i)
+                        put!(p1, i)
+                    end
+                end
+                results[i] = :ok
+            catch e
+                results[i] = e
+            end
+        end for i in 1:T]
+        foreach(wait, tasks)
+        @test count(==(:ok), results) == 1
+        @test count(r -> r isa ArgumentError, results) == T - 1
+        @test isready(p1) && isready(p2)
+        @test take(p1) == take(p2)
+    end
+
+    @testset "deliveries survive volatile contention" begin
+        # Each iteration commits a volatile increment and a delivery in the same
+        # transaction, so a retry has to discard and restage the delivery. The
+        # volatile total is exact and every promise is delivered with its own
+        # tag. Callback counts are deliberately not asserted: a retry runs the
+        # callback for an attempt that never delivers.
+        M = 100
+        v = Volatile{Int}(0)
+        ps = [[Promise{Int}() for _ in 1:M] for _ in 1:T]
+        tasks = [Threads.@spawn begin
+            for j in 1:M
+                tx() do
+                    v[] = v[] + 1
+                    put!(ps[i][j], j)
+                end
+            end
+        end for i in 1:T]
+        foreach(wait, tasks)
+        @test v[] == T * M
+        @test all(isready(ps[i][j]) for i in 1:T for j in 1:M)
+        @test all(take(ps[i][j]) == j for i in 1:T for j in 1:M)
+    end
+
+    @testset "a finalize-phase send happens once per commit" begin
+        # Each iteration increments the volatile and delivers a promise whose
+        # callback sends to one shared actor. A losing attempt re-runs the
+        # callback and restages its send, so the actor must receive exactly one
+        # message per committed transaction — one per increment, not one per
+        # attempt. The sentinel send at the end is queued behind every committed
+        # message, so taking it proves the actor has drained.
+        M = 100
+        v = Volatile{Int}(0)
+        count = Threads.Atomic{Int}(0)
+        a = Actor{Int}(0)
+        # The sentinel closure is defined before anything is sent. The actor's
+        # task is still running when the backlog is drained, and a task cannot
+        # call a method defined after it was created: defining the sentinel
+        # afterwards makes the drain a `MethodError` inside the actor.
+        drained = Promise{Nothing}()
+        sentinel = y -> (put!(drained, nothing); y)
+        tasks = [Threads.@spawn begin
+            for j in 1:M
+                p = Promise{Int}(ondelivery = _ -> begin
+                    send(y -> (Threads.atomic_add!(count, 1); y), a)
+                end)
+                tx() do
+                    v[] = v[] + 1
+                    put!(p, j)
+                end
+            end
+        end for _ in 1:T]
+        foreach(wait, tasks)
+        send(sentinel, a)
+        take(drained)
+        @test v[] == T * M
+        @test count[] == T * M
+    end
+
+    @testset "a commit wakes every parked taker" begin
+        # Park T takers on one promise, commit a delivery in a transaction, and
+        # every one of them must receive the value and unregister.
+        p = Promise{Int}()
+        takers = [Threads.@spawn take(p; token = nothing) for _ in 1:T]
+        @test waituntil(() -> nwaiters(p) == T)
+        tx() do
+            put!(p, 9)
+        end
+        @test all(fetch(t) == 9 for t in takers)
+        @test getfield(p, :waiters) === nothing
+    end
+
+    @testset "a committed failure wakes every parked taker" begin
+        # The same for the failure settlement: every parked taker throws rather
+        # than continuing to wait.
+        p = Promise{Int}()
+        takers = [Threads.@spawn (try
+                     take(p; token = nothing)
+                 catch e
+                     e
+                 end) for _ in 1:T]
+        @test waituntil(() -> nwaiters(p) == T)
+        tx() do
+            fail!(p, :boom)
+        end
+        es = fetch.(takers)
+        @test all(e isa PromiseFailed for e in es)
+        @test all(e.err === :boom for e in es)
+        @test getfield(p, :waiters) === nothing
+    end
+
+    @testset "cancellation and a commit wake only their own waiters" begin
+        # Half the takers wait under their own token, half under the promise
+        # alone. Cancelling releases exactly the first half, while the promise is
+        # still pending; failing it then releases the second.
+        p = Promise{Int}()
+        n = max(2, T ÷ 2)
+        toks = [CancelToken() for _ in 1:n]
+        cancelled = [Threads.@spawn (try
+                         take(p; token = toks[i])
+                     catch e
+                         e
+                     end) for i in 1:n]
+        takers = [Threads.@spawn (try
+                     take(p; token = nothing)
+                 catch e
+                     e
+                 end) for _ in 1:n]
+        @test waituntil(() -> nwaiters(p) == 2n)
+        foreach(cancel!, toks)
+        @test all(e isa Cancelled for e in fetch.(cancelled))
+        @test waituntil(() -> nwaiters(p) == n)
+        @test !isready(p)
+        tx() do
+            fail!(p, :boom)
+        end
+        @test all(e isa PromiseFailed for e in fetch.(takers))
+        @test getfield(p, :waiters) === nothing
     end
 end
