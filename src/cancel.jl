@@ -12,9 +12,9 @@
 #
 # Lock order (the soundness argument for the whole scheme): a task holds its
 # waiter's lock only while it is parked or checking whether it was woken, and it
-# never acquires a promise mutex or a token lock while holding it. Promise
-# mutexes and token locks may therefore wake waiters while they hold their own
-# state lock, and no cycle is possible.
+# never acquires a promise mutex, a stream mutex or a token lock while holding
+# it. Promise mutexes, stream mutexes and token locks may therefore wake waiters
+# while they hold their own state lock, and no cycle is possible.
 #
 # @author Noah C. Benson
 #
@@ -90,6 +90,27 @@ function _timeout!(w::Waiter)
         unlock(getfield(w, :lock))
     end
     return nothing
+end
+# Park on a waiter until it is woken, and yield whether its timer expired. A
+# wake that arrived before the park is consumed immediately rather than missed,
+# and the waiter's lock is released on return, so the caller never holds it
+# while checking state or taking another lock (see the lock-order note at the
+# top of this file). This is the slow path of every blocking primitive.
+function _park!(w::Waiter)
+    timedout = false
+    lock(getfield(w, :lock))
+    try
+        if getfield(w, :timedout)
+            timedout = true
+        else
+            getfield(w, :done) || wait(getfield(w, :cond))
+            timedout = getfield(w, :timedout)
+        end
+        setfield!(w, :done, false)
+    finally
+        unlock(getfield(w, :lock))
+    end
+    return timedout
 end
 
 """

@@ -670,6 +670,9 @@ mutable struct Transaction
     # promises are handles and are compared by identity — without depending on
     # how `Promise` defines its hash.
     promises::IdDict{Promise,PromiseTxData}
+    # Like promises, streams are handles compared by identity, so the same
+    # `IdDict` is used for the same reasons.
+    streams::IdDict{Stream,StreamTxData}
     function Transaction()
         return new(
             :running,
@@ -677,6 +680,7 @@ mutable struct Transaction
             Dict{Volatile,NTuple{2,VolatileData}}(),
             Dict{Actor,ActorTxData}(),
             IdDict{Promise,PromiseTxData}(),
+            IdDict{Stream,StreamTxData}(),
         )
     end
 end
@@ -701,6 +705,7 @@ tx_clear!(t::Transaction) = begin
     empty!(getfield(t, :writes))
     empty!(getfield(t, :actors))
     empty!(getfield(t, :promises))
+    empty!(getfield(t, :streams))
     return nothing
 end
 
@@ -798,6 +803,7 @@ const TX_MAX_ATTEMPTS = 2^14
 const _VOLS_KEY = :AirLockVols
 const _ACTS_KEY = :AirLockActs
 const _PRMS_KEY = :AirLockPrms
+const _STRMS_KEY = :AirLockStrms
 const _TXPOOL_KEY = :AirTxPool
 # Holds the transaction whose finalize phase is running in this task, or
 # `nothing`. The task's transaction slot has already been cleared by then, so
@@ -814,15 +820,15 @@ _finalizing_tx() = begin
 end
 
 # The transaction to reuse, held per task, so that `tx` does not construct a
-# `Transaction` and its four dictionaries on every call.
+# `Transaction` and its five dictionaries on every call.
 #
 # Reuse is safe because `tx_clear!` resets every field of a `Transaction` — the
-# state and all four dictionaries — and `tx` calls it on the way out of every
+# state and all five dictionaries — and `tx` calls it on the way out of every
 # attempt: in the `catch` when the body raises, and in the `finally` when the
 # attempt reaches finalize and commit. So the object is clean when an attempt
 # begins, the retry path restages into empty dictionaries, and the pooled
-# object holds nothing — no volatiles, actors or promises, and through them no
-# staged values — between transactions. It is in fact better than safe:
+# object holds nothing — no volatiles, actors, promises or streams, and through
+# them no staged values — between transactions. It is in fact better than safe:
 # `empty!` keeps a dictionary's capacity, so a reused transaction does not
 # re-grow its tables each time.
 #
@@ -960,21 +966,23 @@ function tx(fn::F) where {F<:Function}
                 end
             end
             # We're now ready to attempt a commit. To do this we must lock the
-            # vols, actors and promises in a sorted order. We do volatiles
-            # first, since their values must all be tested, then actors, then
-            # promises. Within each group the locks are taken in `objectid`
-            # order; every transaction uses the same group order, so the two
-            # together are a global lock order.
+            # vols, actors, promises and streams in a sorted order. We do
+            # volatiles first, since their values must all be tested, then
+            # actors, then promises, then streams. Within each group the locks
+            # are taken in `objectid` order; every transaction uses the same
+            # group order, so the groups together are a global lock order.
             reads = getfield(the_tx, :reads)
             actors = getfield(the_tx, :actors)
+            streams = getfield(the_tx, :streams)
             setfield!(the_tx, :state, :locking)
             nw = length(writes)
             nr = length(reads)
             n = nw + nr
             m = length(actors)
             np = length(promises)
+            ns = length(streams)
             # The lock-order buffers are task-local scratch space rather than fresh
-            # vectors. The obvious version — three arrays filled from the transaction's
+            # vectors. The obvious version — four arrays filled from the transaction's
             # key sets — is several allocations on every commit. The commit runs once per
             # transaction and never re-enters, so a per-task buffer is safe; it does not
             # even need clearing between uses, being `resize!`d and filled from the
@@ -1004,9 +1012,17 @@ function tx(fn::F) where {F<:Function}
                 prms[i += 1] = p
             end
             sort!(prms; by=objectid)
+            strms = _lockbuf(_STRMS_KEY, Stream)
+            resize!(strms, ns)
+            i = 0
+            for (strm, _) in streams
+                strms[i += 1] = strm
+            end
+            sort!(strms; by=objectid)
             locked_vol = 0
             locked_act = 0
             locked_prm = 0
+            locked_strm = 0
             success = false
             try
                 while !success
@@ -1056,6 +1072,26 @@ function tx(fn::F) where {F<:Function}
                                                 "given promise is already settled" :
                                                 "given promise is already fulfilled"))
                     end
+                    # Next lock the streams and check their versions. Unlike the
+                    # promises just above, a version mismatch here is a
+                    # retryable conflict rather than a permanent error: a
+                    # thread outside a transaction, or another committed
+                    # transaction, has changed the stream since this attempt
+                    # first looked at it, so the staged counts no longer
+                    # describe the stream and the body must run again. The
+                    # `break` releases every lock held so far and retries.
+                    for strm in strms
+                        lock(getfield(strm, :mutex))
+                        locked_strm += 1
+                    end
+                    schecked = 0
+                    for (strm, dat) in streams
+                        sd = dat::StreamTxData
+                        (getfield(sd, :start_version) ==
+                         getfield(strm, :version)) || break
+                        schecked += 1
+                    end
+                    (schecked == ns) || break
                     # If we reach this point, then everything checks out and we can
                     # commit all of the changes and complete the transaction.
                     setfield!(the_tx, :state, :committing)
@@ -1083,10 +1119,20 @@ function tx(fn::F) where {F<:Function}
                             _wake_waiters!(prm)
                         end
                     end
+                    # And the streams, whose locks we still hold. A stream that
+                    # the transaction only read is unchanged, and
+                    # `_stream_commit!` bumps nothing for it.
+                    for strm in strms
+                        sd = get(streams, strm, nothing)
+                        (sd === nothing) || _stream_commit!(strm, sd::StreamTxData)
+                    end
                     # That's all we need to do, aside from unlock.
                     success = true
                 end
             finally
+                for j in locked_strm:-1:1
+                    unlock(getfield(strms[j], :mutex))
+                end
                 for j in locked_prm:-1:1
                     unlock(getfield(prms[j], :mutex))
                 end

@@ -301,4 +301,59 @@
         @test all(e isa PromiseFailed for e in fetch.(takers))
         @test getfield(p, :waiters) === nothing
     end
+
+    @testset "a committed stream mutation wakes the parked tasks" begin
+        # A committed put wakes every parked taker. Only one wins the item; the
+        # rest must be woken again, which is why a stream's waiters are not
+        # dropped when they are woken as a promise's are.
+        s = Stream{Int}()
+        takers = [Threads.@spawn take(s; timeout = 30.0, token = nothing)
+                  for _ in 1:T]
+        @test waituntil(() -> nwaiters(s) == T)
+        tx(() -> put!(s, 1))
+        @test waituntil(() -> count(istaskdone, takers) == 1)
+        @test [t.result for t in takers if istaskdone(t)] == [1]
+        @test waituntil(() -> nwaiters(s) == T - 1)
+        for i in 2:T
+            tx(() -> put!(s, i))
+        end
+        @test sort(fetch.(takers)) == 1:T
+        @test waituntil(() -> nwaiters(s) == 0)
+
+        # A committed take frees a slot and wakes every parked writer, and the
+        # writers fill the slots one at a time.
+        b = Stream{Int}(maxsize = 1)
+        put!(b, 1)
+        writers = [Threads.@spawn put!(b, i + 1; timeout = 30.0, token = nothing)
+                   for i in 1:T]
+        @test waituntil(() -> nwaiters(b) == T)
+        got = [take(b; timeout = 30.0) for _ in 1:(T + 1)]
+        @test sort(got) == 1:(T + 1)
+        @test waituntil(() -> all(istaskdone, writers))
+        @test waituntil(() -> nwaiters(b) == 0)
+
+        # A committed close wakes a parked reader and a parked writer.
+        ce = Stream{Int}()
+        rt = Threads.@spawn (try
+                     take(ce; timeout = 30.0, token = nothing)
+                 catch e
+                     e
+                 end)
+        cf = Stream{Int}(maxsize = 1)
+        put!(cf, 1)
+        wt = Threads.@spawn (try
+                     put!(cf, 2; timeout = 30.0, token = nothing)
+                 catch e
+                     e
+                 end)
+        @test waituntil(() -> nwaiters(ce) == 1 && nwaiters(cf) == 1)
+        tx() do
+            close(ce)
+            close(cf)
+        end
+        @test waituntil(() -> istaskdone(rt) && istaskdone(wt))
+        @test rt.result isa StreamClosed
+        @test wt.result isa StreamClosed
+        @test waituntil(() -> nwaiters(ce) == 0 && nwaiters(cf) == 0)
+    end
 end

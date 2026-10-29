@@ -469,19 +469,21 @@ function Base.showerror(io::IO, e::PromiseFailed)
 end
 
 """
-    PromiseTimeout(timeout)
+    ReaderTimeout(timeout)
 
-An exception thrown by [`take`](@ref) when the given timeout expired before the
-promise was settled. The timeout, in seconds, is stored as `timeout`.
+An exception thrown by a blocking read when the given timeout expired: by
+[`take`](@ref) when the promise was still pending, and by [`take`](@ref) or
+`put!` when a [`Stream`](@ref) was still empty or full. The timeout, in seconds,
+is stored as `timeout`.
 
-See also: [`Promise`](@ref), [`take`](@ref)
+See also: [`Promise`](@ref), [`Stream`](@ref), [`take`](@ref)
 """
-struct PromiseTimeout <: Exception
+struct ReaderTimeout <: Exception
     timeout::Real
 end
-export PromiseTimeout
-function Base.showerror(io::IO, e::PromiseTimeout)
-    return print(io, "promise timed out after ", getfield(e, :timeout), " seconds")
+export ReaderTimeout
+function Base.showerror(io::IO, e::ReaderTimeout)
+    return print(io, "reader timed out after ", getfield(e, :timeout), " seconds")
 end
 # Some base functions.
 """
@@ -494,15 +496,17 @@ has staged a settlement for the promise, that settlement is used without
 waiting; see [`Promise`](@ref).
 
 `timeout` bounds the wait in seconds: if the promise is still pending when it
-expires, `take` throws [`PromiseTimeout`](@ref). A settled promise is returned
-or thrown immediately, even with `timeout = 0`.
+expires, `take` throws [`ReaderTimeout`](@ref). A settled promise is returned or
+thrown immediately, even with `timeout = 0`.
 
 `token` is the [`CancelToken`](@ref) to observe; the default is the calling
 task's own token, see [`canceltoken`](@ref). If the token has been cancelled,
 `take` throws [`Cancelled`](@ref) even when the promise is already settled, so
 pass `token = nothing` to wait regardless — in the cleanup of a cancelled task,
 for example. Inside a transaction, a `take` that has to wait is a deadlock: the
-delivery it is waiting for cannot happen until the body returns.
+delivery it is waiting for cannot happen until the body returns. (Waiting on a
+[`Stream`](@ref) inside a transaction is not a deadlock in the same way; see its
+docstring.)
 
 
 ```@meta
@@ -549,9 +553,6 @@ function take(d::Promise{T};
         throw(ArgumentError("timeout must be non-negative"))
     w = Waiter()
     timer = nothing
-    # Declared here, not inside the `try` below: `try` introduces a scope, and
-    # the flag has to be visible to the check after it.
-    timedout = false
     try
         _promise_register!(d, w)
         (token === nothing) || _register_waiter!(token, w)
@@ -563,27 +564,12 @@ function take(d::Promise{T};
             (token === nothing) || checkcancel(token)
             r = _try_settle(d)
             (r === nothing) || return r.val
-            lock(getfield(w, :lock))
-            try
-                if getfield(w, :timedout)
-                    timedout = true
-                elseif getfield(w, :done)
-                    setfield!(w, :done, false)
-                    timedout = false
-                else
-                    wait(getfield(w, :cond))
-                    timedout = getfield(w, :timedout)
-                    setfield!(w, :done, false)
-                end
-            finally
-                unlock(getfield(w, :lock))
-            end
-            if timedout
+            if _park!(w)
                 # The timer may have raced a settlement; one last check lets
                 # the settlement win.
                 r = _try_settle(d)
                 (r === nothing) || return r.val
-                throw(PromiseTimeout(timeout))
+                throw(ReaderTimeout(timeout))
             end
         end
     finally

@@ -5,7 +5,8 @@ Clojure's `ref`s and `dosync`. It lets you take a set of reads and writes that
 must happen together and have them either all take effect or none of them do,
 without taking locks by hand.
 
-Four object types participate:
+Four object types take part in transactions, and a fifth, `Var`, is how the
+current transaction is tracked:
 
 * [`Volatile`](@ref) — a reference-like object whose value may only be changed
   inside a transaction. This is the analogue of a Clojure `ref`.
@@ -13,6 +14,8 @@ Four object types participate:
   are *sent* rather than called. This is the analogue of a Clojure agent.
 * [`Promise`](@ref) — a one-shot value container whose delivery may be staged
   in a transaction; see [Promises and transactions](#Promises-and-transactions).
+* [`Stream`](@ref) — a reusable, optionally bounded FIFO whose reads and writes
+  may be staged in a transaction; see [Streams](streams.md).
 * [`Var`](@ref) — a task-local binding; see the [Task-Local Variables](var.md)
   page. `Var`s are not transactional, but they are how the current transaction
   is tracked internally.
@@ -212,11 +215,29 @@ staged write. A `send` made there is nonetheless staged in the transaction that
 is finalizing, so a callback whose transaction loses its race queues nothing.
 Every other side effect a callback performs is immediate and is not rolled back
 if the transaction fails — in particular, a `put!` or `fail!` there settles its
-promise at once. Since callbacks run on every attempt, a callback that settles
+promise at once, and a [`Stream`](@ref) put or take there happens at once rather
+than being staged. Since callbacks run on every attempt, a callback that settles
 another promise must be careful: doing so on the first attempt makes the second
 attempt settle it twice, which raises `ArgumentError` and aborts the
 transaction. A callback may start a transaction of its own, but it should not
 block, and it must not wait on the promise it is being called for.
+
+## Streams and transactions
+
+A [`Stream`](@ref) is the reusable form of a promise: a FIFO of values that any
+number of tasks may write and read, optionally bounded so that a full stream
+makes `put!` wait. Its transactional rules follow the promise's — `put!`,
+`take` and `close` are staged and take effect only if the transaction commits,
+and the body reads its own staged operations — with one addition: because other
+tasks can change a stream while a body runs, a stream that a transaction has
+touched is validated like a `Volatile` at commit, and a concurrent change makes
+the attempt retry rather than commit against a stale view.
+
+Unlike a promise, waiting on a stream inside a transaction is not by itself a
+deadlock: another task can write to it while the body waits. The exception is a
+stream created in the current transaction, which no other task can reach yet;
+an operation that would block on one raises `StreamDeadlock`. See
+[Streams](streams.md#Streams-and-transactions) for the details.
 
 ## IO
 

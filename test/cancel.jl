@@ -27,11 +27,11 @@
         catch err
             err
         end
-        @test e isa PromiseTimeout
+        @test e isa ReaderTimeout
         @test e.timeout == 0.05
         @test !isready(p)
         @test p.waiters === nothing
-        @test_throws PromiseTimeout take(p; timeout = 0.05)
+        @test_throws ReaderTimeout take(p; timeout = 0.05)
 
         # A delivery that beats the timeout wins, and a settled promise never
         # waits, even with a zero timeout.

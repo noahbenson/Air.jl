@@ -92,7 +92,8 @@ modified leads to undefined behaviour.
 
 A `Promise{T}` is a container for a single value that is produced at some later
 point, typically by another task. Reading a `Promise` blocks until the value is
-available.
+available. When the values form a sequence rather than a single result, use a
+[`Stream`](@ref) instead; see [Streams](streams.md).
 
 ```julia
 julia> p = Promise{Int}();
@@ -155,8 +156,8 @@ dictionary key.
 ## Cancellation and timeouts
 
 `take` can bound its wait with `timeout`, in seconds. If the promise is still
-pending when the timeout expires, `take` throws [`PromiseTimeout`](@ref) instead
-of waiting forever:
+pending when the timeout expires, `take` throws [`ReaderTimeout`](@ref) instead
+of waiting forever; a `Stream`'s `take` and `put!` throw the same exception.
 
 ```julia
 julia> p = Promise{Int}();
@@ -166,7 +167,7 @@ julia> try
        catch e
            sprint(showerror, e)
        end
-"promise timed out after 0.1 seconds"
+"reader timed out after 0.1 seconds"
 ```
 
 Every task also has a [`CancelToken`](@ref): it is created on first use and is
@@ -194,9 +195,12 @@ Cancellation wins over settlement: a cancelled token makes `take` throw even
 when the promise is already settled, because a task whose work was cancelled
 should not go on to use the value. To wait regardless of cancellation — in the
 cleanup of a cancelled task, for example — pass `token = nothing`. Inside a
-transaction, a `take` that has to wait is a deadlock, since the settlement it
-waits for cannot happen until the body returns; a `Cancelled` thrown inside a
-transaction body aborts that transaction and is not retried.
+transaction, a `take` on a *promise* that has to wait is a deadlock, since the
+settlement it waits for cannot happen until the body returns (a `Stream` may be
+written by another task while the body waits; see
+[Streams and transactions](streams.md#Streams-and-transactions)). A `Cancelled`
+thrown inside a transaction body aborts that transaction and is not retried. The
+same holds for `ReaderTimeout`.
 
 [`checkcancel`](@ref) observes cancellation without blocking (`iscancelled` is
 its non-throwing form), and [`setcancaltoken!`](@ref) replaces or clears a

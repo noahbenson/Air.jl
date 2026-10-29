@@ -13,8 +13,9 @@ makedocs(;
         # large by construction: the default warning threshold of 100 KiB and
         # error threshold of 200 KiB are sized for prose pages, and this page is
         # most of the way to the error already. Raising them is a decision about
-        # this page, not a way of ignoring a problem.
-        size_threshold_warn=250 * 1024,
+        # this page, not a way of ignoring a problem. The warning moved up with
+        # the stream docstrings, which took the page past 250 KiB.
+        size_threshold_warn=300 * 1024,
         size_threshold=500 * 1024,
     ),
     pages=[
@@ -29,6 +30,7 @@ makedocs(;
         "Transactions (STM)" => "stm.md",
         "Task-Local Variables" => "var.md",
         "Utilities" => "util.md",
+        "Streams" => "streams.md",
         "API Reference" => "API.md",
     ],
     # A `Remotes.GitHub` rather than a URL string. Documenter derives the navbar

@@ -35,8 +35,19 @@ fixes in the patch position, which is how the versions below are chosen.
   transaction, a failure is staged like a delivery and performed only if the
   transaction commits; `take`, `isready`, `isfailed` and `geterror` see the
   staged settlement.
+- **Streams.** `Stream{T}` is a reusable FIFO: `put!` appends, `take` removes
+  the oldest value, and both block when they cannot proceed, with the same
+  `timeout` and `token` keywords as `take(::Promise)`. A stream may be bounded
+  with `maxsize`, so a full stream makes `put!` wait and a producer cannot run
+  away from its consumer, and it may be closed with `close`: a later `put!`
+  throws `StreamClosed`, while a `take` drains what remains and then throws it.
+  Inside a transaction, `put!`, `take` and `close` are staged and take effect
+  only if the transaction commits, and a concurrent change makes the attempt
+  retry rather than commit against a stale view; a stream created in the
+  current transaction raises `StreamDeadlock` instead of waiting, since no other
+  task can reach it yet. Streams compare by identity, like promises.
 - **Timeouts and cancellation.** `take` accepts a `timeout` keyword (in
-  seconds), throwing the new `PromiseTimeout` if the promise is still pending
+  seconds), throwing the new `ReaderTimeout` if the promise is still pending
   when it expires, and a `token` keyword. Every task has a `CancelToken`
   (`canceltoken()`, replaceable with `setcancaltoken!`); `cancel!` wakes every
   task waiting under it with the new `Cancelled` exception. Blocking Air calls
@@ -50,6 +61,11 @@ fixes in the patch position, which is how the versions below are chosen.
 
 ### Changed
 
+- `PromiseTimeout` is now `ReaderTimeout`, and serves both promise and stream
+  waits. It was added in this same unreleased version, so no released API
+  changes.
+- The commit's sorted lock set gained a fourth group, streams, after promises;
+  a stream that a transaction staged is locked and validated like a volatile.
 - `Promise{T}` is now a mutable struct with a persistent mutex, a condition
   bound to it, a stored settlement, and lazily allocated callback fields and
   waiter set; the private field layout and the implicit
@@ -91,12 +107,25 @@ fixes in the patch position, which is how the versions below are chosen.
   method may be too new") and failed the settling task instead of running the
   callback.
 
+### Performance
+
+- A stream operation outside a transaction — one mutex acquisition, a push or a
+  pop, and a version bump — costs about 110 ns, the same as `take` on a settled
+  promise. A `take` allocates nothing; a `put!` pays only the live vector's
+  amortized growth. Staging the same operation in a transaction costs about
+  550 ns and 0.7 KB, which is what being able to roll it back costs.
+
 ### Documentation
 
 - Documented the actor hooks, transactional promise settlement, promise failure,
   and timeouts and cancellation in the manual, including what a settlement
   callback may safely do during a transaction and which waits observe
   cancellation.
+- Added a [Streams](https://noahbenson.github.io/Air.jl/stable/streams/) page
+  covering bounds, closing, cancellation, and the transactional rules, and a
+  "Streams and transactions" section to the STM page. The utilities page now
+  says that the in-transaction deadlock warning for `take` applies to promises,
+  not to streams.
 
 ## [0.2.0] - 2026-10-02
 
