@@ -16,6 +16,12 @@
 # it. Promise mutexes, stream mutexes and token locks may therefore wake waiters
 # while they hold their own state lock, and no cycle is possible.
 #
+# The cancelled flag is atomic, so the hot check path -- `iscancelled` and the
+# fast branch of `checkcancel`, which reducers and walkers poll -- reads it
+# without taking the token lock. The lock still guards `reason`, the waiters,
+# and the one-way transition, which is why `checkcancel` takes it only on the
+# path that is about to throw.
+#
 # @author Noah C. Benson
 #
 # MIT License
@@ -129,11 +135,12 @@ See also: [`canceltoken`](@ref), [`cancel!`](@ref), [`iscancelled`](@ref),
 """
 mutable struct CancelToken
     lock::ReentrantLock
-    cancelled::Bool
+    cancelled::Threads.Atomic{Bool}
     reason::Any
     waiters::Base.IdSet{Waiter}
 end
-CancelToken() = CancelToken(ReentrantLock(), false, nothing, Base.IdSet{Waiter}())
+CancelToken() = CancelToken(ReentrantLock(), Threads.Atomic{Bool}(false), nothing,
+                            Base.IdSet{Waiter}())
 export CancelToken
 
 # The task-local cancellation-token slot. The stored value is a `CancelToken`
@@ -212,8 +219,8 @@ function cancel!(tok::CancelToken, reason = nothing)
     waiters = Waiter[]
     lock(getfield(tok, :lock))
     try
-        getfield(tok, :cancelled) && return tok
-        setfield!(tok, :cancelled, true)
+        getfield(tok, :cancelled)[] && return tok
+        getfield(tok, :cancelled)[] = true
         setfield!(tok, :reason, reason)
         for w in getfield(tok, :waiters)
             push!(waiters, w)
@@ -238,12 +245,7 @@ non-throwing form of [`checkcancel`](@ref).
 See also: [`CancelToken`](@ref), [`cancel!`](@ref), [`checkcancel`](@ref)
 """
 function iscancelled(tok::CancelToken)
-    lock(getfield(tok, :lock))
-    try
-        return getfield(tok, :cancelled)
-    finally
-        unlock(getfield(tok, :lock))
-    end
+    return getfield(tok, :cancelled)[]
 end
 export iscancelled
 
@@ -260,9 +262,11 @@ See also: [`CancelToken`](@ref), [`iscancelled`](@ref), [`cancel!`](@ref)
 """
 checkcancel(::Nothing) = nothing
 function checkcancel(tok::CancelToken)
+    getfield(tok, :cancelled)[] || return nothing
+    # Slow path: take the lock so the reason is read coherently. Cancellation is
+    # one-way, so a token observed cancelled here stays cancelled.
     lock(getfield(tok, :lock))
     try
-        getfield(tok, :cancelled) || return nothing
         throw(Cancelled(tok, getfield(tok, :reason)))
     finally
         unlock(getfield(tok, :lock))
